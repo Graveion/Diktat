@@ -3,6 +3,7 @@ import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
 import { listSessions } from "./session-store";
+import { listClaudeSessions } from "./claude-sessions";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -32,6 +33,7 @@ const server = Bun.serve({
         clis: Object.keys(availableCLIs),
         projects: config.projects,
         sessions: listSessions(),
+        claudeSessions: listClaudeSessions(),
       }));
     },
     message(ws, data) {
@@ -53,7 +55,9 @@ const server = Bun.serve({
       }
 
       if (msg.type === "resume") {
-        const session = Session.resume(ws, msg.sessionId);
+        const session = msg.isClaudeSession
+          ? Session.fromClaudeSession(ws, msg.sessionId)
+          : Session.resume(ws, msg.sessionId);
         if (!session) {
           ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
           return;

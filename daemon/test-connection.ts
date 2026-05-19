@@ -24,7 +24,7 @@ ws.onmessage = async (event) => {
   const msg = JSON.parse(event.data);
 
   if (msg.type === "connected") {
-    const { clis, projects, sessions } = msg;
+    const { clis, projects, sessions, claudeSessions } = msg;
 
     // Pick CLI
     console.log("Available CLIs:");
@@ -32,23 +32,34 @@ ws.onmessage = async (event) => {
     const cliIdx = parseInt(await ask("Select CLI (number): ")) - 1;
     const cli = clis[cliIdx] ?? clis[0];
 
-    // Pick session or new
-    let sessionId: string | null = null;
+    // Combine daemon sessions + native Claude sessions
+    const allSessions = [
+      ...sessions.map((s: any) => ({ ...s, source: "daemon" })),
+      ...claudeSessions.map((s: any) => ({ ...s, source: "claude", cli: "claude" })),
+    ];
 
-    if (sessions.length > 0) {
-      console.log("\nExisting sessions:");
+    let sessionId: string | null = null;
+    let isClaudeSession = false;
+
+    if (allSessions.length > 0) {
+      console.log("\nSessions:");
       console.log("  0. Start new session");
-      sessions.forEach((s: any, i: number) =>
-        console.log(`  ${i + 1}. [${s.cli}] ${s.project} — ${new Date(s.lastActiveAt).toLocaleString()}`)
-      );
-      const sessionChoice = parseInt(await ask("Select session (0 for new): "));
-      if (sessionChoice > 0 && sessions[sessionChoice - 1]) {
-        sessionId = sessions[sessionChoice - 1].id;
+      allSessions.forEach((s: any, i: number) => {
+        const label = s.source === "claude"
+          ? `[${s.projectLabel}] ${s.firstMessage.slice(0, 60)}…`
+          : `[${s.cli}] ${s.project}`;
+        console.log(`  ${i + 1}. ${label} — ${new Date(s.lastActiveAt).toLocaleString()}`);
+      });
+      const choice = parseInt(await ask("Select session (0 for new): "));
+      if (choice > 0 && allSessions[choice - 1]) {
+        const picked = allSessions[choice - 1];
+        sessionId = picked.id;
+        isClaudeSession = picked.source === "claude";
       }
     }
 
     if (sessionId) {
-      ws.send(JSON.stringify({ type: "resume", sessionId }));
+      ws.send(JSON.stringify({ type: "resume", sessionId, isClaudeSession }));
     } else {
       console.log("\nAvailable projects:");
       projects.forEach((p: string, i: number) => console.log(`  ${i + 1}. ${p}`));
