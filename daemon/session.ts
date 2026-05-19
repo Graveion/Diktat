@@ -13,6 +13,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
     case "cursor":
       return [
         "agent", "--trust", "-p", text,
+        "--output-format", "stream-json",
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
       ];
     default:
@@ -103,6 +104,8 @@ export class Session {
         const chunk = decoder.decode(value);
         if (!isStderr && this.data.cli === "claude") {
           this.parseClaudeChunk(chunk);
+        } else if (!isStderr && this.data.cli === "cursor") {
+          this.parseCursorChunk(chunk);
         } else {
           this.ws.send(JSON.stringify({ type: "output", text: chunk }));
         }
@@ -133,6 +136,34 @@ export class Session {
         }
       } catch {
         this.ws.send(JSON.stringify({ type: "output", text: line }));
+      }
+    }
+  }
+
+  private parseCursorChunk(chunk: string): void {
+    for (const line of chunk.split("\n").filter(Boolean)) {
+      try {
+        const json = JSON.parse(line);
+        // Capture session_id from any event that carries it
+        if (json.session_id && !this.data.cliSessionId) {
+          this.data.cliSessionId = json.session_id;
+          saveSession(this.data);
+        }
+        // Stream assistant text — skip duplicates per docs (present model_call_id = duplicate)
+        if (json.type === "assistant") {
+          const content = json.message?.content ?? [];
+          for (const block of content) {
+            if (block.type === "text" && block.text && !json.model_call_id) {
+              this.ws.send(JSON.stringify({ type: "output", text: block.text }));
+            }
+          }
+        }
+        // Final result event
+        if (json.type === "result" && json.result) {
+          // result is already streamed via assistant events — just ensure session_id saved
+        }
+      } catch {
+        // non-JSON stderr etc, ignore
       }
     }
   }
