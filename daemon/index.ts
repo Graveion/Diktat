@@ -4,6 +4,7 @@ import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
 import { listSessions } from "./session-store";
 import { listClaudeSessions } from "./claude-sessions";
+import qrcode from "qrcode-terminal";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -83,5 +84,9 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Diktat daemon listening on ws://${tailscaleIP}:${config.port}`);
+const connectionUrl = `diktat://${tailscaleIP}:${config.port}`;
+console.log(`\nDiktat daemon listening on ws://${tailscaleIP}:${config.port}`);
 console.log(`Projects: ${config.projects.join(", ") || "none configured"}`);
+console.log(`\nScan to connect:\n`);
+qrcode.generate(connectionUrl, { small: true });
+console.log(`\n${connectionUrl}\n`);
