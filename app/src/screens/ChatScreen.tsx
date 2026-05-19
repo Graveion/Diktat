@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  View, Text, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform,
+  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  TextInput, KeyboardAvoidingView, Platform, Animated,
 } from "react-native";
-import * as Speech from "expo-speech";
+import Markdown from "react-native-markdown-display";
 import type { DiktatMessage } from "../hooks/useDiktat";
 
 type Props = {
@@ -11,18 +11,67 @@ type Props = {
   streaming: boolean;
   onSend: (text: string) => void;
   onBack: () => void;
+  sessionLabel?: string;
 };
 
-export function ChatScreen({ messages, streaming, onSend, onBack }: Props) {
+function TypingIndicator() {
+  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+
+  useEffect(() => {
+    const anims = dots.map((dot, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 150),
+          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.delay(600),
+        ])
+      )
+    );
+    anims.forEach((a) => a.start());
+    return () => anims.forEach((a) => a.stop());
+  }, []);
+
+  return (
+    <View style={typingStyles.container}>
+      {dots.map((dot, i) => (
+        <Animated.View key={i} style={[typingStyles.dot, { opacity: dot }]} />
+      ))}
+    </View>
+  );
+}
+
+function MessageBubble({ message }: { message: DiktatMessage }) {
+  const isUser = message.role === "user";
+
+  if (isUser) {
+    return (
+      <View style={[bubbleStyles.row, bubbleStyles.userRow]}>
+        <View style={[bubbleStyles.bubble, bubbleStyles.userBubble]}>
+          <Text style={bubbleStyles.userText}>{message.text}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+      <View style={[bubbleStyles.bubble, bubbleStyles.assistantBubble]}>
+        <Markdown style={markdownStyles}>{message.text}</Markdown>
+      </View>
+    </View>
+  );
+}
+
+export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }: Props) {
   const [input, setInput] = useState("");
-  const [listening, setListening] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (messages.length > 0) {
-      listRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     }
-  }, [messages]);
+  }, [messages, streaming]);
 
   const handleSend = () => {
     if (!input.trim() || streaming) return;
@@ -30,45 +79,50 @@ export function ChatScreen({ messages, streaming, onSend, onBack }: Props) {
     setInput("");
   };
 
-  const handleVoice = async () => {
-    if (listening) {
-      setListening(false);
-      return;
-    }
-    setListening(true);
-    try {
-      await Speech.speak("Listening", { language: "en" });
-    } catch {
-      setListening(false);
-    }
-  };
+  const data: (DiktatMessage | { role: "typing" })[] = [
+    ...messages,
+    ...(streaming && messages[messages.length - 1]?.role !== "assistant" ? [{ role: "typing" as const }] : []),
+  ];
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.back}>← Sessions</Text>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
-        {streaming && <ActivityIndicator color="#4f8ef7" style={styles.spinner} />}
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {sessionLabel ?? "Session"}
+        </Text>
+        <View style={styles.headerRight}>
+          {streaming && <View style={styles.activeIndicator} />}
+        </View>
       </View>
 
       <FlatList
         ref={listRef}
-        data={messages}
+        data={data}
         keyExtractor={(_, i) => String(i)}
         contentContainerStyle={styles.messages}
-        renderItem={({ item }) => (
-          <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}>
-            <Text style={[styles.bubbleText, item.role === "user" ? styles.userText : styles.assistantText]}>
-              {item.text}
-            </Text>
-          </View>
-        )}
+        renderItem={({ item }) => {
+          if (item.role === "typing") {
+            return (
+              <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+                <View style={[bubbleStyles.bubble, bubbleStyles.assistantBubble]}>
+                  <TypingIndicator />
+                </View>
+              </View>
+            );
+          }
+          return <MessageBubble message={item as DiktatMessage} />;
+        }}
         ListEmptyComponent={
-          <Text style={styles.empty}>Send a message or hold the mic to dictate.</Text>
+          <Text style={styles.empty}>
+            Send a message to get started.
+          </Text>
         }
       />
 
@@ -81,20 +135,14 @@ export function ChatScreen({ messages, streaming, onSend, onBack }: Props) {
           placeholderTextColor="#555"
           multiline
           editable={!streaming}
-          onSubmitEditing={handleSend}
+          returnKeyType="default"
         />
-        <TouchableOpacity
-          style={[styles.micButton, listening && styles.micActive]}
-          onPress={handleVoice}
-        >
-          <Text style={styles.micIcon}>{listening ? "⏹" : "🎤"}</Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.sendButton, (!input.trim() || streaming) && styles.sendDisabled]}
           onPress={handleSend}
           disabled={!input.trim() || streaming}
         >
-          <Text style={styles.sendText}>↑</Text>
+          <Text style={styles.sendIcon}>↑</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -105,36 +153,64 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#111" },
   header: {
     flexDirection: "row", alignItems: "center",
-    padding: 20, paddingTop: 60,
+    paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: "#1e1e1e",
   },
-  back: { color: "#4f8ef7", fontSize: 16 },
-  spinner: { marginLeft: 12 },
-  messages: { padding: 16, paddingBottom: 8 },
-  bubble: { maxWidth: "80%", borderRadius: 12, padding: 12, marginBottom: 8 },
-  userBubble: { backgroundColor: "#4f8ef7", alignSelf: "flex-end" },
-  assistantBubble: { backgroundColor: "#222", alignSelf: "flex-start" },
-  bubbleText: { fontSize: 15, lineHeight: 22 },
-  userText: { color: "#fff" },
-  assistantText: { color: "#eee" },
-  empty: { color: "#444", textAlign: "center", marginTop: 60 },
+  backButton: { padding: 4, marginRight: 8 },
+  backText: { color: "#4f8ef7", fontSize: 22 },
+  headerTitle: { flex: 1, color: "#fff", fontSize: 17, fontWeight: "600" },
+  headerRight: { width: 24, alignItems: "center" },
+  activeIndicator: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#4caf50" },
+  messages: { padding: 12, paddingBottom: 4 },
+  empty: { color: "#444", textAlign: "center", marginTop: 80, fontSize: 15 },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
-    padding: 12, borderTopWidth: 1, borderTopColor: "#222",
+    padding: 12, paddingBottom: 32,
+    borderTopWidth: 1, borderTopColor: "#1e1e1e",
+    backgroundColor: "#111",
   },
   input: {
-    flex: 1, backgroundColor: "#222", color: "#fff", borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 100,
+    flex: 1, backgroundColor: "#1e1e1e", color: "#fff",
+    borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
+    fontSize: 16, maxHeight: 120, lineHeight: 22,
   },
-  micButton: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: "#222",
-    justifyContent: "center", alignItems: "center", marginLeft: 8,
-  },
-  micActive: { backgroundColor: "#f74f4f" },
-  micIcon: { fontSize: 18 },
   sendButton: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: "#4f8ef7",
-    justifyContent: "center", alignItems: "center", marginLeft: 8,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#4f8ef7", justifyContent: "center",
+    alignItems: "center", marginLeft: 8,
   },
   sendDisabled: { opacity: 0.3 },
-  sendText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  sendIcon: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+});
+
+const bubbleStyles = StyleSheet.create({
+  row: { marginBottom: 4, maxWidth: "80%" },
+  userRow: { alignSelf: "flex-end" },
+  assistantRow: { alignSelf: "flex-start" },
+  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  userBubble: { backgroundColor: "#4f8ef7", borderBottomRightRadius: 4 },
+  assistantBubble: { backgroundColor: "#1e1e1e", borderBottomLeftRadius: 4 },
+  userText: { color: "#fff", fontSize: 16, lineHeight: 22 },
+});
+
+const markdownStyles = {
+  body: { color: "#eee", fontSize: 16, lineHeight: 24 },
+  code_inline: { backgroundColor: "#2a2a2a", color: "#e0e0e0", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 14, borderRadius: 4, paddingHorizontal: 4 },
+  fence: { backgroundColor: "#0d0d0d", borderRadius: 8, padding: 12, marginVertical: 4 },
+  code_block: { color: "#e0e0e0", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 13, lineHeight: 20 },
+  link: { color: "#4f8ef7" },
+  strong: { color: "#fff" },
+  heading1: { color: "#fff", fontSize: 20, fontWeight: "bold", marginBottom: 8 },
+  heading2: { color: "#fff", fontSize: 18, fontWeight: "bold", marginBottom: 6 },
+  heading3: { color: "#ddd", fontSize: 16, fontWeight: "600", marginBottom: 4 },
+  blockquote: { backgroundColor: "#1a1a1a", borderLeftColor: "#4f8ef7", borderLeftWidth: 3, paddingLeft: 12 },
+  bullet_list: { marginLeft: 8 },
+  ordered_list: { marginLeft: 8 },
+  list_item: { color: "#eee" },
+  hr: { backgroundColor: "#333" },
+};
+
+const typingStyles = StyleSheet.create({
+  container: { flexDirection: "row", alignItems: "center", padding: 4, gap: 4 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#888" },
 });

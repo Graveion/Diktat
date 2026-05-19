@@ -12,6 +12,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("connect");
   const [host, setHost] = useState("");
   const [port, setPort] = useState(9000);
+  const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
 
   const diktat = useDiktat(host, port);
 
@@ -40,10 +41,12 @@ export default function App() {
   }, [host]);
 
   const handleResume = (session: DiktatSession) => {
+    setActiveSession(session);
     diktat.resumeSession(session);
   };
 
   const handleNew = (cli: string, project: string) => {
+    setActiveSession(null);
     diktat.spawnSession(cli, project);
   };
 
@@ -83,6 +86,7 @@ export default function App() {
         streaming={diktat.streaming}
         onSend={diktat.sendMessage}
         onBack={() => setScreen("sessions")}
+        sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
       />
     </>
   );
