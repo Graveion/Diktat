@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -e
+
+OS="$(uname -s)"
+DIKTAT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+DAEMON_DIR="$DIKTAT_DIR/daemon"
+LOG="$DAEMON_DIR/logs/daemon.log"
+ERR_LOG="$DAEMON_DIR/logs/daemon.error.log"
+BUN="$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")"
+
+do_start() {
+  if [[ "$OS" == "Darwin" ]]; then
+    launchctl load "$HOME/Library/LaunchAgents/com.diktat.daemon.plist" 2>/dev/null || true
+  else
+    systemctl --user start diktat-daemon
+  fi
+  echo "Diktat daemon started."
+  sleep 1
+  do_qr
+}
+
+do_stop() {
+  if [[ "$OS" == "Darwin" ]]; then
+    launchctl unload "$HOME/Library/LaunchAgents/com.diktat.daemon.plist" 2>/dev/null || true
+  else
+    systemctl --user stop diktat-daemon
+  fi
+  echo "Diktat daemon stopped."
+}
+
+do_restart() {
+  do_stop
+  sleep 1
+  do_start
+}
+
+do_status() {
+  if [[ "$OS" == "Darwin" ]]; then
+    if launchctl list | grep -q "com.diktat.daemon"; then
+      echo "Diktat daemon is running."
+    else
+      echo "Diktat daemon is not running."
+    fi
+  else
+    systemctl --user status diktat-daemon
+  fi
+}
+
+do_logs() {
+  if [[ "$OS" == "Darwin" ]]; then
+    tail -f "$LOG" "$ERR_LOG"
+  else
+    journalctl --user -u diktat-daemon -f
+  fi
+}
+
+do_qr() {
+  cd "$DAEMON_DIR" && "$BUN" run qr.ts
+}
+
+do_setup() {
+  "$DIKTAT_DIR/setup.sh"
+}
+
+case "${1:-help}" in
+  start)   do_start ;;
+  stop)    do_stop ;;
+  restart) do_restart ;;
+  status)  do_status ;;
+  logs)    do_logs ;;
+  qr)      do_qr ;;
+  setup)   do_setup ;;
+  help|--help|-h)
+    echo ""
+    echo "  Diktat — voice-driven coding assistant"
+    echo ""
+    echo "  Usage: diktat <command>"
+    echo ""
+    echo "  Commands:"
+    echo "    start     Start the daemon and show QR code"
+    echo "    stop      Stop the daemon"
+    echo "    restart   Restart the daemon"
+    echo "    status    Check if daemon is running"
+    echo "    logs      Tail daemon logs"
+    echo "    qr        Print QR code to connect the app"
+    echo "    setup     Re-run setup wizard"
+    echo ""
+    ;;
+  *)
+    echo "Unknown command: $1. Run 'diktat help' for usage."
+    exit 1
+    ;;
+esac
