@@ -35,8 +35,10 @@ function readFirstUserMessage(filePath: string): string {
       try {
         const json = JSON.parse(line);
         if (json.role === "user" || json.type === "user") {
-          const text = typeof json.content === "string" ? json.content : json.message ?? "";
-          return text.slice(0, 120);
+          const raw = json.content ?? json.message ?? json.text ?? "";
+          const text = typeof raw === "string" ? raw
+            : Array.isArray(raw) ? raw.filter((c: any) => c.type === "text").map((c: any) => c.text).join("") : "";
+          if (text) return String(text).slice(0, 120);
         }
       } catch { /* incomplete line at chunk boundary */ }
     }
