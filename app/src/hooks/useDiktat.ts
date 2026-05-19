@@ -29,6 +29,8 @@ export function useDiktat(host: string, port: number) {
 
   const connect = useCallback(() => {
     if (!host) return;
+    ws.current?.close();
+    ws.current = null;
     setState("connecting");
     const socket = new WebSocket(`ws://${host}:${port}`);
     ws.current = socket;
@@ -81,8 +83,8 @@ export function useDiktat(host: string, port: number) {
       }
     };
 
-    socket.onerror = () => setState("error");
-    socket.onclose = () => setState("disconnected");
+    socket.onerror = () => { if (ws.current === socket) setState("error"); };
+    socket.onclose = () => { if (ws.current === socket) setState("disconnected"); };
   }, [host, port]);
 
   const disconnect = useCallback(() => {
