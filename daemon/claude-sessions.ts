@@ -105,6 +105,7 @@ export function listClaudeSessions(): ClaudeSession[] {
       const project = decodeProjectPath(dir);
       const label = projectLabel(project);
 
+      // Only top-level .jsonl files — skip subagent subdirectories
       const files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
       for (const file of files) {
         const filePath = join(dirPath, file);
@@ -123,5 +124,7 @@ export function listClaudeSessions(): ClaudeSession[] {
     // ~/.claude/projects doesn't exist or isn't readable
   }
 
-  return sessions.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
+  const seen = new Set<string>();
+  const unique = sessions.filter((s) => seen.has(s.id) ? false : (seen.add(s.id), true));
+  return unique.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
 }
