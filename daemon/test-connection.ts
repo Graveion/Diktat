@@ -34,7 +34,7 @@ ws.onmessage = (event) => {
   }
 
   if (msg.type === "spawned") {
-    sessionId = msg.sessionId;
+    sessionId = msg.session.id;
     console.log(`Session spawned: ${sessionId}`);
     ws.send(JSON.stringify({ type: "input", sessionId, text: "say hello in one word" }));
     return;

@@ -34,7 +34,7 @@ setup_launchd() {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:$HOME/.bun/bin</string>
+        <string>/usr/local/bin:/usr/bin:/bin:$HOME/.bun/bin:$HOME/.local/bin</string>
     </dict>
 </dict>
 </plist>
@@ -55,7 +55,7 @@ Type=simple
 ExecStart=$BUN run $DAEMON_DIR/index.ts
 WorkingDirectory=$DAEMON_DIR
 Restart=always
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.bun/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.bun/bin:$HOME/.local/bin
 StandardOutput=append:$DAEMON_DIR/logs/daemon.log
 StandardError=append:$DAEMON_DIR/logs/daemon.error.log
 
@@ -70,7 +70,7 @@ install_tailscale() {
   if [[ "$OS" == "Darwin" ]]; then
     echo "Opening Tailscale download page..."
     open "https://tailscale.com/download/mac"
-    echo "Install Tailscale, log in, then press enter to continue."
+    echo "Install Tailscale then press enter to continue."
     read -r || true
   else
     echo "Installing Tailscale..."
@@ -78,27 +78,7 @@ install_tailscale() {
   fi
 }
 
-wait_for_tailscale() {
-  echo "Waiting for Tailscale connection..."
-  echo "A browser window may open for authentication."
-  tailscale up 2>/dev/null || true
-  local attempts=0
-  while ! tailscale status &>/dev/null; do
-    if [[ $attempts -ge 30 ]]; then
-      echo "Tailscale not connected after 30s. Run 'tailscale up' manually then restart the daemon."
-      return
-    fi
-    sleep 2
-    ((attempts++))
-  done
-  local ts_ip
-  ts_ip="$(tailscale ip -4 2>/dev/null || true)"
-  echo "Tailscale connected: $ts_ip"
-}
-
 # --- main ---
-
-echo "=== Diktat Setup ==="
 
 OS="$(uname -s)"
 if [[ "$OS" != "Darwin" && "$OS" != "Linux" ]]; then
@@ -110,51 +90,26 @@ fi
 if [[ ! -x "$BUN" ]]; then
   echo "Installing Bun..."
   curl -fsSL https://bun.sh/install | bash
-else
-  echo "Bun already installed: $($BUN --version)"
+  export PATH="$HOME/.bun/bin:$PATH"
 fi
 
 # Dependencies
-echo "Installing dependencies..."
-cd "$DAEMON_DIR" && $BUN install --frozen-lockfile
-
-# Config
-if [[ ! -f "$DAEMON_DIR/config.json" ]]; then
-  cp "$DAEMON_DIR/config.example.json" "$DAEMON_DIR/config.json"
-  echo ""
-  echo "Created config.json — edit your project paths, then press enter."
-  ${EDITOR:-nano} "$DAEMON_DIR/config.json"
-  read -r || true
-else
-  echo "config.json already exists, skipping."
-fi
-
-mkdir -p "$DAEMON_DIR/logs"
+cd "$DAEMON_DIR" && $BUN install --frozen-lockfile --silent
 
 # Tailscale
 if ! command -v tailscale &>/dev/null; then
-  echo "Tailscale not found."
   install_tailscale
-else
-  echo "Tailscale already installed."
 fi
 
-if command -v tailscale &>/dev/null; then
-  if ! tailscale status &>/dev/null; then
-    wait_for_tailscale
-  else
-    ts_ip="$(tailscale ip -4 2>/dev/null || true)"
-    echo "Tailscale already connected: $ts_ip"
-  fi
-fi
+# Logs dir
+mkdir -p "$DAEMON_DIR/logs"
 
-# Service
+# Register service
 if [[ "$OS" == "Darwin" ]]; then
   setup_launchd
 else
   setup_systemd
 fi
 
-echo ""
-echo "=== Setup complete ==="
-echo "Run './daemon.sh start' to start the daemon."
+# Hand off to interactive setup
+$BUN run "$DAEMON_DIR/setup.ts"

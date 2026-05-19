@@ -7,6 +7,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
       return [
         "claude", "-p", text,
         "--output-format", "stream-json",
+        "--verbose",
         ...(cliSessionId ? ["--resume", cliSessionId] : []),
       ];
     case "cursor":
