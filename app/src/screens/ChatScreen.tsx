@@ -4,9 +4,10 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Animated,
 } from "react-native";
 import Markdown from "react-native-markdown-display";
-let Voice: any = null;
-try { Voice = require("@react-native-voice/voice").default; } catch { /* not available in Expo Go */ }
 import type { DiktatMessage } from "../hooks/useDiktat";
+
+let Voice: any = null;
+try { Voice = require("@react-native-voice/voice").default; } catch { /* unavailable in Expo Go */ }
 
 type Props = {
   messages: DiktatMessage[];
