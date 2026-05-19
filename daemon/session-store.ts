@@ -3,12 +3,6 @@ import { join } from "path";
 
 const SESSIONS_DIR = "./sessions";
 
-export interface Message {
-  role: "user" | "assistant";
-  text: string;
-  timestamp: string;
-}
-
 export interface SessionData {
   id: string;
   cli: string;
@@ -16,7 +10,6 @@ export interface SessionData {
   cliSessionId?: string;
   createdAt: string;
   lastActiveAt: string;
-  messages: Message[];
 }
 
 function ensureSessionsDir() {
