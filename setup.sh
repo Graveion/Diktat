@@ -111,5 +111,18 @@ else
   setup_systemd
 fi
 
+# Install diktat command
+mkdir -p "$HOME/.local/bin"
+ln -sf "$REPO_DIR/diktat" "$HOME/.local/bin/diktat"
+echo "Installed: diktat command → ~/.local/bin/diktat"
+
+# Ensure ~/.local/bin is in PATH hint
+if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
+  echo ""
+  echo "  Add this to your shell profile (~/.zshrc or ~/.bashrc):"
+  echo '  export PATH="$HOME/.local/bin:$PATH"'
+  echo ""
+fi
+
 # Hand off to interactive setup
 $BUN run "$DAEMON_DIR/setup.ts"
