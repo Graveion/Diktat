@@ -1,7 +1,17 @@
-const PORT = 9000;
+import { loadConfig } from "./config";
+import { getTailscaleIP } from "./tailscale";
+
+const config = loadConfig();
+const tailscaleIP = getTailscaleIP();
+
+if (!tailscaleIP) {
+  console.error("No Tailscale interface found. Is Tailscale running?");
+  process.exit(1);
+}
 
 const server = Bun.serve({
-  port: PORT,
+  port: config.port,
+  hostname: tailscaleIP,
   fetch(req, server) {
     if (server.upgrade(req)) return;
     return new Response("Diktat daemon running", { status: 200 });
@@ -21,4 +31,5 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Diktat daemon listening on ws://localhost:${PORT}`);
+console.log(`Diktat daemon listening on ws://${tailscaleIP}:${config.port}`);
+console.log(`Projects: ${config.projects.join(", ") || "none configured"}`);

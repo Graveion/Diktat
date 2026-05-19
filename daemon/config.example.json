@@ -1,0 +1,6 @@
+{
+  "port": 9000,
+  "projects": [
+    "/path/to/your/repo"
+  ]
+}

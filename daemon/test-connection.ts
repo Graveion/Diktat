@@ -1,4 +1,18 @@
-const ws = new WebSocket("ws://localhost:9000");
+import { getTailscaleIP } from "./tailscale";
+
+const tailscaleIP = getTailscaleIP();
+
+if (!tailscaleIP) {
+  console.error("No Tailscale interface found. Is Tailscale running?");
+  process.exit(1);
+}
+
+const port = process.argv[2] ?? "9000";
+const url = `ws://${tailscaleIP}:${port}`;
+
+console.log(`Connecting to ${url}`);
+
+const ws = new WebSocket(url);
 
 ws.onopen = () => {
   console.log("Connected to daemon");
@@ -11,7 +25,7 @@ ws.onmessage = (event) => {
   process.exit(0);
 };
 
-ws.onerror = (err) => {
+ws.onerror = () => {
   console.error("Connection failed - is the daemon running?");
   process.exit(1);
 };
