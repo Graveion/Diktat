@@ -5,7 +5,6 @@ import { Session } from "./session";
 import { listSessions } from "./session-store";
 import { listClaudeSessions, readHistory } from "./claude-sessions";
 import { listCursorSessions, readCursorHistory } from "./cursor-sessions";
-import qrcode from "qrcode-terminal";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -29,14 +28,26 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       console.log("Client connected");
-      ws.send(JSON.stringify({
-        type: "connected",
-        clis: Object.keys(availableCLIs),
-        projects: config.projects,
-        sessions: listSessions(),
-        claudeSessions: listClaudeSessions(),
-        cursorSessions: listCursorSessions(),
-      }));
+      try {
+        ws.send(JSON.stringify({
+          type: "connected",
+          clis: Object.keys(availableCLIs),
+          projects: config.projects,
+          sessions: listSessions(),
+          claudeSessions: listClaudeSessions(),
+          cursorSessions: listCursorSessions(),
+        }));
+      } catch (e) {
+        console.error("Error building connected message:", e);
+        ws.send(JSON.stringify({
+          type: "connected",
+          clis: Object.keys(availableCLIs),
+          projects: config.projects,
+          sessions: [],
+          claudeSessions: [],
+          cursorSessions: [],
+        }));
+      }
     },
     message(ws, data) {
       const msg = JSON.parse(data as string);
@@ -68,14 +79,17 @@ const server = Bun.serve({
         }
         activeSessions.set(session.id, session);
         ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
-        // Load history from the appropriate source
         const historyId = msg.isClaudeSession ? msg.sessionId : session.summary.cliSessionId;
         if (historyId) {
-          const history = msg.isCursorSession
-            ? readCursorHistory(historyId)
-            : readHistory(historyId);
-          if (history.length > 0) {
-            ws.send(JSON.stringify({ type: "history", messages: history }));
+          try {
+            const history = msg.isCursorSession
+              ? readCursorHistory(historyId)
+              : readHistory(historyId);
+            if (history.length > 0) {
+              ws.send(JSON.stringify({ type: "history", messages: history }));
+            }
+          } catch (e) {
+            console.error("Error loading history:", e);
           }
         }
         return;
@@ -97,13 +111,9 @@ const server = Bun.serve({
   },
 });
 
-const connectionUrl = `diktat://${tailscaleIP}:${config.port}`;
-
 console.log(`\n── Diktat daemon ready ──────────────────`);
 console.log(`  CLIs:     ${Object.keys(availableCLIs).join(", ") || "none found"}`);
 console.log(`  Projects: ${config.projects.join(", ") || "none configured"}`);
 console.log(`  Address:  ws://${tailscaleIP}:${config.port}`);
+console.log(`  Run 'diktat qr' to show connection QR`);
 console.log(`─────────────────────────────────────────\n`);
-console.log(`Scan to connect with Diktat app:\n`);
-qrcode.generate(connectionUrl, { small: true });
-console.log(`  ${connectionUrl}\n`);
