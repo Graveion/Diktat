@@ -3,7 +3,6 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, Linking, ScrollView,
 } from "react-native";
-import * as Network from "expo-network";
 import { loadConfig, saveConfig } from "../store/config";
 import { ScanScreen } from "./ScanScreen";
 
@@ -17,24 +16,13 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
   const [port, setPort] = useState("9000");
   const [scanning, setScanning] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
-  const [tailscaleActive, setTailscaleActive] = useState<boolean | null>(null);
 
   useEffect(() => {
     loadConfig().then((c) => {
       if (c.host) setHost(c.host);
       setPort(String(c.port));
     });
-    checkTailscale();
   }, []);
-
-  const checkTailscale = async () => {
-    try {
-      const ip = await Network.getIpAddressAsync();
-      setTailscaleActive(ip.startsWith("100."));
-    } catch {
-      setTailscaleActive(false);
-    }
-  };
 
   const handleConnect = async () => {
     await saveConfig({ host, port: parseInt(port) });
@@ -58,22 +46,16 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
       <Text style={styles.title}>Diktat</Text>
       <Text style={styles.subtitle}>Voice-driven coding assistant</Text>
 
-      {tailscaleActive === false && (
+      {connectionState === "error" && (
         <TouchableOpacity
           style={styles.tailscaleWarning}
           onPress={() => Linking.openURL("tailscale://")}
         >
           <Text style={styles.tailscaleWarningText}>
-            ⚠ Tailscale not detected on this device.{"\n"}
-            <Text style={styles.tailscaleWarningLink}>Tap to open Tailscale →</Text>
+            Connection failed. Check Tailscale is running on both devices.{"\n"}
+            <Text style={styles.tailscaleWarningLink}>Open Tailscale →</Text>
           </Text>
         </TouchableOpacity>
-      )}
-
-      {tailscaleActive === true && (
-        <View style={styles.tailscaleOk}>
-          <Text style={styles.tailscaleOkText}>● Tailscale active</Text>
-        </View>
       )}
 
       <TouchableOpacity style={styles.scanButton} onPress={() => setScanning(true)}>
@@ -113,11 +95,6 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
           }
         </TouchableOpacity>
 
-        {connectionState === "error" && (
-          <Text style={styles.error}>
-            Connection failed. Make sure Tailscale is running on both devices and the daemon is started.
-          </Text>
-        )}
       </View>
 
       <TouchableOpacity onPress={() => setShowSetup(!showSetup)} style={styles.setupToggle}>
@@ -188,8 +165,6 @@ const styles = StyleSheet.create({
   },
   tailscaleWarningText: { color: "#f90", fontSize: 14, lineHeight: 20 },
   tailscaleWarningLink: { textDecorationLine: "underline" },
-  tailscaleOk: { marginBottom: 16 },
-  tailscaleOkText: { color: "#4caf50", fontSize: 14 },
   scanButton: {
     backgroundColor: "#1e1e1e", borderRadius: 10, padding: 16,
     alignItems: "center", marginBottom: 12,
