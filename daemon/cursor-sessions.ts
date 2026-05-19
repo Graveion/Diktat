@@ -25,12 +25,20 @@ function projectLabel(projectPath: string): string {
 
 function readFirstUserMessage(filePath: string): string {
   try {
-    const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
-    for (const line of lines) {
-      const json = JSON.parse(line);
-      if (json.role === "user" || json.type === "user") {
-        return typeof json.content === "string" ? json.content : json.message ?? "";
-      }
+    const buf = Buffer.alloc(4096);
+    const fs = require("fs");
+    const fd = fs.openSync(filePath, "r");
+    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+    fs.closeSync(fd);
+    const chunk = buf.subarray(0, bytesRead).toString("utf-8");
+    for (const line of chunk.split("\n").filter(Boolean)) {
+      try {
+        const json = JSON.parse(line);
+        if (json.role === "user" || json.type === "user") {
+          const text = typeof json.content === "string" ? json.content : json.message ?? "";
+          return text.slice(0, 120);
+        }
+      } catch { /* incomplete line at chunk boundary */ }
     }
     return "";
   } catch {
@@ -69,7 +77,7 @@ export function listCursorSessions(): CursorSession[] {
     // ~/.cursor/projects doesn't exist
   }
 
-  return sessions.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
+  return sessions.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
 }
 
 export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage[] {
