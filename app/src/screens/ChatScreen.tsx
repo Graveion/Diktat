@@ -4,7 +4,8 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Animated,
 } from "react-native";
 import Markdown from "react-native-markdown-display";
-import Voice, { type SpeechResultsEvent, type SpeechErrorEvent } from "@react-native-voice/voice";
+let Voice: any = null;
+try { Voice = require("@react-native-voice/voice").default; } catch { /* not available in Expo Go */ }
 import type { DiktatMessage } from "../hooks/useDiktat";
 
 type Props = {
@@ -70,12 +71,13 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
-    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
+    if (!Voice) return;
+    Voice.onSpeechResults = (e: any) => {
       const text = e.value?.[0] ?? "";
       if (text) setInput(text);
     };
     Voice.onSpeechEnd = () => setListening(false);
-    Voice.onSpeechError = (_e: SpeechErrorEvent) => setListening(false);
+    Voice.onSpeechError = () => setListening(false);
     return () => { Voice.destroy().then(Voice.removeAllListeners); };
   }, []);
 
@@ -86,6 +88,7 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
   }, [messages, streaming]);
 
   const toggleListening = async () => {
+    if (!Voice) return;
     if (listening) {
       await Voice.stop();
       setListening(false);
