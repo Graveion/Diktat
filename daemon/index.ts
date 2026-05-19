@@ -15,7 +15,6 @@ if (!tailscaleIP) {
 }
 
 const availableCLIs = await detectCLIs();
-console.log(`Available CLIs: ${Object.keys(availableCLIs).join(", ") || "none found"}`);
 
 const activeSessions = new Map<string, Session>();
 
@@ -85,8 +84,12 @@ const server = Bun.serve({
 });
 
 const connectionUrl = `diktat://${tailscaleIP}:${config.port}`;
-console.log(`\nDiktat daemon listening on ws://${tailscaleIP}:${config.port}`);
-console.log(`Projects: ${config.projects.join(", ") || "none configured"}`);
-console.log(`\nScan to connect:\n`);
+
+console.log(`\n── Diktat daemon ready ──────────────────`);
+console.log(`  CLIs:     ${Object.keys(availableCLIs).join(", ") || "none found"}`);
+console.log(`  Projects: ${config.projects.join(", ") || "none configured"}`);
+console.log(`  Address:  ws://${tailscaleIP}:${config.port}`);
+console.log(`─────────────────────────────────────────\n`);
+console.log(`Scan to connect with Diktat app:\n`);
 qrcode.generate(connectionUrl, { small: true });
-console.log(`\n${connectionUrl}\n`);
+console.log(`  ${connectionUrl}\n`);
