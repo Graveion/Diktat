@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "fs";
-import { join, homedir } from "path";
+import { join } from "path";
+import { homedir } from "os";
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 

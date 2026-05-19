@@ -47,11 +47,11 @@ export class Session {
     return new Session(ws, data);
   }
 
-  static fromClaudeSession(ws: ServerWebSocket<unknown>, cliSessionId: string): Session {
+  static fromClaudeSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli: "claude",
-      project: process.cwd(),
+      project,
       cliSessionId,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),

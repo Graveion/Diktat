@@ -56,7 +56,7 @@ const server = Bun.serve({
 
       if (msg.type === "resume") {
         const session = msg.isClaudeSession
-          ? Session.fromClaudeSession(ws, msg.sessionId)
+          ? Session.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd())
           : Session.resume(ws, msg.sessionId);
         if (!session) {
           ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));

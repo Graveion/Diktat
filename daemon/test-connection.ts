@@ -4,6 +4,9 @@ import { createInterface } from "readline";
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q: string): Promise<string> => new Promise((resolve) => rl.question(q, resolve));
 
+const exit = (code = 0) => { rl.close(); ws?.close(); process.exit(code); };
+process.on("SIGINT", () => { console.log("\nBye."); exit(0); });
+
 const tailscaleIP = getTailscaleIP();
 if (!tailscaleIP) {
   console.error("No Tailscale interface found.");
@@ -59,7 +62,8 @@ ws.onmessage = async (event) => {
     }
 
     if (sessionId) {
-      ws.send(JSON.stringify({ type: "resume", sessionId, isClaudeSession }));
+      const picked = allSessions.find((s: any) => s.id === sessionId);
+      ws.send(JSON.stringify({ type: "resume", sessionId, isClaudeSession, project: picked?.project }));
     } else {
       console.log("\nAvailable projects:");
       projects.forEach((p: string, i: number) => console.log(`  ${i + 1}. ${p}`));
@@ -100,11 +104,6 @@ let currentSessionId: string | null = null;
 async function promptAndSend(sessionId: string) {
   currentSessionId = sessionId;
   const text = await ask("You: ");
-  if (text.trim().toLowerCase() === "/exit") {
-    console.log("Bye.");
-    rl.close();
-    ws.close();
-    process.exit(0);
-  }
+  if (text.trim().toLowerCase() === "/exit") exit(0);
   ws.send(JSON.stringify({ type: "input", sessionId, text }));
 }
