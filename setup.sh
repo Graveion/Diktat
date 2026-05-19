@@ -6,6 +6,7 @@ DAEMON_DIR="$REPO_DIR/daemon"
 BUN="$HOME/.bun/bin/bun"
 
 setup_launchd() {
+  mkdir -p "$HOME/Library/LaunchAgents"
   local plist="$HOME/Library/LaunchAgents/com.diktat.daemon.plist"
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
