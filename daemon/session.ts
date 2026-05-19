@@ -12,7 +12,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
       ];
     case "cursor":
       return [
-        "agent", "-p", text,
+        "agent", "--trust", "-p", text,
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
       ];
     default:
