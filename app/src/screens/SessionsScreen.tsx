@@ -38,7 +38,7 @@ export function SessionsScreen({ sessions, clis, projects, onResume, onNew, onDi
 
       <FlatList
         data={sessions}
-        keyExtractor={(s) => s.id}
+        keyExtractor={(s) => `${s.source}:${s.id}`}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.session} onPress={() => onResume(item)}>
             <View style={styles.sessionTop}>
