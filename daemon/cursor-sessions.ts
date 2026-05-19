@@ -34,11 +34,17 @@ function readFirstUserMessage(filePath: string): string {
     for (const line of chunk.split("\n").filter(Boolean)) {
       try {
         const json = JSON.parse(line);
-        if (json.role === "user" || json.type === "user") {
-          const raw = json.content ?? json.message ?? json.text ?? "";
-          const text = typeof raw === "string" ? raw
-            : Array.isArray(raw) ? raw.filter((c: any) => c.type === "text").map((c: any) => c.text).join("") : "";
-          if (text) return String(text).slice(0, 120);
+        if (json.role === "user") {
+          const content = json.message?.content ?? json.content ?? [];
+          const text = Array.isArray(content)
+            ? content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
+            : typeof content === "string" ? content : "";
+          if (text) {
+            // Strip Cursor's <timestamp> and <user_query> wrapper tags
+            const clean = text.replace(/<timestamp>[^<]*<\/timestamp>\s*/g, "")
+              .replace(/<user_query>\s*/g, "").replace(/<\/user_query>/g, "").trim();
+            return clean.slice(0, 120);
+          }
         }
       } catch { /* incomplete line at chunk boundary */ }
     }
@@ -95,14 +101,13 @@ export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
-          const role = entry.role ?? entry.type;
+          const role = entry.role;
           if (role !== "user" && role !== "assistant") continue;
 
-          const text = typeof entry.content === "string"
-            ? entry.content
-            : Array.isArray(entry.content)
-              ? entry.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
-              : entry.message ?? "";
+          const content = entry.message?.content ?? entry.content ?? [];
+          const text = Array.isArray(content)
+            ? content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
+            : typeof content === "string" ? content : "";
 
           if (text) messages.push({ role, text });
         } catch {
