@@ -7,7 +7,7 @@ export type DiktatSession = {
   projectLabel?: string;
   firstMessage?: string;
   lastActiveAt: string;
-  source: "daemon" | "claude";
+  source: "daemon" | "claude" | "cursor";
 };
 
 export type DiktatMessage = {
@@ -42,15 +42,23 @@ export function useDiktat(host: string, port: number) {
         setState("connected");
         setClis(msg.clis ?? []);
         setProjects(msg.projects ?? []);
-        const daemonSessions = (msg.sessions ?? []).map((s: any) => ({ ...s, source: "daemon" }));
-        const claudeSessions = (msg.claudeSessions ?? []).map((s: any) => ({ ...s, source: "claude", cli: "claude" }));
-        setSessions([...daemonSessions, ...claudeSessions]);
+        const daemonSessions: any[] = (msg.sessions ?? []).map((s: any) => ({ ...s, source: "daemon" }));
+        const claudeSessions: any[] = (msg.claudeSessions ?? []).map((s: any) => ({ ...s, source: "claude", cli: "claude" }));
+        const cursorSessions: any[] = (msg.cursorSessions ?? []).map((s: any) => ({ ...s, source: "cursor", cli: "cursor" }));
+        // Dedup: drop daemon sessions whose cliSessionId matches a known native session id
+        const nativeIds = new Set([...claudeSessions, ...cursorSessions].map((s) => s.id));
+        const filteredDaemon = daemonSessions.filter((s) => !s.cliSessionId || !nativeIds.has(s.cliSessionId));
+        setSessions([...claudeSessions, ...cursorSessions, ...filteredDaemon]);
       }
 
       if (msg.type === "spawned" || msg.type === "resumed") {
         setActiveSessionId(msg.session.id);
         setMessages([]);
         setStreaming(false);
+      }
+
+      if (msg.type === "history") {
+        setMessages(msg.messages ?? []);
       }
 
       if (msg.type === "output") {
@@ -91,6 +99,7 @@ export function useDiktat(host: string, port: number) {
       type: "resume",
       sessionId: session.id,
       isClaudeSession: session.source === "claude",
+      isCursorSession: session.source === "cursor",
       project: session.project,
     }));
   }, []);

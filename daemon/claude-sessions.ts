@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -31,12 +31,57 @@ function projectLabel(projectPath: string): string {
 
 function readFirstMessage(filePath: string): string {
   try {
-    const firstLine = readFileSync(filePath, "utf-8").split("\n")[0];
-    const json = JSON.parse(firstLine);
-    return json.content ?? json.message ?? "";
+    const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+    for (const line of lines) {
+      const json = JSON.parse(line);
+      if (json.type === "user") return json.message?.content ?? "";
+    }
+    return "";
   } catch {
     return "";
   }
+}
+
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
+  try {
+    const projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+    for (const dir of projectDirs) {
+      const filePath = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+      if (!existsSync(filePath)) continue;
+
+      const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+      const messages: HistoryMessage[] = [];
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type === "user" && typeof entry.message?.content === "string") {
+            messages.push({ role: "user", text: entry.message.content });
+          } else if (entry.type === "assistant") {
+            const content = entry.message?.content;
+            if (!Array.isArray(content)) continue;
+            const text = content
+              .filter((c: any) => c.type === "text")
+              .map((c: any) => c.text)
+              .join("");
+            if (text) messages.push({ role: "assistant", text });
+          }
+        } catch {
+          // skip malformed lines
+        }
+      }
+
+      return messages.slice(-limit);
+    }
+  } catch {
+    // ~/.claude/projects not readable
+  }
+  return [];
 }
 
 export function listClaudeSessions(): ClaudeSession[] {

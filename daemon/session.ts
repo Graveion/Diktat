@@ -12,7 +12,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
       ];
     case "cursor":
       return [
-        "cursor", "agent", "-p", text,
+        "agent", "-p", text,
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
       ];
     default:
@@ -60,6 +60,19 @@ export class Session {
     return new Session(ws, data);
   }
 
+  static fromCursorSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string): Session {
+    const data: SessionData = {
+      id: crypto.randomUUID(),
+      cli: "cursor",
+      project,
+      cliSessionId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+    saveSession(data);
+    return new Session(ws, data);
+  }
+
   get id(): string {
     return this.data.id;
   }
@@ -69,6 +82,7 @@ export class Session {
       id: this.data.id,
       cli: this.data.cli,
       project: this.data.project,
+      cliSessionId: this.data.cliSessionId,
       lastActiveAt: this.data.lastActiveAt,
     };
   }

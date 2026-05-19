@@ -1,6 +1,6 @@
 const KNOWN_CLIS: Record<string, string> = {
   claude: "claude",
-  cursor: "cursor",
+  cursor: "agent",  // Cursor's agent CLI is the standalone 'agent' binary
 };
 
 async function isAvailable(command: string): Promise<boolean> {
