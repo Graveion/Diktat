@@ -45,14 +45,19 @@ do_logs() {
   fi
 }
 
+do_qr() {
+  cd "$DAEMON_DIR" && bun run qr.ts
+}
+
 case "$1" in
   start)   do_start ;;
   stop)    do_stop ;;
   restart) do_stop && sleep 1 && do_start ;;
   status)  do_status ;;
   logs)    do_logs ;;
+  qr)      do_qr ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|logs}"
+    echo "Usage: $0 {start|stop|restart|status|logs|qr}"
     exit 1
     ;;
 esac

@@ -1,19 +1,25 @@
 {
   "expo": {
-    "name": "app",
-    "slug": "app",
+    "name": "Diktat",
+    "slug": "diktat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#111111"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.graveion.diktat",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSpeechRecognitionUsageDescription": "Diktat uses speech recognition to transcribe your voice into coding instructions.",
+        "NSMicrophoneUsageDescription": "Diktat needs microphone access to record your voice instructions."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +31,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b7b6c69b-e870-4470-9944-daef2f579bf6"
+      }
     }
   }
 }

@@ -3,7 +3,8 @@ import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
 import { listSessions } from "./session-store";
-import { listClaudeSessions } from "./claude-sessions";
+import { listClaudeSessions, readHistory } from "./claude-sessions";
+import { listCursorSessions, readCursorHistory } from "./cursor-sessions";
 import qrcode from "qrcode-terminal";
 
 const config = loadConfig();
@@ -34,6 +35,7 @@ const server = Bun.serve({
         projects: config.projects,
         sessions: listSessions(),
         claudeSessions: listClaudeSessions(),
+        cursorSessions: listCursorSessions(),
       }));
     },
     message(ws, data) {
@@ -57,13 +59,25 @@ const server = Bun.serve({
       if (msg.type === "resume") {
         const session = msg.isClaudeSession
           ? Session.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd())
-          : Session.resume(ws, msg.sessionId);
+          : msg.isCursorSession
+            ? Session.fromCursorSession(ws, msg.sessionId, msg.project ?? process.cwd())
+            : Session.resume(ws, msg.sessionId);
         if (!session) {
           ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
           return;
         }
         activeSessions.set(session.id, session);
         ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
+        // Load history from the appropriate source
+        const historyId = msg.isClaudeSession ? msg.sessionId : session.summary.cliSessionId;
+        if (historyId) {
+          const history = msg.isCursorSession
+            ? readCursorHistory(historyId)
+            : readHistory(historyId);
+          if (history.length > 0) {
+            ws.send(JSON.stringify({ type: "history", messages: history }));
+          }
+        }
         return;
       }
 

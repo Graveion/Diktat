@@ -4,6 +4,7 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Animated,
 } from "react-native";
 import Markdown from "react-native-markdown-display";
+import Voice, { type SpeechResultsEvent, type SpeechErrorEvent } from "@react-native-voice/voice";
 import type { DiktatMessage } from "../hooks/useDiktat";
 
 type Props = {
@@ -65,13 +66,35 @@ function MessageBubble({ message }: { message: DiktatMessage }) {
 
 export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }: Props) {
   const [input, setInput] = useState("");
+  const [listening, setListening] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
+      const text = e.value?.[0] ?? "";
+      if (text) setInput(text);
+    };
+    Voice.onSpeechEnd = () => setListening(false);
+    Voice.onSpeechError = (_e: SpeechErrorEvent) => setListening(false);
+    return () => { Voice.destroy().then(Voice.removeAllListeners); };
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     }
   }, [messages, streaming]);
+
+  const toggleListening = async () => {
+    if (listening) {
+      await Voice.stop();
+      setListening(false);
+    } else {
+      setInput("");
+      setListening(true);
+      await Voice.start("en-GB");
+    }
+  };
 
   const handleSend = () => {
     if (!input.trim() || streaming) return;
@@ -127,14 +150,21 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
       />
 
       <View style={styles.inputRow}>
+        <TouchableOpacity
+          style={[styles.micButton, listening && styles.micButtonActive]}
+          onPress={toggleListening}
+          disabled={streaming}
+        >
+          <Text style={styles.micIcon}>{listening ? "⏹" : "🎙"}</Text>
+        </TouchableOpacity>
         <TextInput
-          style={styles.input}
+          style={[styles.input, listening && styles.inputListening]}
           value={input}
           onChangeText={setInput}
-          placeholder="Message..."
-          placeholderTextColor="#555"
+          placeholder={listening ? "Listening..." : "Message..."}
+          placeholderTextColor={listening ? "#4f8ef7" : "#555"}
           multiline
-          editable={!streaming}
+          editable={!streaming && !listening}
           returnKeyType="default"
         />
         <TouchableOpacity
@@ -174,6 +204,14 @@ const styles = StyleSheet.create({
     borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
     fontSize: 16, maxHeight: 120, lineHeight: 22,
   },
+  micButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#1e1e1e", justifyContent: "center",
+    alignItems: "center", marginRight: 8,
+  },
+  micButtonActive: { backgroundColor: "#2a1a1a", borderWidth: 1, borderColor: "#f44" },
+  micIcon: { fontSize: 18 },
+  inputListening: { borderWidth: 1, borderColor: "#4f8ef7" },
   sendButton: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: "#4f8ef7", justifyContent: "center",
