@@ -49,7 +49,7 @@ export function SessionsScreen({ sessions, clis, projects, onResume, onNew, onDi
             </View>
             {item.firstMessage ? (
               <Text style={styles.sessionPreview} numberOfLines={1}>
-                {item.firstMessage}
+                {typeof item.firstMessage === "string" ? item.firstMessage : ""}
               </Text>
             ) : null}
             <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
