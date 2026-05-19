@@ -85,7 +85,9 @@ export function listCursorSessions(): CursorSession[] {
     // ~/.cursor/projects doesn't exist
   }
 
-  return sessions.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
+  const seen = new Set<string>();
+  const unique = sessions.filter((s) => seen.has(s.id) ? false : (seen.add(s.id), true));
+  return unique.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
 }
 
 export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage[] {
