@@ -84,9 +84,13 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
 
   useEffect(() => {
     if (messages.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
     }
-  }, [messages, streaming]);
+  }, [messages.length]);
+
+  const handleContentSizeChange = () => {
+    listRef.current?.scrollToEnd({ animated: false });
+  };
 
   const toggleListening = async () => {
     if (!Voice) return;
@@ -134,6 +138,7 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
         data={data}
         keyExtractor={(_, i) => String(i)}
         contentContainerStyle={styles.messages}
+        onContentSizeChange={handleContentSizeChange}
         renderItem={({ item }) => {
           if (item.role === "typing") {
             return (

@@ -33,7 +33,7 @@ export function useDiktat(host: string, port: number) {
     const socket = new WebSocket(`ws://${host}:${port}`);
     ws.current = socket;
 
-    socket.onopen = () => setState("connecting");
+    socket.onopen = () => setState("connected");
 
     socket.onmessage = (e) => {
       const msg = JSON.parse(e.data);
