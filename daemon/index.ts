@@ -2,6 +2,7 @@ import { loadConfig } from "./config";
 import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
+import { listSessions } from "./session-store";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -14,7 +15,7 @@ if (!tailscaleIP) {
 const availableCLIs = await detectCLIs();
 console.log(`Available CLIs: ${Object.keys(availableCLIs).join(", ") || "none found"}`);
 
-const sessions = new Map<string, Session>();
+const activeSessions = new Map<string, Session>();
 
 const server = Bun.serve({
   port: config.port,
@@ -26,7 +27,12 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       console.log("Client connected");
-      ws.send(JSON.stringify({ type: "connected", clis: Object.keys(availableCLIs), projects: config.projects }));
+      ws.send(JSON.stringify({
+        type: "connected",
+        clis: Object.keys(availableCLIs),
+        projects: config.projects,
+        sessions: listSessions(),
+      }));
     },
     message(ws, data) {
       const msg = JSON.parse(data as string);
@@ -40,16 +46,27 @@ const server = Bun.serve({
           ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
           return;
         }
-        const id = crypto.randomUUID();
-        sessions.set(id, new Session(ws, msg.cli, msg.project));
-        ws.send(JSON.stringify({ type: "spawned", sessionId: id }));
+        const session = Session.create(ws, msg.cli, msg.project);
+        activeSessions.set(session.id, session);
+        ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
+        return;
+      }
+
+      if (msg.type === "resume") {
+        const session = Session.resume(ws, msg.sessionId);
+        if (!session) {
+          ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
+          return;
+        }
+        activeSessions.set(session.id, session);
+        ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
         return;
       }
 
       if (msg.type === "input") {
-        const session = sessions.get(msg.sessionId);
+        const session = activeSessions.get(msg.sessionId);
         if (!session) {
-          ws.send(JSON.stringify({ type: "error", message: `No session: ${msg.sessionId}` }));
+          ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
           return;
         }
         session.send(msg.text);
