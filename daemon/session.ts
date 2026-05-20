@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import { saveSession, loadSession, type SessionData } from "./session-store";
+import { sendPushNotification } from "./push";
 
 function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
   switch (cli) {
@@ -94,7 +95,7 @@ export class Session {
     this.activeProc = null;
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, pushToken?: string): Promise<void> {
     const proc = Bun.spawn(buildArgs(this.data.cli, text, this.data.cliSessionId), {
       cwd: this.data.project,
       stdout: "pipe",
@@ -125,7 +126,13 @@ export class Session {
     this.data.lastActiveAt = new Date().toISOString();
     saveSession(this.data);
 
-    this.ws.send(JSON.stringify({ type: "exit", code: await proc.exited }));
+    const exitCode = await proc.exited;
+    this.ws.send(JSON.stringify({ type: "exit", code: exitCode }));
+
+    if (pushToken && exitCode === 0) {
+      const project = this.data.project.split("/").pop() ?? this.data.project;
+      await sendPushNotification(pushToken, "Diktat", `${this.data.cli} finished on ${project}`);
+    }
   }
 
   private parseClaudeChunk(chunk: string): void {

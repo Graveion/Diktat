@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
+import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
@@ -16,6 +17,11 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
 
   const diktat = useDiktat(host, port);
+  const pushToken = usePushToken();
+
+  useEffect(() => {
+    if (pushToken) diktat.registerPushToken(pushToken);
+  }, [pushToken]);
 
   useEffect(() => {
     loadConfig().then((c) => {
