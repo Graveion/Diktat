@@ -129,9 +129,13 @@ export class Session {
     const exitCode = await proc.exited;
     this.ws.send(JSON.stringify({ type: "exit", code: exitCode }));
 
-    if (pushToken && exitCode === 0) {
+    // Only push if the WebSocket has since closed — if it's still open the app
+    // is in the foreground and already received the exit message directly.
+    const wsStillOpen = (this.ws as any).readyState === 1;
+    if (pushToken && exitCode === 0 && !wsStillOpen) {
       const project = this.data.project.split("/").pop() ?? this.data.project;
-      await sendPushNotification(pushToken, "Diktat", `${this.data.cli} finished on ${project}`);
+      const taskPreview = text.length > 80 ? text.slice(0, 77) + "…" : text;
+      await sendPushNotification(pushToken, `✓ ${project}`, taskPreview);
     }
   }
 
