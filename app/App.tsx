@@ -86,7 +86,7 @@ export default function App() {
       ) : null}
 
       {screen === "debug" ? (
-        <DebugScreen onBack={() => setScreen("connect")} />
+        <DebugScreen onBack={() => setScreen(host ? "sessions" : "connect")} />
       ) : screen === "connect" || !host ? (
         <ConnectScreen
           onConnect={handleConnect}
@@ -103,6 +103,7 @@ export default function App() {
           onResume={handleResume}
           onNew={handleNew}
           onDisconnect={() => { diktat.disconnect(); setScreen("connect"); }}
+          onOpenDebug={() => setScreen("debug")}
         />
       ) : (
         <ChatScreen
