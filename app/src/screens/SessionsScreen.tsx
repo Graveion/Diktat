@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator,
+  Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
 } from "react-native";
 import type { DiktatSession } from "../hooks/useDiktat";
 import { loadHiddenSessions, hideSession } from "../store/config";
@@ -41,6 +41,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [titleTaps, setTitleTaps] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -131,44 +132,132 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
         <Text style={styles.newButtonText}>+ New Session</Text>
       </TouchableOpacity>
 
+      {visibleSessions.length > 0 && (
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search sessions…"
+          placeholderTextColor="#444"
+          autoCapitalize="none"
+        />
+      )}
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#4f8ef7" />
           <Text style={styles.loadingText}>Loading sessions…</Text>
         </View>
-      ) : (
-        <FlatList
-          data={visibleSessions}
-          keyExtractor={(s) => `${s.source}:${s.id}`}
-          renderItem={({ item }) => {
-            const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
-            const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : projectName(item.project));
-            return (
-              <TouchableOpacity
-                style={styles.session}
-                onPress={() => onResume(item)}
-                onLongPress={() => handleLongPress(item)}
-                delayLongPress={500}
-              >
-                <View style={styles.sessionTop}>
-                  <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
-                  <Text style={styles.sessionCli}>{CLI_LABELS[item.cli] ?? item.cli}</Text>
-                </View>
-                {item.firstMessage ? (
-                  <Text style={styles.sessionPreview} numberOfLines={1}>
-                    {typeof item.firstMessage === "string" ? item.firstMessage : ""}
-                  </Text>
-                ) : null}
-                <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
-              </TouchableOpacity>
-            );
-          }}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListEmptyComponent={
-            <Text style={styles.empty}>No sessions yet. Start a new one.</Text>
+      ) : (() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (query) {
+          // Flat filtered list
+          const filtered = visibleSessions.filter((s) =>
+            projectName(s.project).toLowerCase().includes(query) ||
+            (s.firstMessage ?? "").toLowerCase().includes(query)
+          );
+          return (
+            <FlatList
+              data={filtered}
+              keyExtractor={(s) => `${s.source}:${s.id}`}
+              renderItem={({ item }) => {
+                const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
+                const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : projectName(item.project));
+                return (
+                  <TouchableOpacity
+                    style={styles.session}
+                    onPress={() => onResume(item)}
+                    onLongPress={() => handleLongPress(item)}
+                    delayLongPress={500}
+                  >
+                    <View style={styles.sessionTop}>
+                      <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+                      <Text style={styles.sessionCli}>{CLI_LABELS[item.cli] ?? item.cli}</Text>
+                    </View>
+                    {item.firstMessage ? (
+                      <Text style={styles.sessionPreview} numberOfLines={1}>
+                        {typeof item.firstMessage === "string" ? item.firstMessage : ""}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
+                  </TouchableOpacity>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              ListEmptyComponent={
+                <Text style={styles.empty}>No matching sessions.</Text>
+              }
+            />
+          );
+        }
+
+        // Grouped by project, sorted by most-recent session lastActiveAt desc
+        const groupMap = new Map<string, { project: string; sessions: DiktatSession[] }>();
+        for (const s of visibleSessions) {
+          const key = s.project;
+          if (!groupMap.has(key)) groupMap.set(key, { project: key, sessions: [] });
+          groupMap.get(key)!.sessions.push(s);
+        }
+        const groups = Array.from(groupMap.values()).sort((a, b) => {
+          const aLatest = a.sessions.reduce((best, s) => s.lastActiveAt > best ? s.lastActiveAt : best, "");
+          const bLatest = b.sessions.reduce((best, s) => s.lastActiveAt > best ? s.lastActiveAt : best, "");
+          return bLatest.localeCompare(aLatest);
+        });
+
+        type ListItem =
+          | { kind: "header"; project: string }
+          | { kind: "session"; session: DiktatSession };
+
+        const listData: ListItem[] = [];
+        for (const group of groups) {
+          listData.push({ kind: "header", project: group.project });
+          for (const s of group.sessions) {
+            listData.push({ kind: "session", session: s });
           }
-        />
-      )}
+        }
+
+        return (
+          <FlatList
+            data={listData}
+            keyExtractor={(item, i) => item.kind === "header" ? `header:${item.project}` : `${item.session.source}:${item.session.id}`}
+            renderItem={({ item }) => {
+              if (item.kind === "header") {
+                return (
+                  <Text style={styles.groupHeader}>{projectName(item.project)}</Text>
+                );
+              }
+              const { session: s } = item;
+              const nameAmbiguous = (nameCounts.get(projectName(s.project)) ?? 0) > 1;
+              const label = s.projectLabel ?? (nameAmbiguous ? projectContext(s.project) : projectName(s.project));
+              return (
+                <TouchableOpacity
+                  style={styles.session}
+                  onPress={() => onResume(s)}
+                  onLongPress={() => handleLongPress(s)}
+                  delayLongPress={500}
+                >
+                  <View style={styles.sessionTop}>
+                    <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+                    <Text style={styles.sessionCli}>{CLI_LABELS[s.cli] ?? s.cli}</Text>
+                  </View>
+                  {s.firstMessage ? (
+                    <Text style={styles.sessionPreview} numberOfLines={1}>
+                      {typeof s.firstMessage === "string" ? s.firstMessage : ""}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
+                </TouchableOpacity>
+              );
+            }}
+            ItemSeparatorComponent={({ leadingItem }) =>
+              leadingItem?.kind === "header" ? null : <View style={styles.separator} />
+            }
+            ListEmptyComponent={
+              <Text style={styles.empty}>No sessions yet. Start a new one.</Text>
+            }
+          />
+        );
+      })()}
 
       <Modal visible={showPicker} animationType="slide" transparent>
         <View style={pickerStyles.overlay}>
@@ -249,6 +338,28 @@ const styles = StyleSheet.create({
   sessionDate: { color: "#555", fontSize: 12 },
   separator: { height: 1, backgroundColor: "#222" },
   empty: { color: "#555", textAlign: "center", marginTop: 40 },
+  searchInput: {
+    backgroundColor: "#1a1a1a",
+    color: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#222",
+  },
+  groupHeader: {
+    color: "#555",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
 });
 
 const pickerStyles = StyleSheet.create({

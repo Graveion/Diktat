@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, Linking, ScrollView,
 } from "react-native";
-import { loadConfig, saveConfig } from "../store/config";
+import { loadConfig, saveConfig, loadRecentHosts, saveRecentHost, SavedHost } from "../store/config";
 import { ScanScreen } from "./ScanScreen";
 import { APP_VERSION, UPDATE_LABEL } from "../../App";
 
@@ -18,16 +18,20 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
   const [scanning, setScanning] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
+  const [recentHosts, setRecentHosts] = useState<SavedHost[]>([]);
 
   useEffect(() => {
     loadConfig().then((c) => {
       if (c.host) setHost(c.host);
       setPort(String(c.port));
     });
+    loadRecentHosts().then(setRecentHosts);
   }, []);
 
   const handleConnect = async () => {
     await saveConfig({ host, port: parseInt(port) });
+    await saveRecentHost(host, parseInt(port));
+    loadRecentHosts().then(setRecentHosts);
     onConnect(host, parseInt(port));
   };
 
@@ -36,7 +40,15 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
     setHost(scannedHost);
     setPort(String(scannedPort));
     await saveConfig({ host: scannedHost, port: scannedPort });
+    await saveRecentHost(scannedHost, scannedPort);
+    loadRecentHosts().then(setRecentHosts);
     onConnect(scannedHost, scannedPort);
+  };
+
+  const handleRecentHostTap = async (saved: SavedHost) => {
+    await saveRecentHost(saved.host, saved.port);
+    loadRecentHosts().then(setRecentHosts);
+    onConnect(saved.host, saved.port);
   };
 
   if (scanning) {
@@ -51,6 +63,29 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
         <Text style={styles.tagline}>Voice-driven coding assistant</Text>
         <Text style={styles.version}>v{APP_VERSION}  ·  {UPDATE_LABEL}</Text>
       </View>
+
+      {/* Recent hosts */}
+      {recentHosts.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.recentRow}
+          contentContainerStyle={styles.recentRowContent}
+        >
+          {recentHosts.map((saved) => {
+            const lastOctet = saved.host.split(".").pop() ?? saved.host;
+            return (
+              <TouchableOpacity
+                key={saved.host}
+                style={styles.recentChip}
+                onPress={() => handleRecentHostTap(saved)}
+              >
+                <Text style={styles.recentChipText}>·{lastOctet}:{saved.port}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Actions */}
       <View style={styles.actions}>
@@ -177,6 +212,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#333",
     letterSpacing: 0.5,
+  },
+
+  recentRow: {
+    flexGrow: 0,
+    marginBottom: 12,
+  },
+  recentRowContent: {
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  recentChip: {
+    backgroundColor: "#1a1a1a",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  recentChipText: {
+    color: "#4f8ef7",
+    fontSize: 13,
+    fontWeight: "500",
+    fontFamily: "monospace",
   },
 
   actions: {
