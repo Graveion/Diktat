@@ -4,6 +4,7 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Animated,
   Clipboard, ScrollView,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
 import Markdown from "react-native-markdown-display";
@@ -444,6 +445,13 @@ export function ChatScreen({
           }
         />
 
+        {/* Top fade — older messages dissolve upward */}
+        <LinearGradient
+          colors={[colors.bg, "transparent"]}
+          style={styles.fadeTop}
+          pointerEvents="none"
+        />
+
         {/* Scroll-to-bottom button */}
         {!isAtBottom && (
           <TouchableOpacity
@@ -571,6 +579,11 @@ const styles = StyleSheet.create({
   },
   toolIcon: { fontSize: 11 },
   toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12 },
+
+  fadeTop: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 72,
+    pointerEvents: "none",
+  },
 
   scrollToBottom: {
     position: "absolute", bottom: 12, right: 14,
