@@ -1,18 +1,24 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import Markdown from "react-native-markdown-display";
 import type { DiktatMessage } from "../hooks/useDiktat";
 
 let Voice: any = null;
 try { Voice = require("@react-native-voice/voice").default; } catch { /* unavailable in Expo Go */ }
 
+const AUTO_SEND_DELAY_MS = 1500;
+
 type Props = {
   messages: DiktatMessage[];
   streaming: boolean;
+  reconnecting: boolean;
+  activeSessionId: string | null;
   onSend: (text: string) => void;
+  onCancel: (sessionId: string) => void;
   onBack: () => void;
   sessionLabel?: string;
 };
@@ -66,10 +72,28 @@ function MessageBubble({ message }: { message: DiktatMessage }) {
   );
 }
 
-export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }: Props) {
+export function ChatScreen({ messages, streaming, reconnecting, activeSessionId, onSend, onCancel, onBack, sessionLabel }: Props) {
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
+  const [autoSendCountdown, setAutoSendCountdown] = useState<number | null>(null);
   const listRef = useRef<FlatList>(null);
+  const autoSendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSendTick = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevStreaming = useRef(streaming);
+
+  // Completion haptic when streaming ends
+  useEffect(() => {
+    if (prevStreaming.current && !streaming && messages.length > 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    prevStreaming.current = streaming;
+  }, [streaming]);
+
+  const clearAutoSend = useCallback(() => {
+    if (autoSendTimer.current) { clearTimeout(autoSendTimer.current); autoSendTimer.current = null; }
+    if (autoSendTick.current) { clearInterval(autoSendTick.current); autoSendTick.current = null; }
+    setAutoSendCountdown(null);
+  }, []);
 
   useEffect(() => {
     if (!Voice) return;
@@ -77,10 +101,33 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
       const text = e.value?.[0] ?? "";
       if (text) setInput(text);
     };
-    Voice.onSpeechEnd = () => setListening(false);
-    Voice.onSpeechError = () => setListening(false);
-    return () => { Voice.destroy().then(Voice.removeAllListeners); };
-  }, []);
+    Voice.onSpeechEnd = () => {
+      setListening(false);
+      // Auto-send after delay — user can cancel by tapping input or mic
+      let remaining = Math.ceil(AUTO_SEND_DELAY_MS / 1000);
+      setAutoSendCountdown(remaining);
+      autoSendTick.current = setInterval(() => {
+        remaining -= 1;
+        setAutoSendCountdown(remaining > 0 ? remaining : null);
+      }, 1000);
+      autoSendTimer.current = setTimeout(() => {
+        autoSendTick.current && clearInterval(autoSendTick.current);
+        setAutoSendCountdown(null);
+        setInput((current) => {
+          if (current.trim()) {
+            onSend(current.trim());
+            return "";
+          }
+          return current;
+        });
+      }, AUTO_SEND_DELAY_MS);
+    };
+    Voice.onSpeechError = () => { setListening(false); clearAutoSend(); };
+    return () => {
+      clearAutoSend();
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, [clearAutoSend, onSend]);
 
   const prevLengthRef = useRef(0);
   useEffect(() => {
@@ -92,6 +139,7 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
 
   const toggleListening = async () => {
     if (!Voice) return;
+    clearAutoSend();
     if (listening) {
       await Voice.stop();
       setListening(false);
@@ -103,9 +151,15 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
   };
 
   const handleSend = () => {
+    clearAutoSend();
     if (!input.trim() || streaming) return;
     onSend(input.trim());
     setInput("");
+  };
+
+  const handleInputChange = (text: string) => {
+    clearAutoSend();
+    setInput(text);
   };
 
   const data: (DiktatMessage | { role: "typing" })[] = [
@@ -127,9 +181,19 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
           {sessionLabel ?? "Session"}
         </Text>
         <View style={styles.headerRight}>
-          {streaming && <View style={styles.activeIndicator} />}
+          {streaming && activeSessionId ? (
+            <TouchableOpacity onPress={() => onCancel(activeSessionId)} style={styles.cancelButton}>
+              <Text style={styles.cancelText}>Stop</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
+
+      {reconnecting ? (
+        <View style={styles.reconnectingBanner}>
+          <Text style={styles.reconnectingText}>Reconnecting…</Text>
+        </View>
+      ) : null}
 
       <FlatList
         ref={listRef}
@@ -149,9 +213,7 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
           return <MessageBubble message={item as DiktatMessage} />;
         }}
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            Send a message to get started.
-          </Text>
+          <Text style={styles.empty}>Send a message to get started.</Text>
         }
       />
 
@@ -163,16 +225,23 @@ export function ChatScreen({ messages, streaming, onSend, onBack, sessionLabel }
         >
           <Text style={styles.micIcon}>{listening ? "⏹" : "🎙"}</Text>
         </TouchableOpacity>
-        <TextInput
-          style={[styles.input, listening && styles.inputListening]}
-          value={input}
-          onChangeText={setInput}
-          placeholder={listening ? "Listening..." : "Message..."}
-          placeholderTextColor={listening ? "#4f8ef7" : "#555"}
-          multiline
-          editable={!streaming && !listening}
-          returnKeyType="default"
-        />
+        <View style={styles.inputWrap}>
+          <TextInput
+            style={[styles.input, listening && styles.inputListening]}
+            value={input}
+            onChangeText={handleInputChange}
+            placeholder={listening ? "Listening…" : "Message…"}
+            placeholderTextColor={listening ? "#4f8ef7" : "#555"}
+            multiline
+            editable={!streaming && !listening}
+            returnKeyType="default"
+          />
+          {autoSendCountdown !== null ? (
+            <TouchableOpacity style={styles.autoSendCancel} onPress={clearAutoSend}>
+              <Text style={styles.autoSendCancelText}>Sending in {autoSendCountdown}s — tap to cancel</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
         <TouchableOpacity
           style={[styles.sendButton, (!input.trim() || streaming) && styles.sendDisabled]}
           onPress={handleSend}
@@ -195,8 +264,17 @@ const styles = StyleSheet.create({
   backButton: { padding: 4, marginRight: 8 },
   backText: { color: "#4f8ef7", fontSize: 22 },
   headerTitle: { flex: 1, color: "#fff", fontSize: 17, fontWeight: "600" },
-  headerRight: { width: 24, alignItems: "center" },
-  activeIndicator: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#4caf50" },
+  headerRight: { minWidth: 48, alignItems: "flex-end" },
+  cancelButton: {
+    backgroundColor: "#3a1a1a", borderRadius: 6,
+    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "#f44",
+  },
+  cancelText: { color: "#f66", fontSize: 13, fontWeight: "600" },
+  reconnectingBanner: {
+    backgroundColor: "#1a1a2a", paddingVertical: 6, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: "#2a2a3a",
+  },
+  reconnectingText: { color: "#4f8ef7", fontSize: 12, textAlign: "center" },
   messages: { padding: 12, paddingBottom: 4 },
   empty: { color: "#444", textAlign: "center", marginTop: 80, fontSize: 15 },
   inputRow: {
@@ -205,11 +283,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: "#1e1e1e",
     backgroundColor: "#111",
   },
+  inputWrap: { flex: 1 },
   input: {
-    flex: 1, backgroundColor: "#1e1e1e", color: "#fff",
+    backgroundColor: "#1e1e1e", color: "#fff",
     borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
     fontSize: 16, maxHeight: 120, lineHeight: 22,
   },
+  autoSendCancel: {
+    marginTop: 4, paddingHorizontal: 16,
+  },
+  autoSendCancelText: { color: "#4f8ef7", fontSize: 12 },
   micButton: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: "#1e1e1e", justifyContent: "center",

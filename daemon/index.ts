@@ -104,6 +104,15 @@ const server = Bun.serve({
         session.send(msg.text);
         return;
       }
+
+      if (msg.type === "cancel") {
+        const session = activeSessions.get(msg.sessionId);
+        if (session) {
+          session.cancel();
+          ws.send(JSON.stringify({ type: "exit", code: -1 }));
+        }
+        return;
+      }
     },
     close(ws) {
       console.log("Client disconnected");

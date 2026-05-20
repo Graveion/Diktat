@@ -86,8 +86,11 @@ export default function App() {
         <ChatScreen
           messages={diktat.messages}
           streaming={diktat.streaming}
+          reconnecting={diktat.reconnecting}
+          activeSessionId={diktat.activeSessionId}
           onSend={diktat.sendMessage}
-          onBack={() => setScreen("sessions")}
+          onCancel={diktat.cancelMessage}
+          onBack={() => { diktat.leaveSession(); setScreen("sessions"); }}
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
         />
       )}

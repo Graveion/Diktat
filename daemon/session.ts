@@ -24,6 +24,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
 export class Session {
   private ws: ServerWebSocket<unknown>;
   private data: SessionData;
+  private activeProc: ReturnType<typeof Bun.spawn> | null = null;
 
   constructor(ws: ServerWebSocket<unknown>, data: SessionData) {
     this.ws = ws;
@@ -88,12 +89,18 @@ export class Session {
     };
   }
 
+  cancel(): void {
+    this.activeProc?.kill();
+    this.activeProc = null;
+  }
+
   async send(text: string): Promise<void> {
     const proc = Bun.spawn(buildArgs(this.data.cli, text, this.data.cliSessionId), {
       cwd: this.data.project,
       stdout: "pipe",
       stderr: "pipe",
     });
+    this.activeProc = proc;
 
     const streamOutput = async (stream: ReadableStream<Uint8Array>, isStderr: boolean) => {
       const decoder = new TextDecoder();
@@ -113,6 +120,7 @@ export class Session {
     };
 
     await Promise.all([streamOutput(proc.stdout, false), streamOutput(proc.stderr, true)]);
+    this.activeProc = null;
 
     this.data.lastActiveAt = new Date().toISOString();
     saveSession(this.data);
