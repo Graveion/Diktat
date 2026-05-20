@@ -17,6 +17,7 @@ if (!tailscaleIP) {
 const availableCLIs = await detectCLIs();
 
 const activeSessions = new Map<string, Session>();
+const clientPushTokens = new WeakMap<object, string>();
 
 const server = Bun.serve({
   port: config.port,
@@ -101,7 +102,8 @@ const server = Bun.serve({
           ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
           return;
         }
-        session.send(msg.text);
+        const pushToken = clientPushTokens.get(ws as object);
+        session.send(msg.text, pushToken);
         return;
       }
 
@@ -111,6 +113,11 @@ const server = Bun.serve({
           session.cancel();
           ws.send(JSON.stringify({ type: "exit", code: -1 }));
         }
+        return;
+      }
+
+      if (msg.type === "register_push") {
+        if (msg.token) clientPushTokens.set(ws as object, msg.token);
         return;
       }
     },

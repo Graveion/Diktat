@@ -28,6 +28,7 @@ export function useDiktat(host: string, port: number) {
   const discardOutput = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
+  const pushTokenRef = useRef<string | null>(null);
 
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [reconnecting, setReconnecting] = useState(false);
@@ -61,6 +62,9 @@ export function useDiktat(host: string, port: number) {
       reconnectDelay.current = RECONNECT_DELAY_MS;
       setReconnecting(false);
       setState("connected");
+      if (pushTokenRef.current) {
+        socket.send(JSON.stringify({ type: "register_push", token: pushTokenRef.current }));
+      }
     };
 
     socket.onmessage = (e) => {
@@ -174,6 +178,13 @@ export function useDiktat(host: string, port: number) {
     setStreaming(true);
   }, [activeSessionId]);
 
+  const registerPushToken = useCallback((token: string) => {
+    pushTokenRef.current = token;
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: "register_push", token }));
+    }
+  }, []);
+
   const clearError = useCallback(() => setErrorMessage(null), []);
 
   useEffect(() => {
@@ -187,6 +198,7 @@ export function useDiktat(host: string, port: number) {
   return {
     state, reconnecting, errorMessage, clis, projects, sessions, activeSessionId,
     messages, streaming, connect, disconnect,
-    spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage, clearError,
+    spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
+    registerPushToken, clearError,
   };
 }
