@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator,
@@ -15,6 +15,7 @@ type Props = {
   onResume: (session: DiktatSession) => void;
   onNew: (cli: string, project: string) => void;
   onDisconnect: () => void;
+  onOpenDebug?: () => void;
 };
 
 const CLI_LABELS: Record<string, string> = {
@@ -34,11 +35,13 @@ function projectContext(path: string) {
   return parts[parts.length - 1] ?? path;
 }
 
-export function SessionsScreen({ sessions, clis, projects, connectedHost, loading, onResume, onNew, onDisconnect }: Props) {
+export function SessionsScreen({ sessions, clis, projects, connectedHost, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [titleTaps, setTitleTaps] = useState(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadHiddenSessions().then(setHiddenIds);
@@ -100,12 +103,21 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => {
+            const next = titleTaps + 1;
+            setTitleTaps(next);
+            if (tapTimer.current) clearTimeout(tapTimer.current);
+            if (next >= 5) { setTitleTaps(0); onOpenDebug?.(); return; }
+            tapTimer.current = setTimeout(() => setTitleTaps(0), 2000);
+          }}
+        >
           <Text style={styles.title}>Sessions</Text>
           {connectedHost ? (
             <Text style={styles.connectedHost}>{connectedHost}</Text>
           ) : null}
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleDisconnect}>
           <Text style={styles.disconnect}>Disconnect</Text>
         </TouchableOpacity>
