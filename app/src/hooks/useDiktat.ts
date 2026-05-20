@@ -27,12 +27,14 @@ export function useDiktat(host: string, port: number) {
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
 
-  const connect = useCallback(() => {
-    if (!host) return;
+  const connect = useCallback((overrideHost?: string, overridePort?: number) => {
+    const h = overrideHost ?? host;
+    const p = overridePort ?? port;
+    if (!h) return;
     ws.current?.close();
     ws.current = null;
     setState("connecting");
-    const socket = new WebSocket(`ws://${host}:${port}`);
+    const socket = new WebSocket(`ws://${h}:${p}`);
     ws.current = socket;
 
     socket.onopen = () => setState("connected");
