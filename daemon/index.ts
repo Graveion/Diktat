@@ -29,7 +29,7 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
-    const session = Session.create(ws, msg.cli, msg.project);
+    const session = Session.create(ws, msg.cli, msg.project, msg.mode);
     activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;

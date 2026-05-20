@@ -10,6 +10,7 @@ export interface SessionData {
   cliSessionId?: string;
   createdAt: string;
   lastActiveAt: string;
+  mode?: string;
 }
 
 function ensureSessionsDir() {

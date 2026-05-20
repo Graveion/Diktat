@@ -210,9 +210,9 @@ export function useDiktat(host: string, port: number) {
     setStreaming(false);
   }, []);
 
-  const spawnSession = useCallback((cli: string, project: string) => {
-    info("SESSION", `spawn: cli=${cli} project=${project}`);
-    ws.current?.send(JSON.stringify({ type: "spawn", cli, project }));
+  const spawnSession = useCallback((cli: string, project: string, mode?: string) => {
+    info("SESSION", `spawn: cli=${cli} project=${project}${mode ? ` mode=${mode}` : ""}`);
+    ws.current?.send(JSON.stringify({ type: "spawn", cli, project, ...(mode ? { mode } : {}) }));
   }, []);
 
   const resumeSession = useCallback((session: DiktatSession) => {

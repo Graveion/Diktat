@@ -13,7 +13,7 @@ type Props = {
   connectedHost?: string;
   loading: boolean;
   onResume: (session: DiktatSession) => void;
-  onNew: (cli: string, project: string) => void;
+  onNew: (cli: string, project: string, mode?: string) => void;
   onDisconnect: () => void;
   onOpenDebug?: () => void;
 };
@@ -39,6 +39,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [titleTaps, setTitleTaps] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,13 +54,14 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
   const openPicker = () => {
     setSelectedCli(clis[0] ?? null);
     setSelectedProject(projects[0] ?? null);
+    setSelectedMode(null);
     setShowPicker(true);
   };
 
   const handleStart = () => {
     if (selectedCli && selectedProject) {
       setShowPicker(false);
-      onNew(selectedCli, selectedProject);
+      onNew(selectedCli, selectedProject, selectedMode ?? undefined);
     }
   };
 
@@ -271,7 +273,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
                 <TouchableOpacity
                   key={cli}
                   style={[pickerStyles.chip, selectedCli === cli && pickerStyles.chipSelected]}
-                  onPress={() => setSelectedCli(cli)}
+                  onPress={() => { setSelectedCli(cli); if (cli !== "cursor") setSelectedMode(null); }}
                 >
                   <Text style={[pickerStyles.chipText, selectedCli === cli && pickerStyles.chipTextSelected]}>
                     {CLI_LABELS[cli] ?? cli}
@@ -279,6 +281,29 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            {selectedCli === "cursor" ? (
+              <>
+                <Text style={pickerStyles.sectionLabel}>Cursor Mode</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                  {[
+                    { value: null, label: "Agent" },
+                    { value: "plan", label: "Plan" },
+                    { value: "ask", label: "Ask" },
+                  ].map(({ value, label }) => (
+                    <TouchableOpacity
+                      key={label}
+                      style={[pickerStyles.chip, selectedMode === value && pickerStyles.chipSelected]}
+                      onPress={() => setSelectedMode(value)}
+                    >
+                      <Text style={[pickerStyles.chipText, selectedMode === value && pickerStyles.chipTextSelected]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
 
             <Text style={pickerStyles.sectionLabel}>Project</Text>
             <ScrollView style={pickerStyles.projectList} showsVerticalScrollIndicator={false}>

@@ -2,7 +2,7 @@ import type { ServerWebSocket } from "bun";
 import { saveSession, loadSession, type SessionData } from "./session-store";
 import { sendPushNotification } from "./push";
 
-function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
+function buildArgs(cli: string, text: string, cliSessionId?: string, mode?: string): string[] {
   switch (cli) {
     case "claude":
       return [
@@ -17,6 +17,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
         "--output-format", "stream-json",
         "--stream-partial-output",
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
+        ...(mode ? ["--mode", mode] : []),
       ];
     default:
       throw new Error(`Unknown CLI: ${cli}`);
@@ -33,13 +34,14 @@ export class Session {
     this.data = data;
   }
 
-  static create(ws: ServerWebSocket<unknown>, cli: string, project: string): Session {
+  static create(ws: ServerWebSocket<unknown>, cli: string, project: string, mode?: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli,
       project,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
+      ...(mode ? { mode } : {}),
     };
     saveSession(data);
     return new Session(ws, data);
@@ -64,7 +66,7 @@ export class Session {
     return new Session(ws, data);
   }
 
-  static fromCursorSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string): Session {
+  static fromCursorSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, mode?: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli: "cursor",
@@ -72,6 +74,7 @@ export class Session {
       cliSessionId,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
+      ...(mode ? { mode } : {}),
     };
     saveSession(data);
     return new Session(ws, data);
@@ -97,7 +100,7 @@ export class Session {
   }
 
   async send(text: string, pushToken?: string): Promise<void> {
-    const proc = Bun.spawn(buildArgs(this.data.cli, text, this.data.cliSessionId), {
+    const proc = Bun.spawn(buildArgs(this.data.cli, text, this.data.cliSessionId, this.data.mode), {
       cwd: this.data.project,
       stdout: "pipe",
       stderr: "pipe",
