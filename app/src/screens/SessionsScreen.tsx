@@ -3,8 +3,11 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import type { DiktatSession } from "../hooks/useDiktat";
 import { loadHiddenSessions, hideSession } from "../store/config";
+import { colors, fonts } from "../theme";
 
 type Props = {
   sessions: DiktatSession[];
@@ -22,6 +25,44 @@ const CLI_LABELS: Record<string, string> = {
   claude: "Claude Code",
   cursor: "Cursor",
 };
+
+const CLI_COLOR: Record<string, string> = {
+  claude: "#f59e0b",
+  cursor: "#a78bfa",
+};
+
+function SessionCard({ session: s, label, onPress, onLongPress, formatDate }: {
+  session: DiktatSession; label: string;
+  onPress: () => void; onLongPress: () => void;
+  formatDate: (iso: string) => string;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.sessionCard}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={500}
+      activeOpacity={0.7}
+    >
+      <View style={styles.sessionCardInner}>
+        <View style={styles.sessionTop}>
+          <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+          <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
+            <Text style={[styles.cliBadgeText, { color: CLI_COLOR[s.cli] ?? colors.textSub }]}>
+              {CLI_LABELS[s.cli] ?? s.cli}
+            </Text>
+          </View>
+        </View>
+        {s.firstMessage ? (
+          <Text style={styles.sessionPreview} numberOfLines={1}>
+            {typeof s.firstMessage === "string" ? s.firstMessage : ""}
+          </Text>
+        ) : null}
+        <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 function projectName(path: string) {
   const parts = path.split("/").filter(Boolean);
@@ -126,13 +167,21 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        style={[styles.newButton, clis.length === 0 && styles.newButtonDisabled]}
-        onPress={openPicker}
-        disabled={clis.length === 0}
-      >
-        <Text style={styles.newButtonText}>+ New Session</Text>
-      </TouchableOpacity>
+      <View style={styles.newButtonWrap}>
+        <TouchableOpacity
+          style={[styles.newButton, clis.length === 0 && styles.newButtonDisabled]}
+          onPress={openPicker}
+          disabled={clis.length === 0}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={[colors.accent, "#6d28d9"]}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          />
+          <Text style={styles.newButtonText}>+ New Session</Text>
+        </TouchableOpacity>
+      </View>
 
       {visibleSessions.length > 0 && (
         <TextInput
@@ -140,7 +189,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search sessions…"
-          placeholderTextColor="#444"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
         />
       )}
@@ -166,23 +215,13 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
                 const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
                 const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : projectName(item.project));
                 return (
-                  <TouchableOpacity
-                    style={styles.session}
+                  <SessionCard
+                    session={item}
+                    label={label}
                     onPress={() => onResume(item)}
                     onLongPress={() => handleLongPress(item)}
-                    delayLongPress={500}
-                  >
-                    <View style={styles.sessionTop}>
-                      <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
-                      <Text style={styles.sessionCli}>{CLI_LABELS[item.cli] ?? item.cli}</Text>
-                    </View>
-                    {item.firstMessage ? (
-                      <Text style={styles.sessionPreview} numberOfLines={1}>
-                        {typeof item.firstMessage === "string" ? item.firstMessage : ""}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
-                  </TouchableOpacity>
+                    formatDate={formatDate}
+                  />
                 );
               }}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -224,31 +263,19 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
             keyExtractor={(item, i) => item.kind === "header" ? `header:${item.project}` : `${item.session.source}:${item.session.id}`}
             renderItem={({ item }) => {
               if (item.kind === "header") {
-                return (
-                  <Text style={styles.groupHeader}>{projectName(item.project)}</Text>
-                );
+                return <Text style={styles.groupHeader}>{projectName(item.project)}</Text>;
               }
               const { session: s } = item;
               const nameAmbiguous = (nameCounts.get(projectName(s.project)) ?? 0) > 1;
               const label = s.projectLabel ?? (nameAmbiguous ? projectContext(s.project) : projectName(s.project));
               return (
-                <TouchableOpacity
-                  style={styles.session}
+                <SessionCard
+                  session={s}
+                  label={label}
                   onPress={() => onResume(s)}
                   onLongPress={() => handleLongPress(s)}
-                  delayLongPress={500}
-                >
-                  <View style={styles.sessionTop}>
-                    <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
-                    <Text style={styles.sessionCli}>{CLI_LABELS[s.cli] ?? s.cli}</Text>
-                  </View>
-                  {s.firstMessage ? (
-                    <Text style={styles.sessionPreview} numberOfLines={1}>
-                      {typeof s.firstMessage === "string" ? s.firstMessage : ""}
-                    </Text>
-                  ) : null}
-                  <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
-                </TouchableOpacity>
+                  formatDate={formatDate}
+                />
               );
             }}
             ItemSeparatorComponent={({ leadingItem }) =>
@@ -339,86 +366,110 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#111" },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    padding: 20, paddingTop: 60,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end",
+    paddingHorizontal: 20, paddingTop: 64, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
-  title: { fontSize: 28, fontWeight: "bold", color: "#fff" },
-  connectedHost: { fontSize: 12, color: "#4f8ef7", marginTop: 2 },
-  disconnect: { color: "#888", fontSize: 14 },
+  title: { fontFamily: fonts.display, fontSize: 30, color: colors.text, letterSpacing: -0.5 },
+  connectedHost: { fontFamily: fonts.body, fontSize: 11, color: colors.accent, marginTop: 2 },
+  disconnect: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, paddingBottom: 4 },
+
+  newButtonWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   newButton: {
-    margin: 16, backgroundColor: "#4f8ef7", borderRadius: 8,
-    padding: 14, alignItems: "center",
+    borderRadius: 12, padding: 15, alignItems: "center",
+    overflow: "hidden",
   },
-  newButtonDisabled: { opacity: 0.4 },
-  newButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  loadingText: { color: "#555", fontSize: 14 },
-  session: { padding: 16 },
-  sessionTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  sessionProject: { color: "#fff", fontSize: 16, fontWeight: "600", flex: 1 },
-  sessionCli: { color: "#4f8ef7", fontSize: 12, marginLeft: 8 },
-  sessionPreview: { color: "#888", fontSize: 14, marginBottom: 4 },
-  sessionDate: { color: "#555", fontSize: 12 },
-  separator: { height: 1, backgroundColor: "#222" },
-  empty: { color: "#555", textAlign: "center", marginTop: 40 },
+  newButtonDisabled: { opacity: 0.35 },
+  newButtonText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 15 },
+
   searchInput: {
-    backgroundColor: "#1a1a1a",
-    color: "#fff",
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#222",
+    fontFamily: fonts.body,
+    backgroundColor: colors.card,
+    color: colors.text,
+    borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 11,
+    fontSize: 14,
+    marginHorizontal: 16, marginBottom: 4,
+    borderWidth: 1, borderColor: colors.border,
   },
+
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingText: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 14 },
+
+  sessionCard: { marginHorizontal: 12, marginVertical: 3 },
+  sessionCardInner: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sessionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
+  sessionProject: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15, flex: 1, marginRight: 8 },
+  cliBadge: {
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 6, borderWidth: 1,
+  },
+  cliBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 },
+  sessionPreview: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, marginBottom: 6, lineHeight: 18 },
+  sessionDate: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
+
+  separator: { height: 0 },
+  empty: { fontFamily: fonts.body, color: colors.textMuted, textAlign: "center", marginTop: 48, fontSize: 14 },
   groupHeader: {
-    color: "#555",
-    fontSize: 11,
-    fontWeight: "600",
+    fontFamily: fonts.bodyMedium,
+    color: colors.textMuted,
+    fontSize: 10,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 4,
+    paddingTop: 18,
+    paddingBottom: 6,
   },
 });
 
 const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: "#1a1a1a", borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: 20, paddingBottom: 20, maxHeight: "80%",
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingBottom: 24, maxHeight: "85%",
+    borderTopWidth: 1, borderColor: colors.border,
   },
   handle: {
-    width: 36, height: 4, backgroundColor: "#444", borderRadius: 2,
-    alignSelf: "center", marginTop: 12, marginBottom: 20,
+    width: 32, height: 3, backgroundColor: colors.border, borderRadius: 2,
+    alignSelf: "center", marginTop: 12, marginBottom: 22,
   },
-  title: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 20 },
-  sectionLabel: { color: "#888", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 },
+  title: { fontFamily: fonts.display, color: colors.text, fontSize: 22, marginBottom: 22, letterSpacing: -0.3 },
+  sectionLabel: {
+    fontFamily: fonts.bodyMedium, color: colors.textMuted, fontSize: 10,
+    textTransform: "uppercase", letterSpacing: 1, marginBottom: 10,
+  },
   chipRow: { flexGrow: 0, marginBottom: 20 },
   chip: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: "#2a2a2a", marginRight: 8, borderWidth: 1, borderColor: "#333",
+    backgroundColor: colors.input, marginRight: 8, borderWidth: 1, borderColor: colors.border,
   },
-  chipSelected: { backgroundColor: "#1a2a4a", borderColor: "#4f8ef7" },
-  chipText: { color: "#888", fontSize: 14, fontWeight: "500" },
-  chipTextSelected: { color: "#4f8ef7" },
+  chipSelected: { backgroundColor: colors.accentFaint, borderColor: colors.accent },
+  chipText: { fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 14 },
+  chipTextSelected: { color: colors.accent },
   projectList: { maxHeight: 220, marginBottom: 20 },
   projectItem: {
-    padding: 12, borderRadius: 8, backgroundColor: "#222", marginBottom: 8,
+    padding: 12, borderRadius: 10, backgroundColor: colors.input, marginBottom: 6,
     borderWidth: 1, borderColor: "transparent",
   },
-  projectItemSelected: { borderColor: "#4f8ef7", backgroundColor: "#1a2a4a" },
-  projectName: { color: "#fff", fontSize: 15, fontWeight: "600", marginBottom: 2 },
-  projectPath: { color: "#555", fontSize: 12 },
+  projectItemSelected: { borderColor: colors.accent, backgroundColor: colors.accentFaint },
+  projectName: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15, marginBottom: 2 },
+  projectPath: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
   actions: { flexDirection: "row", gap: 10 },
-  cancelButton: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: "#2a2a2a", alignItems: "center" },
-  cancelText: { color: "#888", fontSize: 16 },
-  startButton: { flex: 2, padding: 14, borderRadius: 8, backgroundColor: "#4f8ef7", alignItems: "center" },
-  startButtonDisabled: { opacity: 0.4 },
-  startText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  cancelButton: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: colors.input, alignItems: "center" },
+  cancelText: { fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 15 },
+  startButton: {
+    flex: 2, padding: 14, borderRadius: 10,
+    backgroundColor: colors.accent, alignItems: "center", overflow: "hidden",
+  },
+  startButtonDisabled: { opacity: 0.35 },
+  startText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 15 },
 });
