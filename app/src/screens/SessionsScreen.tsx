@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Modal, ScrollView, SafeAreaView,
+  Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator,
 } from "react-native";
 import type { DiktatSession } from "../hooks/useDiktat";
+import { loadHiddenSessions, hideSession } from "../store/config";
 
 type Props = {
   sessions: DiktatSession[];
   clis: string[];
   projects: string[];
   connectedHost?: string;
+  loading: boolean;
   onResume: (session: DiktatSession) => void;
   onNew: (cli: string, project: string) => void;
   onDisconnect: () => void;
@@ -20,10 +22,29 @@ const CLI_LABELS: Record<string, string> = {
   cursor: "Cursor",
 };
 
-export function SessionsScreen({ sessions, clis, projects, connectedHost, onResume, onNew, onDisconnect }: Props) {
+function projectName(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function projectContext(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  // Show parent/name if parent exists
+  if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  return parts[parts.length - 1] ?? path;
+}
+
+export function SessionsScreen({ sessions, clis, projects, connectedHost, loading, onResume, onNew, onDisconnect }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadHiddenSessions().then(setHiddenIds);
+  }, []);
+
+  const visibleSessions = sessions.filter((s) => !hiddenIds.has(s.id));
 
   const openPicker = () => {
     setSelectedCli(clis[0] ?? null);
@@ -38,13 +59,43 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, onResu
     }
   };
 
+  const handleDisconnect = () => {
+    Alert.alert("Disconnect", "Disconnect from the daemon?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Disconnect", style: "destructive", onPress: onDisconnect },
+    ]);
+  };
+
+  const handleLongPress = (session: DiktatSession) => {
+    Alert.alert(
+      projectContext(session.project),
+      "Hide this session from the list?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Hide",
+          style: "destructive",
+          onPress: async () => {
+            await hideSession(session.id);
+            setHiddenIds((prev) => new Set([...prev, session.id]));
+          },
+        },
+      ]
+    );
+  };
+
   const formatDate = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
       " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   };
 
-  const projectName = (path: string) => path.split("/").pop() ?? path;
+  // Detect duplicate project names to know when to show extra context
+  const nameCounts = new Map<string, number>();
+  sessions.forEach((s) => {
+    const n = projectName(s.project);
+    nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1);
+  });
 
   return (
     <View style={styles.container}>
@@ -55,7 +106,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, onResu
             <Text style={styles.connectedHost}>{connectedHost}</Text>
           ) : null}
         </View>
-        <TouchableOpacity onPress={onDisconnect}>
+        <TouchableOpacity onPress={handleDisconnect}>
           <Text style={styles.disconnect}>Disconnect</Text>
         </TouchableOpacity>
       </View>
@@ -68,30 +119,44 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, onResu
         <Text style={styles.newButtonText}>+ New Session</Text>
       </TouchableOpacity>
 
-      <FlatList
-        data={sessions}
-        keyExtractor={(s) => `${s.source}:${s.id}`}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.session} onPress={() => onResume(item)}>
-            <View style={styles.sessionTop}>
-              <Text style={styles.sessionProject} numberOfLines={1}>
-                {item.projectLabel ?? projectName(item.project)}
-              </Text>
-              <Text style={styles.sessionCli}>{CLI_LABELS[item.cli] ?? item.cli}</Text>
-            </View>
-            {item.firstMessage ? (
-              <Text style={styles.sessionPreview} numberOfLines={1}>
-                {typeof item.firstMessage === "string" ? item.firstMessage : ""}
-              </Text>
-            ) : null}
-            <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
-          </TouchableOpacity>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No sessions yet. Start a new one.</Text>
-        }
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#4f8ef7" />
+          <Text style={styles.loadingText}>Loading sessions…</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={visibleSessions}
+          keyExtractor={(s) => `${s.source}:${s.id}`}
+          renderItem={({ item }) => {
+            const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
+            const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : projectName(item.project));
+            return (
+              <TouchableOpacity
+                style={styles.session}
+                onPress={() => onResume(item)}
+                onLongPress={() => handleLongPress(item)}
+                delayLongPress={500}
+              >
+                <View style={styles.sessionTop}>
+                  <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+                  <Text style={styles.sessionCli}>{CLI_LABELS[item.cli] ?? item.cli}</Text>
+                </View>
+                {item.firstMessage ? (
+                  <Text style={styles.sessionPreview} numberOfLines={1}>
+                    {typeof item.firstMessage === "string" ? item.firstMessage : ""}
+                  </Text>
+                ) : null}
+                <Text style={styles.sessionDate}>{formatDate(item.lastActiveAt)}</Text>
+              </TouchableOpacity>
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No sessions yet. Start a new one.</Text>
+          }
+        />
+      )}
 
       <Modal visible={showPicker} animationType="slide" transparent>
         <View style={pickerStyles.overlay}>
@@ -162,6 +227,8 @@ const styles = StyleSheet.create({
   },
   newButtonDisabled: { opacity: 0.4 },
   newButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingText: { color: "#555", fontSize: 14 },
   session: { padding: 16 },
   sessionTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
   sessionProject: { color: "#fff", fontSize: 16, fontWeight: "600", flex: 1 },
@@ -173,10 +240,7 @@ const styles = StyleSheet.create({
 });
 
 const pickerStyles = StyleSheet.create({
-  overlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: "#1a1a1a", borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingHorizontal: 20, paddingBottom: 20, maxHeight: "80%",
@@ -204,13 +268,9 @@ const pickerStyles = StyleSheet.create({
   projectName: { color: "#fff", fontSize: 15, fontWeight: "600", marginBottom: 2 },
   projectPath: { color: "#555", fontSize: 12 },
   actions: { flexDirection: "row", gap: 10 },
-  cancelButton: {
-    flex: 1, padding: 14, borderRadius: 8, backgroundColor: "#2a2a2a", alignItems: "center",
-  },
+  cancelButton: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: "#2a2a2a", alignItems: "center" },
   cancelText: { color: "#888", fontSize: 16 },
-  startButton: {
-    flex: 2, padding: 14, borderRadius: 8, backgroundColor: "#4f8ef7", alignItems: "center",
-  },
+  startButton: { flex: 2, padding: 14, borderRadius: 8, backgroundColor: "#4f8ef7", alignItems: "center" },
   startButtonDisabled: { opacity: 0.4 },
   startText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

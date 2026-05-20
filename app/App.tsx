@@ -84,6 +84,7 @@ export default function App() {
           clis={diktat.clis}
           projects={diktat.projects}
           connectedHost={host}
+          loading={diktat.state === "connecting"}
           onResume={handleResume}
           onNew={handleNew}
           onDisconnect={() => { diktat.disconnect(); setScreen("connect"); }}
@@ -92,6 +93,7 @@ export default function App() {
         <ChatScreen
           messages={diktat.messages}
           streaming={diktat.streaming}
+          currentTool={diktat.currentTool}
           reconnecting={diktat.reconnecting}
           activeSessionId={diktat.activeSessionId}
           onSend={diktat.sendMessage}
@@ -106,8 +108,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   errorBanner: {
-    position: "absolute", top: 0, left: 0, right: 0, zIndex: 100,
-    backgroundColor: "#5a1a1a", paddingTop: 52, paddingBottom: 12,
+    backgroundColor: "#5a1a1a", paddingTop: 56, paddingBottom: 12,
     paddingHorizontal: 16, flexDirection: "row", alignItems: "center",
   },
   errorText: { flex: 1, color: "#ffaaaa", fontSize: 14, lineHeight: 20 },
