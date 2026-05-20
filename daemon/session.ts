@@ -170,18 +170,19 @@ export class Session {
           this.data.cliSessionId = json.session_id;
           saveSession(this.data);
         }
-        // Stream assistant text — skip duplicates per docs (present model_call_id = duplicate)
-        if (json.type === "assistant") {
+        // Stream assistant content — skip duplicates (model_call_id present = duplicate per Cursor docs)
+        if (json.type === "assistant" && !json.model_call_id) {
           const content = json.message?.content ?? [];
           for (const block of content) {
-            if (block.type === "text" && block.text && !json.model_call_id) {
-              this.ws.send(JSON.stringify({ type: "output", text: block.text }));
+            if (block.type === "tool_use") {
+              // Emit tool name so the app can show "Reading files…" etc.
+              this.ws.send(JSON.stringify({ type: "tool_use", name: block.name }));
+            } else if (block.type === "text" && block.text) {
+              // Cursor redacts tool result content as "[redacted]" — strip it before streaming
+              const text = block.text.replace(/\[redacted\]/gi, "").trim();
+              if (text) this.ws.send(JSON.stringify({ type: "output", text: block.text }));
             }
           }
-        }
-        // Final result event
-        if (json.type === "result" && json.result) {
-          // result is already streamed via assistant events — just ensure session_id saved
         }
       } catch {
         // non-JSON stderr etc, ignore
