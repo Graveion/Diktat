@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
@@ -14,6 +15,17 @@ import { info } from "./src/utils/logger";
 type Screen = "connect" | "sessions" | "chat" | "debug";
 
 export const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+
+// Shows which OTA update is running: "dev" in Expo Go, a short hash in production
+export const UPDATE_LABEL: string = (() => {
+  if (__DEV__) return "dev";
+  const id = Updates.updateId;         // UUID of the currently-running OTA update
+  const at = Updates.createdAt;        // Date it was published
+  if (!id) return "embedded";
+  const short = id.slice(0, 8);
+  const time = at ? at.toISOString().slice(0, 16).replace("T", " ") : "";
+  return `${short}${time ? " · " + time : ""}`;
+})();
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("connect");
