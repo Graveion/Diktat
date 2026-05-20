@@ -13,18 +13,28 @@ try { Voice = require("@react-native-voice/voice").default; } catch { /* unavail
 const AUTO_SEND_DELAY_MS = 1500;
 
 const TOOL_LABELS: Record<string, string> = {
-  Read: "Reading files",
-  Write: "Writing files",
-  Edit: "Editing files",
-  MultiEdit: "Editing files",
+  Read: "Reading",
+  Write: "Writing",
+  Edit: "Editing",
+  MultiEdit: "Editing",
   Bash: "Running commands",
-  Grep: "Searching files",
-  Glob: "Searching files",
+  Grep: "Searching",
+  Glob: "Searching",
   WebSearch: "Searching the web",
-  WebFetch: "Fetching page",
+  WebFetch: "Fetching",
   TodoWrite: "Updating plan",
   Task: "Running sub-agent",
 };
+
+// currentTool is stored as "ToolName" or "ToolName:filename"
+function formatToolLabel(tool: string): string {
+  const colon = tool.indexOf(":");
+  if (colon === -1) return TOOL_LABELS[tool] ?? tool;
+  const name = tool.slice(0, colon);
+  const file = tool.slice(colon + 1);
+  const verb = TOOL_LABELS[name] ?? name;
+  return `${verb} ${file}`;
+}
 
 type Props = {
   messages: DiktatMessage[];
@@ -67,7 +77,7 @@ function TypingIndicator() {
 
 function MessageBubble({ message }: { message: DiktatMessage }) {
   if (message.role === "tool") {
-    const label = TOOL_LABELS[message.toolName ?? ""] ?? (message.toolName ?? "Tool");
+    const label = formatToolLabel(message.toolName ?? "Tool");
     return (
       <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
         <View style={styles.toolBubble}>
@@ -237,7 +247,7 @@ export function ChatScreen({ messages, streaming, currentTool, reconnecting, act
             );
           }
           if (item.role === "tool") {
-            const label = TOOL_LABELS[(item as any).name] ?? (item as any).name;
+                    const label = formatToolLabel((item as any).name ?? "");
             return (
               <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
                 <View style={styles.toolBubble}>

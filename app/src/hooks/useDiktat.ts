@@ -112,8 +112,14 @@ export function useDiktat(host: string, port: number) {
       }
 
       if (msg.type === "tool_use") {
-        if (!discardOutput.current) setCurrentTool(msg.name ?? null);
-        info("MSG", `tool_use: ${msg.name}`);
+        if (!discardOutput.current) {
+          // Include the filename when available: "Read:src/auth.ts"
+          const toolStr = msg.path
+            ? `${msg.name}:${(msg.path as string).split("/").pop() ?? msg.path}`
+            : (msg.name ?? null);
+          setCurrentTool(toolStr);
+        }
+        info("MSG", `tool_use: ${msg.name}${msg.path ? ` (${msg.path})` : ""}`);
         return;
       }
 

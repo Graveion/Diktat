@@ -15,6 +15,7 @@ function buildArgs(cli: string, text: string, cliSessionId?: string): string[] {
       return [
         "agent", "--trust", "-p", text,
         "--output-format", "stream-json",
+        "--stream-partial-output",
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
       ];
     default:
@@ -170,19 +171,29 @@ export class Session {
           this.data.cliSessionId = json.session_id;
           saveSession(this.data);
         }
-        // Stream assistant content — skip duplicates (model_call_id present = duplicate per Cursor docs)
-        if (json.type === "assistant" && !json.model_call_id) {
+        // Streaming text deltas: timestamp_ms present + no model_call_id = incremental delta
+        if (json.type === "assistant" && json.timestamp_ms && !json.model_call_id) {
           const content = json.message?.content ?? [];
           for (const block of content) {
-            if (block.type === "tool_use") {
-              // Emit tool name so the app can show "Reading files…" etc.
-              this.ws.send(JSON.stringify({ type: "tool_use", name: block.name }));
-            } else if (block.type === "text" && block.text) {
-              // Cursor redacts tool result content as "[redacted]" — strip it before streaming
+            if (block.type === "text" && block.text) {
               const text = block.text.replace(/\[redacted\]/gi, "").trim();
               if (text) this.ws.send(JSON.stringify({ type: "output", text: block.text }));
             }
           }
+        }
+
+        // Dedicated tool_call events give us the tool type and file path
+        if (json.type === "tool_call" && json.subtype === "started") {
+          const tc = json.tool_call ?? {};
+          let name = "Tool";
+          let path: string | undefined;
+          if (tc.readToolCall)        { name = "Read";  path = tc.readToolCall.args?.path; }
+          else if (tc.writeToolCall)  { name = "Write"; path = tc.writeToolCall.args?.path; }
+          else if (tc.editToolCall)   { name = "Edit";  path = tc.editToolCall.args?.path; }
+          else if (tc.bashToolCall)   { name = "Bash"; }
+          else if (tc.searchToolCall) { name = "Grep"; }
+          else if (tc.webToolCall)    { name = "WebFetch"; }
+          this.ws.send(JSON.stringify({ type: "tool_use", name, ...(path ? { path } : {}) }));
         }
       } catch {
         // non-JSON stderr etc, ignore
