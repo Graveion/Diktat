@@ -17,9 +17,19 @@ export type DiktatMessage = {
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
+const RECONNECT_DELAY_MS = 5000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+
 export function useDiktat(host: string, port: number) {
   const ws = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelay = useRef(RECONNECT_DELAY_MS);
+  const intentionalDisconnect = useRef(false);
+  const lastHost = useRef(host);
+  const lastPort = useRef(port);
+
   const [state, setState] = useState<ConnectionState>("disconnected");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clis, setClis] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [sessions, setSessions] = useState<DiktatSession[]>([]);
@@ -28,19 +38,31 @@ export function useDiktat(host: string, port: number) {
   const [streaming, setStreaming] = useState(false);
 
   const connect = useCallback((overrideHost?: string, overridePort?: number) => {
-    const h = overrideHost ?? host;
-    const p = overridePort ?? port;
+    const h = overrideHost ?? lastHost.current;
+    const p = overridePort ?? lastPort.current;
     if (!h) return;
+    if (overrideHost) lastHost.current = overrideHost;
+    if (overridePort) lastPort.current = overridePort;
+
+    intentionalDisconnect.current = false;
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+
     ws.current?.close();
     ws.current = null;
     setState("connecting");
+    setErrorMessage(null);
     const socket = new WebSocket(`ws://${h}:${p}`);
     ws.current = socket;
 
-    socket.onopen = () => setState("connected");
+    socket.onopen = () => {
+      if (ws.current !== socket) return;
+      reconnectDelay.current = RECONNECT_DELAY_MS;
+      setState("connected");
+    };
 
     socket.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+      let msg: any;
+      try { msg = JSON.parse(e.data); } catch { return; }
 
       if (msg.type === "connected") {
         setState("connected");
@@ -49,7 +71,6 @@ export function useDiktat(host: string, port: number) {
         const daemonSessions: any[] = (msg.sessions ?? []).map((s: any) => ({ ...s, source: "daemon" }));
         const claudeSessions: any[] = (msg.claudeSessions ?? []).map((s: any) => ({ ...s, source: "claude", cli: "claude" }));
         const cursorSessions: any[] = (msg.cursorSessions ?? []).map((s: any) => ({ ...s, source: "cursor", cli: "cursor" }));
-        // Dedup: drop daemon sessions whose cliSessionId matches a known native session id
         const nativeIds = new Set([...claudeSessions, ...cursorSessions].map((s) => s.id));
         const filteredDaemon = daemonSessions.filter((s) => !s.cliSessionId || !nativeIds.has(s.cliSessionId));
         setSessions([...claudeSessions, ...cursorSessions, ...filteredDaemon]);
@@ -81,17 +102,36 @@ export function useDiktat(host: string, port: number) {
       }
 
       if (msg.type === "error") {
-        console.error("Daemon error:", msg.message);
+        setErrorMessage(msg.message ?? "An error occurred");
       }
     };
 
-    socket.onerror = () => { if (ws.current === socket) setState("error"); };
-    socket.onclose = () => { if (ws.current === socket) setState("disconnected"); };
-  }, [host, port]);
+    socket.onerror = () => {
+      if (ws.current !== socket) return;
+      setState("error");
+      setErrorMessage("Could not reach daemon. Check Tailscale is running.");
+    };
+
+    socket.onclose = () => {
+      if (ws.current !== socket) return;
+      if (intentionalDisconnect.current) {
+        setState("disconnected");
+        return;
+      }
+      setState("disconnected");
+      // Auto-reconnect with backoff
+      const delay = reconnectDelay.current;
+      reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS);
+      reconnectTimer.current = setTimeout(() => connect(), delay);
+    };
+  }, []);
 
   const disconnect = useCallback(() => {
+    intentionalDisconnect.current = true;
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
     ws.current?.close();
     setState("disconnected");
+    setErrorMessage(null);
   }, []);
 
   const spawnSession = useCallback((cli: string, project: string) => {
@@ -115,13 +155,19 @@ export function useDiktat(host: string, port: number) {
     setStreaming(true);
   }, [activeSessionId]);
 
+  const clearError = useCallback(() => setErrorMessage(null), []);
+
   useEffect(() => {
-    return () => ws.current?.close();
+    return () => {
+      intentionalDisconnect.current = true;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      ws.current?.close();
+    };
   }, []);
 
   return {
-    state, clis, projects, sessions, activeSessionId,
+    state, errorMessage, clis, projects, sessions, activeSessionId,
     messages, streaming, connect, disconnect,
-    spawnSession, resumeSession, sendMessage,
+    spawnSession, resumeSession, sendMessage, clearError,
   };
 }
