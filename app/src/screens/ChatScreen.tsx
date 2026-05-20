@@ -10,6 +10,7 @@ import Markdown from "react-native-markdown-display";
 import SyntaxHighlighter from "react-native-syntax-highlighter";
 import { atomOneDark } from "react-syntax-highlighter/styles/hljs";
 import type { DiktatMessage } from "../hooks/useDiktat";
+import { colors, fonts } from "../theme";
 
 let Voice: any = null;
 try { Voice = require("@react-native-voice/voice").default; } catch { /* unavailable in Expo Go */ }
@@ -533,148 +534,156 @@ export function ChatScreen({
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f0f" },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
-  backButton: { padding: 4, marginRight: 8 },
-  backText: { color: "#4f8ef7", fontSize: 22 },
-  headerTitle: { flex: 1, color: "#fff", fontSize: 16, fontWeight: "500" },
+  backButton: { padding: 4, marginRight: 10 },
+  backText: { color: colors.accent, fontSize: 22 },
+  headerTitle: { flex: 1, fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15 },
   headerRight: { minWidth: 48, alignItems: "flex-end" },
   cancelButton: {
-    backgroundColor: "#2a0a0a", borderRadius: 6,
-    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "#833",
+    backgroundColor: colors.accentFaint, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: colors.accentDim,
   },
-  cancelText: { color: "#f66", fontSize: 13, fontWeight: "600" },
+  cancelText: { fontFamily: fonts.bodyMedium, color: colors.error, fontSize: 12 },
   reconnectingBanner: {
-    backgroundColor: "#0d1220", paddingVertical: 5, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: "#1a2a3a",
+    backgroundColor: colors.accentFaint, paddingVertical: 5, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  reconnectingText: { color: "#4f8ef7", fontSize: 11, textAlign: "center" },
-  messages: { padding: 16, paddingBottom: 8 },
-  emptyContainer: { alignItems: "center", marginTop: 80, paddingHorizontal: 40 },
-  emptyTitle: { color: "#444", fontSize: 15, fontWeight: "600", marginBottom: 8 },
-  emptyHint: { color: "#2a2a2a", fontSize: 14, textAlign: "center", lineHeight: 20 },
+  reconnectingText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11, textAlign: "center" },
+  messages: { padding: 14, paddingBottom: 8 },
+  emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
+  emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textMuted, fontSize: 15, marginBottom: 8 },
+  emptyHint: { fontFamily: fonts.body, color: colors.textFaint, fontSize: 13, textAlign: "center", lineHeight: 20 },
 
   typingBubble: { paddingHorizontal: 12, paddingVertical: 10 },
 
   toolBubble: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "#0d1520", borderRadius: 8,
+    backgroundColor: colors.accentFaint, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 6,
-    borderWidth: 1, borderColor: "#1a2a40",
+    borderWidth: 1, borderColor: colors.accentDim,
+    alignSelf: "flex-start",
   },
-  toolIcon: { fontSize: 12 },
-  toolText: { color: "#5a8ef0", fontSize: 12, fontWeight: "500" },
+  toolIcon: { fontSize: 11 },
+  toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12 },
 
   scrollToBottom: {
-    position: "absolute", bottom: 12, right: 16,
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "#1e1e1e", borderWidth: 1, borderColor: "#333",
+    position: "absolute", bottom: 12, right: 14,
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
     justifyContent: "center", alignItems: "center",
-    shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 3 },
   },
-  scrollToBottomIcon: { color: "#888", fontSize: 16 },
+  scrollToBottomIcon: { color: colors.textSub, fontSize: 15 },
 
   slashPicker: {
-    backgroundColor: "#161616", borderTopWidth: 1, borderTopColor: "#222",
-    maxHeight: 200,
+    backgroundColor: colors.card,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    maxHeight: 220,
   },
   slashRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    paddingHorizontal: 16, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
-  slashCmd: { color: "#4f8ef7", fontSize: 14, fontWeight: "600", width: 100 },
-  slashDesc: { color: "#555", fontSize: 13, flex: 1 },
+  slashCmd: { fontFamily: fonts.bodyBold, color: colors.accent, fontSize: 14, width: 110 },
+  slashDesc: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, flex: 1 },
 
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
-    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 32,
-    borderTopWidth: 1, borderTopColor: "#1a1a1a",
-    backgroundColor: "#0f0f0f", gap: 6,
+    paddingHorizontal: 10, paddingTop: 8, paddingBottom: 32,
+    borderTopWidth: 1, borderTopColor: colors.borderFaint,
+    backgroundColor: colors.bg, gap: 6,
   },
   inputWrap: { flex: 1 },
   input: {
-    backgroundColor: "#1a1a1a", color: "#fff",
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10,
+    fontFamily: fonts.body,
+    backgroundColor: colors.card, color: colors.text,
+    borderRadius: 22, paddingHorizontal: 14, paddingVertical: 11,
     fontSize: 15, maxHeight: 120, lineHeight: 21,
+    borderWidth: 1, borderColor: colors.border,
   },
   listeningBox: {
-    backgroundColor: "#0d1220", borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1, borderColor: "#1a3050",
-    minHeight: 42, justifyContent: "center",
-    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: colors.accentFaint, borderRadius: 22,
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderWidth: 1, borderColor: colors.accentDim,
+    minHeight: 44, flexDirection: "row", alignItems: "center", gap: 10,
   },
-  listeningText: { color: "#4f8ef7", fontSize: 14, flex: 1 },
+  listeningText: { fontFamily: fonts.body, color: colors.accent, fontSize: 14, flex: 1 },
   autoSendCancel: { marginTop: 4, paddingHorizontal: 4 },
-  autoSendCancelText: { color: "#4f8ef7", fontSize: 11 },
+  autoSendCancelText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11 },
 
   micButton: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: "#1a1a1a", justifyContent: "center", alignItems: "center",
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.card, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: colors.border,
   },
-  micButtonActive: { backgroundColor: "#1a0d0d", borderWidth: 1, borderColor: "#833" },
+  micButtonActive: { backgroundColor: colors.accentFaint, borderColor: colors.accentDim },
   micIcon: { fontSize: 18 },
 
   historyButton: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: "#1a1a1a", justifyContent: "center", alignItems: "center",
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: colors.card, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: colors.border,
   },
-  historyIcon: { color: "#555", fontSize: 14 },
+  historyIcon: { color: colors.textMuted, fontSize: 13 },
 
   sendButton: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: "#4f8ef7", justifyContent: "center", alignItems: "center",
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.accent, justifyContent: "center", alignItems: "center",
   },
-  sendDisabled: { opacity: 0.25 },
+  sendDisabled: { opacity: 0.2 },
   sendIcon: { color: "#fff", fontSize: 17, fontWeight: "700" },
 });
 
 const bubbleStyles = StyleSheet.create({
-  row: { marginBottom: 6, maxWidth: "85%" },
+  row: { marginBottom: 8, maxWidth: "85%" },
   userRow: { alignSelf: "flex-end" },
-  assistantRow: { alignSelf: "flex-start", maxWidth: "92%" },
-  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-  userBubble: { backgroundColor: "#2a5fd6", borderBottomRightRadius: 4 },
-  // Assistant: no box — left border only, blends into dark bg
-  assistantBubble: {
-    paddingLeft: 12, paddingRight: 4, paddingVertical: 2,
-    borderLeftWidth: 2, borderLeftColor: "#252525",
+  assistantRow: { alignSelf: "flex-start", maxWidth: "94%" },
+  bubble: { borderRadius: 18 },
+  userBubble: {
+    backgroundColor: colors.userBubble,
+    borderBottomRightRadius: 5,
+    paddingHorizontal: 14, paddingVertical: 10,
   },
-  userText: { color: "#fff", fontSize: 15, lineHeight: 22 },
+  assistantBubble: {
+    paddingLeft: 12, paddingRight: 2, paddingVertical: 2,
+    borderLeftWidth: 2, borderLeftColor: colors.border,
+  },
+  userText: { fontFamily: fonts.body, color: "#fff", fontSize: 15, lineHeight: 22 },
 });
 
 const markdownStyles: any = {
-  body: { color: "#ddd", fontSize: 15, lineHeight: 24 },
+  body: { fontFamily: fonts.body, color: colors.text, fontSize: 15, lineHeight: 24 },
   code_inline: {
-    backgroundColor: "#1e1e1e", color: "#c9d1d9",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 13, borderRadius: 3,
+    backgroundColor: colors.card, color: "#c9d1d9",
+    fontFamily: fonts.mono, fontSize: 13, borderRadius: 4,
   },
-  link: { color: "#4f8ef7" },
-  strong: { color: "#eee", fontWeight: "600" },
-  em: { color: "#ccc" },
-  heading1: { color: "#fff", fontSize: 19, fontWeight: "700", marginBottom: 8, marginTop: 4 },
-  heading2: { color: "#eee", fontSize: 17, fontWeight: "600", marginBottom: 6, marginTop: 2 },
-  heading3: { color: "#ddd", fontSize: 15, fontWeight: "600", marginBottom: 4 },
-  blockquote: { borderLeftColor: "#333", borderLeftWidth: 3, paddingLeft: 10, opacity: 0.8 },
+  link: { color: colors.accent },
+  strong: { fontFamily: fonts.bodyBold, color: colors.text },
+  em: { color: colors.textSub },
+  heading1: { fontFamily: fonts.display, color: colors.text, fontSize: 20, marginBottom: 8, marginTop: 4 },
+  heading2: { fontFamily: fonts.display, color: colors.text, fontSize: 17, marginBottom: 6, marginTop: 2 },
+  heading3: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 4 },
+  blockquote: { borderLeftColor: colors.border, borderLeftWidth: 3, paddingLeft: 10, opacity: 0.75 },
   bullet_list: { marginLeft: 4 },
   ordered_list: { marginLeft: 4 },
-  list_item: { color: "#ddd", marginBottom: 2 },
-  hr: { backgroundColor: "#222", height: 1 },
+  list_item: { color: colors.text, marginBottom: 2 },
+  hr: { backgroundColor: colors.border, height: 1 },
   fence: { marginVertical: 4 },
 };
 
 const typingStyles = StyleSheet.create({
   container: { flexDirection: "row", alignItems: "center", gap: 5 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#444" },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.border },
 });
 
 const waveStyles = StyleSheet.create({
   container: { flexDirection: "row", alignItems: "center", gap: 3, height: 24 },
-  bar: { width: 3, borderRadius: 2, backgroundColor: "#4f8ef7" },
+  bar: { width: 3, borderRadius: 2, backgroundColor: colors.accent },
 });

@@ -1,8 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
+import {
+  useFonts,
+  Syne_700Bold,
+  Syne_800ExtraBold,
+} from "@expo-google-fonts/syne";
+import {
+  Outfit_400Regular,
+  Outfit_500Medium,
+  Outfit_600SemiBold,
+  Outfit_700Bold,
+} from "@expo-google-fonts/outfit";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
@@ -28,6 +39,11 @@ export const UPDATE_LABEL: string = (() => {
 })();
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Syne_700Bold, Syne_800ExtraBold,
+    Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
+  });
+
   const [screen, setScreen] = useState<Screen>("connect");
   const [host, setHost] = useState("");
   const [port, setPort] = useState(9000);
@@ -94,6 +110,14 @@ export default function App() {
     prevScreen.current = screen;
     setScreen("debug");
   }, [screen]);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#07060a", justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color="#a78bfa" />
+      </View>
+    );
+  }
 
   return (
     // onStartShouldSetResponderCapture runs top-down (capture phase) before any
