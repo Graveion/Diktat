@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import Constants from "expo-constants";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
@@ -12,6 +13,8 @@ import { info } from "./src/utils/logger";
 
 type Screen = "connect" | "sessions" | "chat" | "debug";
 
+export const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("connect");
   const [host, setHost] = useState("");
@@ -21,15 +24,6 @@ export default function App() {
   const diktat = useDiktat(host, port);
   const pushToken = usePushToken();
   const prevScreen = useRef<Screen>("connect");
-
-  // 3-finger tap anywhere opens the debug screen
-  const handleThreeFingerTap = useCallback((e: any) => {
-    if (e.nativeEvent.touches.length >= 3) {
-      info("NAV", "debug screen opened via 3-finger tap");
-      prevScreen.current = screen;
-      setScreen("debug");
-    }
-  }, [screen]);
 
   useEffect(() => {
     if (pushToken) diktat.registerPushToken(pushToken);
@@ -83,11 +77,19 @@ export default function App() {
     diktat.spawnSession(cli, project);
   };
 
+  const openDebug = useCallback(() => {
+    info("NAV", `debug screen opened (from ${screen})`);
+    prevScreen.current = screen;
+    setScreen("debug");
+  }, [screen]);
+
   return (
+    // onStartShouldSetResponderCapture runs top-down (capture phase) before any
+    // child component can steal the touch — reliable for a global 3-finger shortcut
     <View
       style={styles.root}
-      onStartShouldSetResponder={(e) => e.nativeEvent.touches.length >= 3}
-      onResponderGrant={handleThreeFingerTap}
+      onStartShouldSetResponderCapture={(e) => e.nativeEvent.touches.length >= 3}
+      onResponderGrant={(e) => { if (e.nativeEvent.touches.length >= 3) openDebug(); }}
     >
       <StatusBar style="light" />
       {diktat.errorMessage ? (
