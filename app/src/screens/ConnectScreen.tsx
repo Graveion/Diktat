@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { loadConfig, saveConfig } from "../store/config";
 import { ScanScreen } from "./ScanScreen";
-import { APP_VERSION } from "../../App";
+import { APP_VERSION, UPDATE_LABEL } from "../../App";
 
 type Props = {
   onConnect: (host: string, port: number) => void;
@@ -49,7 +49,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
       <View style={styles.hero}>
         <Text style={styles.wordmark}>diktat</Text>
         <Text style={styles.tagline}>Voice-driven coding assistant</Text>
-        <Text style={styles.version}>v{APP_VERSION}</Text>
+        <Text style={styles.version}>v{APP_VERSION}  ·  {UPDATE_LABEL}</Text>
       </View>
 
       {/* Actions */}
