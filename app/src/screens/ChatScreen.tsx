@@ -66,9 +66,18 @@ function TypingIndicator() {
 }
 
 function MessageBubble({ message }: { message: DiktatMessage }) {
-  const isUser = message.role === "user";
+  if (message.role === "tool") {
+    const label = TOOL_LABELS[message.toolName ?? ""] ?? (message.toolName ?? "Tool");
+    return (
+      <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+        <View style={styles.toolBubble}>
+          <Text style={styles.toolText}>{label}</Text>
+        </View>
+      </View>
+    );
+  }
 
-  if (isUser) {
+  if (message.role === "user") {
     return (
       <View style={[bubbleStyles.row, bubbleStyles.userRow]}>
         <View style={[bubbleStyles.bubble, bubbleStyles.userBubble]}>

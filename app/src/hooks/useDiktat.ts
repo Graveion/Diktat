@@ -12,8 +12,9 @@ export type DiktatSession = {
 };
 
 export type DiktatMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   text: string;
+  toolName?: string;
 };
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";

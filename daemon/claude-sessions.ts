@@ -52,8 +52,9 @@ function readFirstMessage(filePath: string): string {
 }
 
 export interface HistoryMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   text: string;
+  toolName?: string;
 }
 
 export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
@@ -74,6 +75,10 @@ export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
           } else if (entry.type === "assistant") {
             const content = entry.message?.content;
             if (!Array.isArray(content)) continue;
+            const toolUses = content.filter((c: any) => c.type === "tool_use");
+            for (const tool of toolUses) {
+              messages.push({ role: "tool", toolName: tool.name, text: "" });
+            }
             const text = content
               .filter((c: any) => c.type === "text")
               .map((c: any) => c.text)
