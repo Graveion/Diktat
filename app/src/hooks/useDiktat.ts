@@ -25,10 +25,12 @@ export function useDiktat(host: string, port: number) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(RECONNECT_DELAY_MS);
   const intentionalDisconnect = useRef(false);
+  const discardOutput = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
 
   const [state, setState] = useState<ConnectionState>("disconnected");
+  const [reconnecting, setReconnecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clis, setClis] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
@@ -57,6 +59,7 @@ export function useDiktat(host: string, port: number) {
     socket.onopen = () => {
       if (ws.current !== socket) return;
       reconnectDelay.current = RECONNECT_DELAY_MS;
+      setReconnecting(false);
       setState("connected");
     };
 
@@ -77,6 +80,7 @@ export function useDiktat(host: string, port: number) {
       }
 
       if (msg.type === "spawned" || msg.type === "resumed") {
+        discardOutput.current = false;
         setActiveSessionId(msg.session.id);
         setMessages([]);
         setStreaming(false);
@@ -87,6 +91,7 @@ export function useDiktat(host: string, port: number) {
       }
 
       if (msg.type === "output") {
+        if (discardOutput.current) return;
         setStreaming(true);
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -114,12 +119,13 @@ export function useDiktat(host: string, port: number) {
 
     socket.onclose = () => {
       if (ws.current !== socket) return;
+      setState("disconnected");
       if (intentionalDisconnect.current) {
-        setState("disconnected");
+        setReconnecting(false);
         return;
       }
-      setState("disconnected");
       // Auto-reconnect with backoff
+      setReconnecting(true);
       const delay = reconnectDelay.current;
       reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS);
       reconnectTimer.current = setTimeout(() => connect(), delay);
@@ -131,7 +137,20 @@ export function useDiktat(host: string, port: number) {
     if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
     ws.current?.close();
     setState("disconnected");
+    setReconnecting(false);
     setErrorMessage(null);
+  }, []);
+
+  const leaveSession = useCallback(() => {
+    discardOutput.current = true;
+    setActiveSessionId(null);
+    setMessages([]);
+    setStreaming(false);
+  }, []);
+
+  const cancelMessage = useCallback((sessionId: string) => {
+    ws.current?.send(JSON.stringify({ type: "cancel", sessionId }));
+    setStreaming(false);
   }, []);
 
   const spawnSession = useCallback((cli: string, project: string) => {
@@ -166,8 +185,8 @@ export function useDiktat(host: string, port: number) {
   }, []);
 
   return {
-    state, errorMessage, clis, projects, sessions, activeSessionId,
+    state, reconnecting, errorMessage, clis, projects, sessions, activeSessionId,
     messages, streaming, connect, disconnect,
-    spawnSession, resumeSession, sendMessage, clearError,
+    spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage, clearError,
   };
 }
