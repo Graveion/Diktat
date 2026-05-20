@@ -21,7 +21,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.graveion.diktat",
-      "backgroundModes": ["remote-notification"],
+      "backgroundModes": [
+        "remote-notification"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSpeechRecognitionUsageDescription": "Diktat uses speech recognition to transcribe your voice into coding instructions.",
@@ -43,6 +45,9 @@
       "eas": {
         "projectId": "b7b6c69b-e870-4470-9944-daef2f579bf6"
       }
-    }
+    },
+    "plugins": [
+      "expo-localization"
+    ]
   }
 }

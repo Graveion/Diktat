@@ -83,10 +83,10 @@ export default function App() {
     diktat.resumeSession(session);
   };
 
-  const handleNew = (cli: string, project: string) => {
-    info("NAV", `sessions → chat (new session cli=${cli} project=${project})`);
+  const handleNew = (cli: string, project: string, mode?: string) => {
+    info("NAV", `sessions → chat (new session cli=${cli} project=${project}${mode ? ` mode=${mode}` : ""})`);
     setActiveSession(null);
-    diktat.spawnSession(cli, project);
+    diktat.spawnSession(cli, project, mode);
   };
 
   const openDebug = useCallback(() => {
@@ -142,6 +142,7 @@ export default function App() {
           onCancel={diktat.cancelMessage}
           onBack={() => { diktat.leaveSession(); setScreen("sessions"); }}
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
+          sessionCli={activeSession?.cli ?? undefined}
         />
       )}
     </View>
