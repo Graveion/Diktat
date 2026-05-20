@@ -120,6 +120,12 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "error") {
         setErrorMessage(msg.message ?? "An error occurred");
+        // If the session is no longer valid on the daemon (e.g. after restart), clear it
+        if (msg.message?.includes("No active session")) {
+          setActiveSessionId(null);
+          setStreaming(false);
+          setCurrentTool(null);
+        }
       }
     };
 

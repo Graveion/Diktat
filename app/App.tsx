@@ -30,15 +30,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (diktat.state === "connected") setScreen("sessions");
+    // Only advance to sessions from the connect screen — never override chat
+    if (diktat.state === "connected" && screen === "connect") setScreen("sessions");
     if (diktat.state === "disconnected" || diktat.state === "error") {
-      // Only drop back to connect if we're not in a session
       if (screen !== "chat" && screen !== "sessions") setScreen("connect");
     }
-  }, [diktat.state]);
+  }, [diktat.state, screen]);
 
   useEffect(() => {
     if (diktat.activeSessionId) setScreen("chat");
+    // If session was invalidated (e.g. daemon restarted) while in chat, go back to sessions
+    if (!diktat.activeSessionId && screen === "chat") setScreen("sessions");
   }, [diktat.activeSessionId]);
 
   const handleConnect = (h: string, p: number) => {
