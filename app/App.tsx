@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
@@ -24,7 +25,10 @@ export default function App() {
 
   useEffect(() => {
     if (diktat.state === "connected") setScreen("sessions");
-    if (diktat.state === "disconnected" || diktat.state === "error") setScreen("connect");
+    if (diktat.state === "disconnected" || diktat.state === "error") {
+      // Only drop back to connect if we're not in a session
+      if (screen !== "chat" && screen !== "sessions") setScreen("connect");
+    }
   }, [diktat.state]);
 
   useEffect(() => {
@@ -51,44 +55,52 @@ export default function App() {
     diktat.spawnSession(cli, project);
   };
 
-  if (screen === "connect" || !host) {
-    return (
-      <>
-        <StatusBar style="light" />
+  return (
+    <>
+      <StatusBar style="light" />
+      {diktat.errorMessage ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{diktat.errorMessage}</Text>
+          <TouchableOpacity onPress={diktat.clearError}>
+            <Text style={styles.errorDismiss}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {screen === "connect" || !host ? (
         <ConnectScreen
           onConnect={handleConnect}
           connectionState={diktat.state}
         />
-      </>
-    );
-  }
-
-  if (screen === "sessions") {
-    return (
-      <>
-        <StatusBar style="light" />
+      ) : screen === "sessions" ? (
         <SessionsScreen
           sessions={diktat.sessions}
           clis={diktat.clis}
           projects={diktat.projects}
+          connectedHost={host}
           onResume={handleResume}
           onNew={handleNew}
           onDisconnect={() => { diktat.disconnect(); setScreen("connect"); }}
         />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <StatusBar style="light" />
-      <ChatScreen
-        messages={diktat.messages}
-        streaming={diktat.streaming}
-        onSend={diktat.sendMessage}
-        onBack={() => setScreen("sessions")}
-        sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
-      />
+      ) : (
+        <ChatScreen
+          messages={diktat.messages}
+          streaming={diktat.streaming}
+          onSend={diktat.sendMessage}
+          onBack={() => setScreen("sessions")}
+          sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
+        />
+      )}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  errorBanner: {
+    position: "absolute", top: 0, left: 0, right: 0, zIndex: 100,
+    backgroundColor: "#5a1a1a", paddingTop: 52, paddingBottom: 12,
+    paddingHorizontal: 16, flexDirection: "row", alignItems: "center",
+  },
+  errorText: { flex: 1, color: "#ffaaaa", fontSize: 14, lineHeight: 20 },
+  errorDismiss: { color: "#ff8888", fontSize: 18, paddingLeft: 12 },
+});

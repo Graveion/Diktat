@@ -120,7 +120,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
           <SetupStep
             number="3"
             title="Start the daemon on your laptop"
-            description="In the Diktat folder run ./daemon.sh start — it prints a QR code."
+            description="Run `diktat start` in a terminal — it prints a QR code."
           />
           <SetupStep
             number="4"
