@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
@@ -20,6 +20,16 @@ export default function App() {
 
   const diktat = useDiktat(host, port);
   const pushToken = usePushToken();
+  const prevScreen = useRef<Screen>("connect");
+
+  // 3-finger tap anywhere opens the debug screen
+  const handleThreeFingerTap = useCallback((e: any) => {
+    if (e.nativeEvent.touches.length >= 3) {
+      info("NAV", "debug screen opened via 3-finger tap");
+      prevScreen.current = screen;
+      setScreen("debug");
+    }
+  }, [screen]);
 
   useEffect(() => {
     if (pushToken) diktat.registerPushToken(pushToken);
@@ -74,7 +84,11 @@ export default function App() {
   };
 
   return (
-    <>
+    <View
+      style={styles.root}
+      onStartShouldSetResponder={(e) => e.nativeEvent.touches.length >= 3}
+      onResponderGrant={handleThreeFingerTap}
+    >
       <StatusBar style="light" />
       {diktat.errorMessage ? (
         <View style={styles.errorBanner}>
@@ -86,12 +100,11 @@ export default function App() {
       ) : null}
 
       {screen === "debug" ? (
-        <DebugScreen onBack={() => setScreen(host ? "sessions" : "connect")} />
+        <DebugScreen onBack={() => setScreen(prevScreen.current === "debug" ? (host ? "sessions" : "connect") : prevScreen.current)} />
       ) : screen === "connect" || !host ? (
         <ConnectScreen
           onConnect={handleConnect}
           connectionState={diktat.state}
-          onOpenDebug={() => setScreen("debug")}
         />
       ) : screen === "sessions" ? (
         <SessionsScreen
@@ -103,7 +116,6 @@ export default function App() {
           onResume={handleResume}
           onNew={handleNew}
           onDisconnect={() => { diktat.disconnect(); setScreen("connect"); }}
-          onOpenDebug={() => setScreen("debug")}
         />
       ) : (
         <ChatScreen
@@ -118,11 +130,12 @@ export default function App() {
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
         />
       )}
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   errorBanner: {
     backgroundColor: "#5a1a1a", paddingTop: 56, paddingBottom: 12,
     paddingHorizontal: 16, flexDirection: "row", alignItems: "center",
