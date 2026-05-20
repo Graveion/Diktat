@@ -146,6 +146,8 @@ export class Session {
           for (const block of json.message?.content ?? []) {
             if (block.type === "text") {
               this.ws.send(JSON.stringify({ type: "output", text: block.text }));
+            } else if (block.type === "tool_use") {
+              this.ws.send(JSON.stringify({ type: "tool_use", name: block.name }));
             }
           }
         }

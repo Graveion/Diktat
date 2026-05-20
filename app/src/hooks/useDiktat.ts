@@ -39,6 +39,7 @@ export function useDiktat(host: string, port: number) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [currentTool, setCurrentTool] = useState<string | null>(null);
 
   const connect = useCallback((overrideHost?: string, overridePort?: number) => {
     const h = overrideHost ?? lastHost.current;
@@ -94,8 +95,14 @@ export function useDiktat(host: string, port: number) {
         setMessages(msg.messages ?? []);
       }
 
+      if (msg.type === "tool_use") {
+        if (!discardOutput.current) setCurrentTool(msg.name ?? null);
+        return;
+      }
+
       if (msg.type === "output") {
         if (discardOutput.current) return;
+        setCurrentTool(null);
         setStreaming(true);
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -108,6 +115,7 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "exit") {
         setStreaming(false);
+        setCurrentTool(null);
       }
 
       if (msg.type === "error") {
@@ -150,6 +158,7 @@ export function useDiktat(host: string, port: number) {
     setActiveSessionId(null);
     setMessages([]);
     setStreaming(false);
+    setCurrentTool(null);
   }, []);
 
   const cancelMessage = useCallback((sessionId: string) => {
@@ -197,7 +206,7 @@ export function useDiktat(host: string, port: number) {
 
   return {
     state, reconnecting, errorMessage, clis, projects, sessions, activeSessionId,
-    messages, streaming, connect, disconnect,
+    messages, streaming, currentTool, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
   };

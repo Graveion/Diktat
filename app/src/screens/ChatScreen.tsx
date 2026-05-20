@@ -12,9 +12,24 @@ try { Voice = require("@react-native-voice/voice").default; } catch { /* unavail
 
 const AUTO_SEND_DELAY_MS = 1500;
 
+const TOOL_LABELS: Record<string, string> = {
+  Read: "Reading files",
+  Write: "Writing files",
+  Edit: "Editing files",
+  MultiEdit: "Editing files",
+  Bash: "Running commands",
+  Grep: "Searching files",
+  Glob: "Searching files",
+  WebSearch: "Searching the web",
+  WebFetch: "Fetching page",
+  TodoWrite: "Updating plan",
+  Task: "Running sub-agent",
+};
+
 type Props = {
   messages: DiktatMessage[];
   streaming: boolean;
+  currentTool: string | null;
   reconnecting: boolean;
   activeSessionId: string | null;
   onSend: (text: string) => void;
@@ -72,7 +87,7 @@ function MessageBubble({ message }: { message: DiktatMessage }) {
   );
 }
 
-export function ChatScreen({ messages, streaming, reconnecting, activeSessionId, onSend, onCancel, onBack, sessionLabel }: Props) {
+export function ChatScreen({ messages, streaming, currentTool, reconnecting, activeSessionId, onSend, onCancel, onBack, sessionLabel }: Props) {
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [autoSendCountdown, setAutoSendCountdown] = useState<number | null>(null);
@@ -162,9 +177,11 @@ export function ChatScreen({ messages, streaming, reconnecting, activeSessionId,
     setInput(text);
   };
 
-  const data: (DiktatMessage | { role: "typing" })[] = [
+  const showTyping = streaming && messages[messages.length - 1]?.role !== "assistant";
+  const data: (DiktatMessage | { role: "typing" } | { role: "tool"; name: string })[] = [
     ...messages,
-    ...(streaming && messages[messages.length - 1]?.role !== "assistant" ? [{ role: "typing" as const }] : []),
+    ...(currentTool ? [{ role: "tool" as const, name: currentTool }] : []),
+    ...(showTyping && !currentTool ? [{ role: "typing" as const }] : []),
   ];
 
   return (
@@ -210,10 +227,23 @@ export function ChatScreen({ messages, streaming, reconnecting, activeSessionId,
               </View>
             );
           }
+          if (item.role === "tool") {
+            const label = TOOL_LABELS[(item as any).name] ?? (item as any).name;
+            return (
+              <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+                <View style={styles.toolBubble}>
+                  <Text style={styles.toolText}>{label}…</Text>
+                </View>
+              </View>
+            );
+          }
           return <MessageBubble message={item as DiktatMessage} />;
         }}
         ListEmptyComponent={
-          <Text style={styles.empty}>Send a message to get started.</Text>
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>Session ready</Text>
+            <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
+          </View>
         }
       />
 
@@ -276,7 +306,14 @@ const styles = StyleSheet.create({
   },
   reconnectingText: { color: "#4f8ef7", fontSize: 12, textAlign: "center" },
   messages: { padding: 12, paddingBottom: 4 },
-  empty: { color: "#444", textAlign: "center", marginTop: 80, fontSize: 15 },
+  emptyContainer: { alignItems: "center", marginTop: 80, paddingHorizontal: 40 },
+  emptyTitle: { color: "#555", fontSize: 16, fontWeight: "600", marginBottom: 8 },
+  emptyHint: { color: "#3a3a3a", fontSize: 14, textAlign: "center", lineHeight: 20 },
+  toolBubble: {
+    backgroundColor: "#161a2a", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: "#2a3050",
+  },
+  toolText: { color: "#4f8ef7", fontSize: 13 },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
     padding: 12, paddingBottom: 32,
