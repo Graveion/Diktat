@@ -34,11 +34,12 @@ export default function App() {
   const handleConnect = (h: string, p: number) => {
     setHost(h);
     setPort(p);
+    diktat.connect(h, p);
   };
 
   useEffect(() => {
-    if (host) diktat.connect();
-  }, [host]);
+    if (host) diktat.connect(host, port);
+  }, []);
 
   const handleResume = (session: DiktatSession) => {
     setActiveSession(session);
