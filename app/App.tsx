@@ -6,9 +6,11 @@ import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
+import { DebugScreen } from "./src/screens/DebugScreen";
 import { loadConfig } from "./src/store/config";
+import { info } from "./src/utils/logger";
 
-type Screen = "connect" | "sessions" | "chat";
+type Screen = "connect" | "sessions" | "chat" | "debug";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("connect");
@@ -31,9 +33,15 @@ export default function App() {
 
   useEffect(() => {
     // Only advance to sessions from the connect screen — never override chat
-    if (diktat.state === "connected" && screen === "connect") setScreen("sessions");
+    if (diktat.state === "connected" && screen === "connect") {
+      info("NAV", "connect → sessions (daemon connected)");
+      setScreen("sessions");
+    }
     if (diktat.state === "disconnected" || diktat.state === "error") {
-      if (screen !== "chat" && screen !== "sessions") setScreen("connect");
+      if (screen !== "chat" && screen !== "sessions" && screen !== "debug") {
+        info("NAV", `${screen} → connect (state=${diktat.state})`);
+        setScreen("connect");
+      }
     }
   }, [diktat.state, screen]);
 
@@ -54,11 +62,13 @@ export default function App() {
   }, []);
 
   const handleResume = (session: DiktatSession) => {
+    info("NAV", `sessions → chat (resume session ${session.id} source=${session.source})`);
     setActiveSession(session);
     diktat.resumeSession(session);
   };
 
   const handleNew = (cli: string, project: string) => {
+    info("NAV", `sessions → chat (new session cli=${cli} project=${project})`);
     setActiveSession(null);
     diktat.spawnSession(cli, project);
   };
@@ -75,10 +85,13 @@ export default function App() {
         </View>
       ) : null}
 
-      {screen === "connect" || !host ? (
+      {screen === "debug" ? (
+        <DebugScreen onBack={() => setScreen("connect")} />
+      ) : screen === "connect" || !host ? (
         <ConnectScreen
           onConnect={handleConnect}
           connectionState={diktat.state}
+          onOpenDebug={() => setScreen("debug")}
         />
       ) : screen === "sessions" ? (
         <SessionsScreen

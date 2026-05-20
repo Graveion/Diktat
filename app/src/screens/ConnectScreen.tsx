@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, Linking, ScrollView,
@@ -9,13 +9,16 @@ import { ScanScreen } from "./ScanScreen";
 type Props = {
   onConnect: (host: string, port: number) => void;
   connectionState: string;
+  onOpenDebug?: () => void;
 };
 
-export function ConnectScreen({ onConnect, connectionState }: Props) {
+export function ConnectScreen({ onConnect, connectionState, onOpenDebug }: Props) {
   const [host, setHost] = useState("");
   const [port, setPort] = useState("9000");
   const [scanning, setScanning] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
+  const [titleTaps, setTitleTaps] = useState(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadConfig().then((c) => {
@@ -43,7 +46,18 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Diktat</Text>
+      <TouchableOpacity
+        onPress={() => {
+          const next = titleTaps + 1;
+          setTitleTaps(next);
+          if (tapTimer.current) clearTimeout(tapTimer.current);
+          if (next >= 5) { setTitleTaps(0); onOpenDebug?.(); return; }
+          tapTimer.current = setTimeout(() => setTitleTaps(0), 2000);
+        }}
+        activeOpacity={1}
+      >
+        <Text style={styles.title}>Diktat</Text>
+      </TouchableOpacity>
       <Text style={styles.subtitle}>Voice-driven coding assistant</Text>
 
       {connectionState === "error" && (

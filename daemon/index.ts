@@ -101,7 +101,7 @@ const server = Bun.serve({
   },
   websocket: {
     open(ws) {
-      console.log("Client connected");
+      console.log(`[${new Date().toISOString()}] [WS] Client connected`);
       try {
         ws.send(JSON.stringify({
           type: "connected",
@@ -137,7 +137,7 @@ const server = Bun.serve({
       });
     },
     close(ws) {
-      console.log("Client disconnected");
+      console.log(`[${new Date().toISOString()}] [WS] Client disconnected`);
     },
   },
 });
