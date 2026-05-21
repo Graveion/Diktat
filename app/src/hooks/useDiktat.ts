@@ -185,6 +185,8 @@ export function useDiktat(host: string, port: number) {
         return;
       }
 
+      if (msg.type === "pong") return; // keep-alive response, no action needed
+
       info("MSG", `unhandled message type: ${msg.type}`);
     };
 
