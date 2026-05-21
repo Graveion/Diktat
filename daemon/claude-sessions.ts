@@ -2,8 +2,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-
-
 const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
 export interface ClaudeSession {
