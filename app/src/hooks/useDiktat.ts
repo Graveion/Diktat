@@ -15,6 +15,7 @@ export type DiktatMessage = {
   role: "user" | "assistant" | "tool";
   text: string;
   toolName?: string;
+  toolPath?: string;
 };
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -113,11 +114,15 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "tool_use") {
         if (!discardOutput.current) {
-          // Include the filename when available: "Read:src/auth.ts"
           const toolStr = msg.path
             ? `${msg.name}:${(msg.path as string).split("/").pop() ?? msg.path}`
             : (msg.name ?? null);
           setCurrentTool(toolStr);
+          // Persist tool usage into message history
+          setMessages((prev) => [
+            ...prev,
+            { role: "tool" as const, text: "", toolName: toolStr ?? msg.name, toolPath: msg.path as string | undefined },
+          ]);
         }
         info("MSG", `tool_use: ${msg.name}${msg.path ? ` (${msg.path})` : ""}`);
         return;
