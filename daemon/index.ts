@@ -3,7 +3,7 @@ import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
 import { listSessions } from "./session-store";
-import { listClaudeSessions, readHistory } from "./claude-sessions";
+import { listClaudeSessions, claudeSessionExists, readHistory } from "./claude-sessions";
 import { listCursorSessions, readCursorHistory } from "./cursor-sessions";
 
 const config = loadConfig();
@@ -29,7 +29,7 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
-    const session = Session.create(ws, msg.cli, msg.project, msg.mode);
+    const session = Session.create(ws, msg.cli, availableCLIs[msg.cli], msg.project, msg.mode);
     activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;
@@ -37,9 +37,9 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
 
   if (msg.type === "resume") {
     const session = msg.isClaudeSession
-      ? Session.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd())
+      ? Session.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd(), availableCLIs["claude"] ?? "claude")
       : msg.isCursorSession
-        ? Session.fromCursorSession(ws, msg.sessionId, msg.project ?? process.cwd())
+        ? Session.fromCursorSession(ws, msg.sessionId, msg.project ?? process.cwd(), availableCLIs["cursor"] ?? "agent")
         : Session.resume(ws, msg.sessionId);
     if (!session) {
       ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
@@ -110,7 +110,7 @@ const server = Bun.serve({
     return new Response("Diktat daemon running", { status: 200 });
   },
   websocket: {
-    idleTimeout: 3600,
+    idleTimeout: 960,
     open(ws) {
       console.log(`[${new Date().toISOString()}] [WS] Client connected`);
       try {
@@ -118,7 +118,7 @@ const server = Bun.serve({
           type: "connected",
           clis: Object.keys(availableCLIs),
           projects: config.projects,
-          sessions: listSessions(),
+          sessions: listSessions().filter((s) => !s.cliSessionId || claudeSessionExists(s.cliSessionId)),
           claudeSessions: listClaudeSessions(),
           cursorSessions: listCursorSessions(),
         }));

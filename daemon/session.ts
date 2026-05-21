@@ -1,19 +1,20 @@
 import type { ServerWebSocket } from "bun";
+import { existsSync } from "fs";
 import { saveSession, loadSession, type SessionData } from "./session-store";
 import { sendPushNotification } from "./push";
 
-function buildArgs(cli: string, text: string, cliSessionId?: string, mode?: string): string[] {
+function buildArgs(cli: string, cliPath: string, text: string, cliSessionId?: string, mode?: string): string[] {
   switch (cli) {
     case "claude":
       return [
-        "claude", "-p", text,
+        cliPath, "-p", text,
         "--output-format", "stream-json",
         "--verbose",
         ...(cliSessionId ? ["--resume", cliSessionId] : []),
       ];
     case "cursor":
       return [
-        "agent", "--trust", "-p", text,
+        cliPath, "--trust", "-p", text,
         "--output-format", "stream-json",
         "--stream-partial-output",
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
@@ -34,10 +35,11 @@ export class Session {
     this.data = data;
   }
 
-  static create(ws: ServerWebSocket<unknown>, cli: string, project: string, mode?: string): Session {
+  static create(ws: ServerWebSocket<unknown>, cli: string, cliPath: string, project: string, mode?: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli,
+      cliPath,
       project,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
@@ -53,10 +55,11 @@ export class Session {
     return new Session(ws, data);
   }
 
-  static fromClaudeSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string): Session {
+  static fromClaudeSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, cliPath: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli: "claude",
+      cliPath,
       project,
       cliSessionId,
       createdAt: new Date().toISOString(),
@@ -66,10 +69,11 @@ export class Session {
     return new Session(ws, data);
   }
 
-  static fromCursorSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, mode?: string): Session {
+  static fromCursorSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, cliPath: string, mode?: string): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli: "cursor",
+      cliPath,
       project,
       cliSessionId,
       createdAt: new Date().toISOString(),
@@ -100,13 +104,19 @@ export class Session {
   }
 
   async send(text: string, pushToken?: string): Promise<void> {
-    const proc = Bun.spawn(buildArgs(this.data.cli, text, this.data.cliSessionId, this.data.mode), {
-      cwd: this.data.project,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent" };
+    const cliPath = this.data.cliPath ?? CLI_FALLBACK[this.data.cli] ?? this.data.cli;
+    const cwd = existsSync(this.data.project) ? this.data.project : process.env.HOME ?? process.cwd();
+    await this.runCLI(cliPath, cwd, text, pushToken);
+  }
+
+  private async runCLI(cliPath: string, cwd: string, text: string, pushToken?: string, retry = false): Promise<void> {
+    const sessionId = retry ? undefined : this.data.cliSessionId;
+    const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.mode);
+    const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
     this.activeProc = proc;
 
+    let needsRetry = false;
     const streamOutput = async (stream: ReadableStream<Uint8Array>, isStderr: boolean) => {
       const decoder = new TextDecoder();
       const reader = stream.getReader();
@@ -115,7 +125,7 @@ export class Session {
         if (done) break;
         const chunk = decoder.decode(value);
         if (!isStderr && this.data.cli === "claude") {
-          this.parseClaudeChunk(chunk);
+          if (this.parseClaudeChunk(chunk)) needsRetry = true;
         } else if (!isStderr && this.data.cli === "cursor") {
           this.parseCursorChunk(chunk);
         } else {
@@ -125,6 +135,15 @@ export class Session {
     };
 
     await Promise.all([streamOutput(proc.stdout, false), streamOutput(proc.stderr, true)]);
+
+    // Claude said "no conversation found" — clear stale session ID and retry fresh
+    if (needsRetry && !retry) {
+      this.activeProc = null;
+      this.data.cliSessionId = undefined;
+      saveSession(this.data);
+      await this.runCLI(cliPath, cwd, text, pushToken, true);
+      return;
+    }
     this.activeProc = null;
 
     this.data.lastActiveAt = new Date().toISOString();
@@ -143,7 +162,7 @@ export class Session {
     }
   }
 
-  private parseClaudeChunk(chunk: string): void {
+  private parseClaudeChunk(chunk: string): boolean {
     for (const line of chunk.split("\n").filter(Boolean)) {
       try {
         const json = JSON.parse(line);
@@ -160,9 +179,14 @@ export class Session {
           }
         }
       } catch {
+        // Plain text line — check for "no conversation found" before forwarding
+        if (/no conversation found/i.test(line)) {
+          return true; // signal: needs retry without --resume
+        }
         this.ws.send(JSON.stringify({ type: "output", text: line }));
       }
     }
+    return false;
   }
 
   private parseCursorChunk(chunk: string): void {
