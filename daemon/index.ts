@@ -73,7 +73,12 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
       return;
     }
     const pushToken = clientPushTokens.get(ws as object);
-    session.send(msg.text, pushToken);
+    try {
+      await session.send(msg.text, pushToken);
+    } catch (e) {
+      console.error("Error in session.send:", e);
+      try { ws.send(JSON.stringify({ type: "error", message: `Session error: ${(e as Error).message}` })); } catch {}
+    }
     return;
   }
 
@@ -105,7 +110,7 @@ const server = Bun.serve({
     return new Response("Diktat daemon running", { status: 200 });
   },
   websocket: {
-    idleTimeout: 0,
+    idleTimeout: 3600,
     open(ws) {
       console.log(`[${new Date().toISOString()}] [WS] Client connected`);
       try {
