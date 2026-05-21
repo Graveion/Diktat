@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Component } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
@@ -28,6 +29,34 @@ import { info } from "./src/utils/logger";
 
 type Screen = "connect" | "sessions" | "chat" | "debug";
 
+// ─── Crash boundary ──────────────────────────────────────────────────────────
+const CRASH_KEY = "@diktat/last_crash";
+
+class CrashBoundary extends Component<{ children: React.ReactNode }, { crashed: boolean; error: string }> {
+  state = { crashed: false, error: "" };
+  static getDerivedStateFromError(e: Error) {
+    return { crashed: true, error: e?.message ?? String(e) };
+  }
+  componentDidCatch(e: Error) {
+    const entry = `[CRASH ${new Date().toISOString()}] ${e?.message}\n${e?.stack ?? ""}`;
+    AsyncStorage.setItem(CRASH_KEY, entry).catch(() => {});
+  }
+  render() {
+    if (this.state.crashed) {
+      return (
+        <View style={{ flex: 1, backgroundColor: "#07060a", justifyContent: "center", alignItems: "center", padding: 32 }}>
+          <Text style={{ color: "#f87171", fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Something crashed</Text>
+          <Text style={{ color: "#8b85a1", fontSize: 12, fontFamily: "monospace" }}>{this.state.error}</Text>
+          <TouchableOpacity onPress={() => this.setState({ crashed: false, error: "" })} style={{ marginTop: 24, padding: 14, backgroundColor: "#252130", borderRadius: 10 }}>
+            <Text style={{ color: "#a78bfa" }}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
 
 // Shows which OTA update is running: "dev" in Expo Go, a short hash in production
@@ -41,7 +70,7 @@ export const UPDATE_LABEL: string = (() => {
   return `${short}${time ? " · " + time : ""}`;
 })();
 
-export default function App() {
+function App() {
   const [fontsLoaded] = useFonts({
     Syne_700Bold, Syne_800ExtraBold,
     Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
@@ -175,6 +204,10 @@ export default function App() {
       )}
     </View>
   );
+}
+
+export default function AppWithBoundary() {
+  return <CrashBoundary><App /></CrashBoundary>;
 }
 
 const styles = StyleSheet.create({

@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
-  Clipboard, ScrollView,
+  ScrollView,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
@@ -158,7 +159,7 @@ function TypingIndicator() {
 
 function MessageBubble({ message }: { message: DiktatMessage }) {
   const handleLongPress = useCallback(() => {
-    Clipboard.setString(message.text);
+    Clipboard.setStringAsync(message.text);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [message.text]);
 
@@ -582,7 +583,6 @@ const styles = StyleSheet.create({
 
   fadeTop: {
     position: "absolute", top: 0, left: 0, right: 0, height: 72,
-    pointerEvents: "none",
   },
 
   scrollToBottom: {
