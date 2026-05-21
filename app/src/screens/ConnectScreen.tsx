@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   version: {
     fontFamily: fonts.body,
     fontSize: 10,
-    color: colors.textMuted,
+    color: colors.textSub,
     letterSpacing: 0.5,
   },
 

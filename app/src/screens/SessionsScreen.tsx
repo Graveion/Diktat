@@ -72,6 +72,12 @@ function SessionCard({ session: s, label, onPress, onHide, formatDate }: {
   );
 }
 
+// Generic folder names that don't describe a project on their own
+const GENERIC_NAMES = new Set([
+  "ios", "android", "app", "src", "main", "web", "client", "server",
+  "frontend", "backend", "mobile", "native", "packages", "apps",
+]);
+
 function projectName(path: string) {
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
@@ -79,9 +85,16 @@ function projectName(path: string) {
 
 function projectContext(path: string) {
   const parts = path.split("/").filter(Boolean);
-  // Show parent/name if parent exists
   if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
   return parts[parts.length - 1] ?? path;
+}
+
+// Returns the most descriptive name: falls back to parent/name if the
+// last segment alone is too generic (e.g. "ios", "app", "src")
+function bestProjectName(path: string) {
+  const last = projectName(path);
+  if (GENERIC_NAMES.has(last.toLowerCase())) return projectContext(path);
+  return last;
 }
 
 export function SessionsScreen({ sessions, clis, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
@@ -232,7 +245,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
               keyExtractor={(s) => `${s.source}:${s.id}`}
               renderItem={({ item }) => {
                 const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
-                const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : projectName(item.project));
+                const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : bestProjectName(item.project));
                 return (
                   <SessionCard
                     session={item}
@@ -282,11 +295,11 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
             keyExtractor={(item, i) => item.kind === "header" ? `header:${item.project}` : `${item.session.source}:${item.session.id}`}
             renderItem={({ item }) => {
               if (item.kind === "header") {
-                return <Text style={styles.groupHeader}>{projectName(item.project)}</Text>;
+                return <Text style={styles.groupHeader}>{bestProjectName(item.project)}</Text>;
               }
               const { session: s } = item;
               const nameAmbiguous = (nameCounts.get(projectName(s.project)) ?? 0) > 1;
-              const label = s.projectLabel ?? (nameAmbiguous ? projectContext(s.project) : projectName(s.project));
+              const label = s.projectLabel ?? (nameAmbiguous ? projectContext(s.project) : bestProjectName(s.project));
               return (
                 <SessionCard
                   session={s}
