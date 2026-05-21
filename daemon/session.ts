@@ -139,7 +139,7 @@ export class Session {
     if (pushToken && exitCode === 0 && !wsStillOpen) {
       const project = this.data.project.split("/").pop() ?? this.data.project;
       const taskPreview = text.length > 80 ? text.slice(0, 77) + "…" : text;
-      await sendPushNotification(pushToken, `✓ ${project}`, taskPreview);
+      await sendPushNotification(pushToken, `✓ ${project}`, taskPreview, { sessionId: this.data.id });
     }
   }
 

@@ -3,6 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import type { DiktatSession } from "../hooks/useDiktat";
@@ -14,6 +15,7 @@ type Props = {
   clis: string[];
   projects: string[];
   connectedHost?: string;
+  connectionState?: string;
   loading: boolean;
   onResume: (session: DiktatSession) => void;
   onNew: (cli: string, project: string, mode?: string) => void;
@@ -31,36 +33,42 @@ const CLI_COLOR: Record<string, string> = {
   cursor: "#a78bfa",
 };
 
-function SessionCard({ session: s, label, onPress, onLongPress, formatDate }: {
+function SessionCard({ session: s, label, onPress, onHide, formatDate }: {
   session: DiktatSession; label: string;
-  onPress: () => void; onLongPress: () => void;
+  onPress: () => void; onHide: () => void;
   formatDate: (iso: string) => string;
 }) {
-  return (
-    <TouchableOpacity
-      style={styles.sessionCard}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={500}
-      activeOpacity={0.7}
-    >
-      <View style={styles.sessionCardInner}>
-        <View style={styles.sessionTop}>
-          <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
-          <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
-            <Text style={[styles.cliBadgeText, { color: CLI_COLOR[s.cli] ?? colors.textSub }]}>
-              {CLI_LABELS[s.cli] ?? s.cli}
-            </Text>
-          </View>
-        </View>
-        {s.firstMessage ? (
-          <Text style={styles.sessionPreview} numberOfLines={1}>
-            {typeof s.firstMessage === "string" ? s.firstMessage : ""}
-          </Text>
-        ) : null}
-        <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
-      </View>
+  const renderRightActions = () => (
+    <TouchableOpacity style={styles.hideAction} onPress={onHide}>
+      <Text style={styles.hideActionText}>Hide</Text>
     </TouchableOpacity>
+  );
+
+  return (
+    <Swipeable renderRightActions={renderRightActions} overshootRight={false}>
+      <TouchableOpacity
+        style={styles.sessionCard}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.sessionCardInner}>
+          <View style={styles.sessionTop}>
+            <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+            <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
+              <Text style={[styles.cliBadgeText, { color: CLI_COLOR[s.cli] ?? colors.textSub }]}>
+                {CLI_LABELS[s.cli] ?? s.cli}
+              </Text>
+            </View>
+          </View>
+          {s.firstMessage ? (
+            <Text style={styles.sessionPreview} numberOfLines={1}>
+              {typeof s.firstMessage === "string" ? s.firstMessage : ""}
+            </Text>
+          ) : null}
+          <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
   );
 }
 
@@ -76,7 +84,7 @@ function projectContext(path: string) {
   return parts[parts.length - 1] ?? path;
 }
 
-export function SessionsScreen({ sessions, clis, projects, connectedHost, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
+export function SessionsScreen({ sessions, clis, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
@@ -111,6 +119,11 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
       { text: "Cancel", style: "cancel" },
       { text: "Disconnect", style: "destructive", onPress: onDisconnect },
     ]);
+  };
+
+  const handleHide = async (session: DiktatSession) => {
+    await hideSession(session.id);
+    setHiddenIds((prev) => new Set([...prev, session.id]));
   };
 
   const handleLongPress = (session: DiktatSession) => {
@@ -157,7 +170,13 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
             tapTimer.current = setTimeout(() => setTitleTaps(0), 2000);
           }}
         >
-          <Text style={styles.title}>Sessions</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Sessions</Text>
+            <View style={[styles.healthDot, {
+              backgroundColor: connectionState === "connected" ? colors.success :
+                connectionState === "connecting" ? colors.warning : colors.error
+            }]} />
+          </View>
           {connectedHost ? (
             <Text style={styles.connectedHost}>{connectedHost}</Text>
           ) : null}
@@ -219,7 +238,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
                     session={item}
                     label={label}
                     onPress={() => onResume(item)}
-                    onLongPress={() => handleLongPress(item)}
+                    onHide={() => handleHide(item)}
                     formatDate={formatDate}
                   />
                 );
@@ -273,7 +292,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, loadin
                   session={s}
                   label={label}
                   onPress={() => onResume(s)}
-                  onLongPress={() => handleLongPress(s)}
+                  onHide={() => handleHide(s)}
                   formatDate={formatDate}
                 />
               );
@@ -372,7 +391,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 64, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   title: { fontFamily: fonts.display, fontSize: 30, color: colors.text, letterSpacing: -0.5 },
+  healthDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 2 },
   connectedHost: { fontFamily: fonts.body, fontSize: 11, color: colors.accent, marginTop: 2 },
   disconnect: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, paddingBottom: 4 },
 
@@ -415,6 +436,12 @@ const styles = StyleSheet.create({
   cliBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   sessionPreview: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, marginBottom: 6, lineHeight: 18 },
   sessionDate: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
+
+  hideAction: {
+    backgroundColor: colors.error, justifyContent: "center",
+    alignItems: "center", width: 72, marginVertical: 3, marginRight: 12, borderRadius: 12,
+  },
+  hideActionText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 13 },
 
   separator: { height: 0 },
   empty: { fontFamily: fonts.body, color: colors.textMuted, textAlign: "center", marginTop: 48, fontSize: 14 },
