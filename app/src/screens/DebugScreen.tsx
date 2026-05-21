@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Clipboard, SafeAreaView,
+  SafeAreaView,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { subscribeToLogs, getLogs, clearLogs, exportLogs, type LogEntry } from "../utils/logger";
+
+const CRASH_KEY = "@diktat/last_crash";
 
 const LEVEL_COLORS: Record<string, string> = {
   info:  "#ccc",
@@ -26,7 +30,12 @@ export function DebugScreen({ onBack }: Props) {
   const [entries, setEntries] = useState<LogEntry[]>(getLogs());
   const [filter, setFilter] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [lastCrash, setLastCrash] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CRASH_KEY).then(setLastCrash);
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToLogs((all) => {
@@ -44,7 +53,7 @@ export function DebugScreen({ onBack }: Props) {
     const text = filter
       ? entries.filter((e) => e.tag === filter).map((e) => `${e.ts} [${e.tag}] ${e.level.toUpperCase().padEnd(5)} ${e.msg}`).join("\n")
       : exportLogs();
-    Clipboard.setString(text);
+    Clipboard.setStringAsync(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -65,6 +74,16 @@ export function DebugScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {lastCrash ? (
+        <TouchableOpacity
+          style={styles.crashBanner}
+          onPress={() => { Clipboard.setStringAsync(lastCrash); AsyncStorage.removeItem(CRASH_KEY); setLastCrash(null); }}
+        >
+          <Text style={styles.crashTitle}>💥 Last crash (tap to copy + clear)</Text>
+          <Text style={styles.crashText} numberOfLines={4}>{lastCrash}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <View style={styles.filters}>
         <TouchableOpacity
@@ -123,6 +142,12 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: 12 },
   actionBtn: { padding: 4 },
   actionText: { color: "#4f8ef7", fontSize: 14 },
+  crashBanner: {
+    margin: 10, padding: 12, borderRadius: 10,
+    backgroundColor: "#1f0a0a", borderWidth: 1, borderColor: "#7f1d1d",
+  },
+  crashTitle: { color: "#f87171", fontSize: 12, fontWeight: "bold", marginBottom: 4 },
+  crashText: { color: "#f87171", fontSize: 11, fontFamily: "monospace", opacity: 0.8 },
   filters: {
     flexDirection: "row", flexWrap: "wrap", gap: 6,
     paddingHorizontal: 12, paddingVertical: 8,
