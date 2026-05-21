@@ -49,7 +49,7 @@ function AmbientOrb() {
   return (
     <Animated.View style={[orbStyles.orb, style]}>
       <LinearGradient
-        colors={["#7c3aed", "#4c1d95", "transparent"]}
+        colors={["#7c3aed", "#4c1d95", "rgba(7,6,10,0)"]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0.5 }}
         end={{ x: 1, y: 1 }}
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   tagline: {
     fontFamily: fonts.body,
     fontSize: 14,
-    color: colors.textMuted,
+    color: colors.textSub,
     letterSpacing: 2,
     textTransform: "uppercase",
     marginBottom: 10,
@@ -299,6 +299,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 10,
     color: colors.textSub,
+    opacity: 0.6,
     letterSpacing: 0.5,
   },
 
