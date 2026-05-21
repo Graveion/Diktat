@@ -18,6 +18,8 @@ import {
   Outfit_600SemiBold,
   Outfit_700Bold,
 } from "@expo-google-fonts/outfit";
+import * as Notifications from "expo-notifications";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
@@ -126,6 +128,24 @@ function App() {
     if (host) diktat.connect(host, port);
   }, []);
 
+  // Deep-link from push notification tap
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const sessionId = response.notification.request.content.data?.sessionId as string | undefined;
+      if (!sessionId) return;
+      const target = diktat.sessions.find((s) => s.id === sessionId);
+      if (target) {
+        info("NAV", `push tap → chat (session ${sessionId})`);
+        setActiveSession(target);
+        diktat.resumeSession(target);
+        setScreen("chat");
+      } else if (screen !== "chat") {
+        setScreen("sessions");
+      }
+    });
+    return () => sub.remove();
+  }, [diktat.sessions, screen]);
+
   const handleResume = (session: DiktatSession) => {
     info("NAV", `sessions → chat (resume session ${session.id} source=${session.source})`);
     setActiveSession(session);
@@ -183,6 +203,7 @@ function App() {
           clis={diktat.clis}
           projects={diktat.projects}
           connectedHost={host}
+          connectionState={diktat.state}
           loading={diktat.state === "connecting"}
           onResume={handleResume}
           onNew={handleNew}
@@ -207,7 +228,11 @@ function App() {
 }
 
 export default function AppWithBoundary() {
-  return <CrashBoundary><App /></CrashBoundary>;
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <CrashBoundary><App /></CrashBoundary>
+    </GestureHandlerRootView>
+  );
 }
 
 const styles = StyleSheet.create({
