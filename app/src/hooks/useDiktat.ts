@@ -26,12 +26,14 @@ const MAX_RECONNECT_DELAY_MS = 30000;
 export function useDiktat(host: string, port: number) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectDelay = useRef(RECONNECT_DELAY_MS);
   const intentionalDisconnect = useRef(false);
   const discardOutput = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
   const pushTokenRef = useRef<string | null>(null);
+  const pendingResumeRef = useRef<{ session: any } | null>(null);
 
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [reconnecting, setReconnecting] = useState(false);
@@ -72,6 +74,13 @@ export function useDiktat(host: string, port: number) {
         socket.send(JSON.stringify({ type: "register_push", token: pushTokenRef.current }));
         info("PUSH", "Registered push token with daemon");
       }
+      // Keep-alive ping every 30s to prevent idle timeout
+      if (pingTimer.current) clearInterval(pingTimer.current);
+      pingTimer.current = setInterval(() => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({ type: "ping" }));
+        }
+      }, 30000);
     };
 
     socket.onmessage = (e) => {
@@ -93,6 +102,18 @@ export function useDiktat(host: string, port: number) {
         const all = [...claudeSessions, ...cursorSessions, ...filteredDaemon];
         setSessions(all);
         info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeSessions.length} cursor=${cursorSessions.length} daemon=${filteredDaemon.length})`);
+        // Auto-resume session if we reconnected mid-session
+        if (pendingResumeRef.current) {
+          const { session } = pendingResumeRef.current;
+          info("SESSION", `auto-resuming session ${session.id} after reconnect`);
+          socket.send(JSON.stringify({
+            type: "resume",
+            sessionId: session.id,
+            isClaudeSession: session.source === "claude",
+            isCursorSession: session.source === "cursor",
+            project: session.project,
+          }));
+        }
         return;
       }
 
@@ -177,6 +198,7 @@ export function useDiktat(host: string, port: number) {
     socket.onclose = (e) => {
       if (ws.current !== socket) { info("WS", "onclose: stale socket — ignoring"); return; }
       info("WS", `Disconnected (code=${e.code} reason="${e.reason}" wasClean=${e.wasClean} intentional=${intentionalDisconnect.current})`);
+      if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null; }
       setState("disconnected");
       if (intentionalDisconnect.current) {
         setReconnecting(false);
@@ -203,6 +225,7 @@ export function useDiktat(host: string, port: number) {
   const leaveSession = useCallback(() => {
     info("SESSION", "leaveSession() — discarding further output from current session");
     discardOutput.current = true;
+    pendingResumeRef.current = null;
     setActiveSessionId(null);
     setMessages([]);
     setStreaming(false);
@@ -222,6 +245,7 @@ export function useDiktat(host: string, port: number) {
 
   const resumeSession = useCallback((session: DiktatSession) => {
     info("SESSION", `resume: id=${session.id} source=${session.source} cli=${session.cli} project=${session.project}`);
+    pendingResumeRef.current = { session };
     ws.current?.send(JSON.stringify({
       type: "resume",
       sessionId: session.id,
