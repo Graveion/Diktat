@@ -136,10 +136,10 @@ function TypingIndicator() {
     const anims = dots.map((dot, i) =>
       Animated.loop(
         Animated.sequence([
-          Animated.delay(i * 150),
-          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
-          Animated.delay(600),
+          Animated.delay(i * 160),
+          Animated.timing(dot, { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 250, useNativeDriver: true }),
+          Animated.delay(500),
         ])
       )
     );
@@ -149,7 +149,10 @@ function TypingIndicator() {
   return (
     <View style={typingStyles.container}>
       {dots.map((dot, i) => (
-        <Animated.View key={i} style={[typingStyles.dot, { opacity: dot }]} />
+        <Animated.View key={i} style={[typingStyles.dot, {
+          opacity: dot,
+          transform: [{ scale: dot.interpolate({ inputRange: [0.3, 1], outputRange: [0.7, 1] }) }],
+        }]} />
       ))}
     </View>
   );
@@ -741,7 +744,7 @@ const markdownStyles: any = {
 
 const typingStyles = StyleSheet.create({
   container: { flexDirection: "row", alignItems: "center", gap: 5 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.border },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.textSub },
 });
 
 const waveStyles = StyleSheet.create({
