@@ -367,11 +367,16 @@ export function ChatScreen({
     ? slashCommands.filter((c) => c.cmd.startsWith(input.split(" ")[0]))
     : [];
 
+  const [peekPath, setPeekPath] = useState<string | null>(null);
+
   const showTyping = streaming && messages[messages.length - 1]?.role !== "assistant";
+  // currentTool live indicator: only show if the last message isn't already a tool card
+  const lastMsg = messages[messages.length - 1];
+  const showLiveTool = currentTool && lastMsg?.role !== "tool";
   const data: (DiktatMessage | { role: "typing" } | { role: "tool"; name: string })[] = [
     ...messages,
-    ...(currentTool ? [{ role: "tool" as const, name: currentTool }] : []),
-    ...(showTyping && !currentTool ? [{ role: "typing" as const }] : []),
+    ...(showLiveTool ? [{ role: "tool" as const, name: currentTool! }] : []),
+    ...(showTyping && !showLiveTool ? [{ role: "typing" as const }] : []),
   ];
 
   return (
@@ -426,13 +431,22 @@ export function ChatScreen({
               );
             }
             if (item.role === "tool") {
-              const { label, icon } = formatToolLabel((item as any).name ?? "");
+              const toolItem = item as DiktatMessage & { name?: string };
+              const toolStr = toolItem.toolName ?? toolItem.name ?? "";
+              const { label, icon } = formatToolLabel(toolStr);
+              const fullPath = (toolItem as DiktatMessage).toolPath;
+              const isLive = !toolItem.toolName; // live indicator has no toolName
               return (
                 <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
-                  <View style={styles.toolBubble}>
+                  <TouchableOpacity
+                    style={styles.toolBubble}
+                    onPress={() => fullPath ? setPeekPath(fullPath) : null}
+                    activeOpacity={fullPath ? 0.6 : 1}
+                  >
                     <Text style={styles.toolIcon}>{icon}</Text>
-                    <Text style={styles.toolText}>{label}…</Text>
-                  </View>
+                    <Text style={styles.toolText}>{label}{isLive ? "…" : ""}</Text>
+                    {fullPath ? <Text style={styles.toolChevron}>›</Text> : null}
+                  </TouchableOpacity>
                 </View>
               );
             }
@@ -536,6 +550,26 @@ export function ChatScreen({
           <Text style={styles.sendIcon}>↑</Text>
         </TouchableOpacity>
       </View>
+
+      {/* File path peek modal */}
+      {peekPath ? (
+        <TouchableOpacity
+          style={styles.peekOverlay}
+          activeOpacity={1}
+          onPress={() => setPeekPath(null)}
+        >
+          <View style={styles.peekCard}>
+            <Text style={styles.peekLabel}>File path</Text>
+            <Text style={styles.peekPath}>{peekPath}</Text>
+            <TouchableOpacity
+              onPress={() => { Clipboard.setStringAsync(peekPath); setPeekPath(null); }}
+              style={styles.peekCopy}
+            >
+              <Text style={styles.peekCopyText}>Copy path</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -579,7 +613,21 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   toolIcon: { fontSize: 11 },
-  toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12 },
+  toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12, flex: 1 },
+  toolChevron: { color: colors.textMuted, fontSize: 14, marginLeft: 4 },
+
+  peekOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end",
+  },
+  peekCard: {
+    backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: colors.border,
+  },
+  peekLabel: { fontFamily: fonts.bodyMedium, color: colors.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  peekPath: { fontFamily: fonts.mono, color: colors.text, fontSize: 13, lineHeight: 20, marginBottom: 16 },
+  peekCopy: { backgroundColor: colors.input, borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border },
+  peekCopyText: { fontFamily: fonts.bodySemi, color: colors.accent, fontSize: 14 },
 
   fadeTop: {
     position: "absolute", top: 0, left: 0, right: 0, height: 72,
