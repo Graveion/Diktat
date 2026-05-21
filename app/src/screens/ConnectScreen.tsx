@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, Linking, ScrollView,
+  KeyboardAvoidingView, Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -64,6 +65,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
   const [showManual, setShowManual] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [recentHosts, setRecentHosts] = useState<SavedHost[]>([]);
+  const portInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     loadConfig().then((c) => {
@@ -101,7 +103,10 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <LinearGradient
         colors={["#120d1f", colors.bg, colors.bg]}
         style={StyleSheet.absoluteFill}
@@ -189,17 +194,23 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
               value={host}
               onChangeText={setHost}
               placeholder="100.x.x.x"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.textSub}
               autoCapitalize="none"
-              keyboardType="numeric"
+              keyboardType="numbers-and-punctuation"
+              returnKeyType="next"
+              onSubmitEditing={() => portInputRef.current?.focus()}
+              blurOnSubmit={false}
             />
             <TextInput
+              ref={portInputRef}
               style={styles.input}
               value={port}
               onChangeText={setPort}
               placeholder="9000"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numeric"
+              placeholderTextColor={colors.textSub}
+              keyboardType="number-pad"
+              returnKeyType="go"
+              onSubmitEditing={handleConnect}
             />
             <TouchableOpacity
               style={[styles.connectBtn, (!host || connectionState === "connecting") && styles.connectBtnDisabled]}
@@ -235,7 +246,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
           </Animated.View>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -349,6 +360,8 @@ const styles = StyleSheet.create({
     padding: 13,
     fontSize: 15,
     fontFamily: fonts.body,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   connectBtn: {
     backgroundColor: colors.accent,

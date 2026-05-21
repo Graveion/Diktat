@@ -40,8 +40,8 @@ export const colors = {
 // Outfit (body) — clean but distinctive, not Inter
 
 export const fonts = {
-  display:     "Syne_700Bold",
-  displayXBold:"Syne_800ExtraBold",
+  display:     "SpaceGrotesk_700Bold",
+  displayXBold:"SpaceGrotesk_700Bold",
   body:        "Outfit_400Regular",
   bodyMedium:  "Outfit_500Medium",
   bodySemi:    "Outfit_600SemiBold",
