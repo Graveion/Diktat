@@ -90,6 +90,11 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
     if (msg.token) clientPushTokens.set(ws as object, msg.token);
     return;
   }
+
+  if (msg.type === "ping") {
+    ws.send(JSON.stringify({ type: "pong" }));
+    return;
+  }
 }
 
 const server = Bun.serve({
@@ -100,6 +105,7 @@ const server = Bun.serve({
     return new Response("Diktat daemon running", { status: 200 });
   },
   websocket: {
+    idleTimeout: 0,
     open(ws) {
       console.log(`[${new Date().toISOString()}] [WS] Client connected`);
       try {
