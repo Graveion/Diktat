@@ -122,7 +122,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
           diktat
         </Animated.Text>
         <Animated.Text entering={FadeIn.delay(240).duration(700)} style={styles.tagline}>
-          voice-driven coding
+          say it. ship it.
         </Animated.Text>
         <Animated.Text entering={FadeIn.delay(380).duration(600)} style={styles.version}>
           {APP_VERSION} · {UPDATE_LABEL}
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   version: {
     fontFamily: fonts.body,
     fontSize: 10,
-    color: colors.textFaint,
+    color: colors.textMuted,
     letterSpacing: 0.5,
   },
 
