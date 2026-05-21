@@ -603,8 +603,8 @@ const styles = StyleSheet.create({
   reconnectingText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11, textAlign: "center" },
   messages: { padding: 14, paddingBottom: 8 },
   emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
-  emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textMuted, fontSize: 15, marginBottom: 8 },
-  emptyHint: { fontFamily: fonts.body, color: colors.textFaint, fontSize: 13, textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 8 },
+  emptyHint: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, textAlign: "center", lineHeight: 20 },
 
   typingBubble: { paddingHorizontal: 12, paddingVertical: 10 },
 
@@ -617,7 +617,7 @@ const styles = StyleSheet.create({
   },
   toolIcon: { fontSize: 11 },
   toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12, flex: 1 },
-  toolChevron: { color: colors.textMuted, fontSize: 14, marginLeft: 4 },
+  toolChevron: { color: colors.textSub, fontSize: 14, marginLeft: 4 },
 
   peekOverlay: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: colors.border,
   },
-  peekLabel: { fontFamily: fonts.bodyMedium, color: colors.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  peekLabel: { fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
   peekPath: { fontFamily: fonts.mono, color: colors.text, fontSize: 13, lineHeight: 20, marginBottom: 16 },
   peekCopy: { backgroundColor: colors.input, borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   peekCopyText: { fontFamily: fonts.bodySemi, color: colors.accent, fontSize: 14 },
@@ -695,7 +695,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card, justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: colors.border,
   },
-  historyIcon: { color: colors.textMuted, fontSize: 13 },
+  historyIcon: { color: colors.textSub, fontSize: 13 },
 
   sendButton: {
     width: 40, height: 40, borderRadius: 20,

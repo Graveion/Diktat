@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6, shadowOpacity: 0.9, shadowOffset: { width: 0, height: 0 },
   },
   connectedHost: { fontFamily: fonts.body, fontSize: 11, color: colors.accent, marginTop: 2 },
-  disconnect: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, paddingBottom: 4 },
+  disconnect: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, paddingBottom: 4 },
 
   newButtonWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   newButton: {
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
   },
 
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  loadingText: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 14 },
+  loadingText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 14 },
 
   sessionCard: { marginHorizontal: 12, marginVertical: 3 },
   sessionCardInner: {
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   },
   cliBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   sessionPreview: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, marginBottom: 6, lineHeight: 18 },
-  sessionDate: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
+  sessionDate: { fontFamily: fonts.body, color: colors.textSub, fontSize: 11 },
 
   hideAction: {
     backgroundColor: colors.error, justifyContent: "center",
@@ -462,10 +462,10 @@ const styles = StyleSheet.create({
   hideActionText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 13 },
 
   separator: { height: 0 },
-  empty: { fontFamily: fonts.body, color: colors.textMuted, textAlign: "center", marginTop: 48, fontSize: 14 },
+  empty: { fontFamily: fonts.body, color: colors.textSub, textAlign: "center", marginTop: 48, fontSize: 14 },
   groupHeader: {
     fontFamily: fonts.bodyMedium,
-    color: colors.textMuted,
+    color: colors.textSub,
     fontSize: 10,
     textTransform: "uppercase",
     letterSpacing: 1.2,
@@ -489,7 +489,7 @@ const pickerStyles = StyleSheet.create({
   },
   title: { fontFamily: fonts.display, color: colors.text, fontSize: 22, marginBottom: 22, letterSpacing: -0.3 },
   sectionLabel: {
-    fontFamily: fonts.bodyMedium, color: colors.textMuted, fontSize: 10,
+    fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 10,
     textTransform: "uppercase", letterSpacing: 1, marginBottom: 10,
   },
   chipRow: { flexGrow: 0, marginBottom: 20 },
@@ -507,7 +507,7 @@ const pickerStyles = StyleSheet.create({
   },
   projectItemSelected: { borderColor: colors.accent, backgroundColor: colors.accentFaint },
   projectName: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15, marginBottom: 2 },
-  projectPath: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
+  projectPath: { fontFamily: fonts.body, color: colors.textSub, fontSize: 11 },
   actions: { flexDirection: "row", gap: 10 },
   cancelButton: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: colors.input, alignItems: "center" },
   cancelText: { fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 15 },
