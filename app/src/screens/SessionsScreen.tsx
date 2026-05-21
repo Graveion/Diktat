@@ -185,10 +185,11 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
         >
           <View style={styles.titleRow}>
             <Text style={styles.title}>Sessions</Text>
-            <View style={[styles.healthDot, {
-              backgroundColor: connectionState === "connected" ? colors.success :
-                connectionState === "connecting" ? colors.warning : colors.error
-            }]} />
+            <View style={[styles.healthDot, (() => {
+              const c = connectionState === "connected" ? colors.success :
+                connectionState === "connecting" ? colors.warning : colors.error;
+              return { backgroundColor: c, shadowColor: c };
+            })()] } />
           </View>
           {connectedHost ? (
             <Text style={styles.connectedHost}>{connectedHost}</Text>
@@ -406,7 +407,11 @@ const styles = StyleSheet.create({
   },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   title: { fontFamily: fonts.display, fontSize: 30, color: colors.text, letterSpacing: -0.5 },
-  healthDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 2 },
+  healthDot: {
+    width: 9, height: 9, borderRadius: 5, marginBottom: 2,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.15)",
+    shadowRadius: 6, shadowOpacity: 0.9, shadowOffset: { width: 0, height: 0 },
+  },
   connectedHost: { fontFamily: fonts.body, fontSize: 11, color: colors.accent, marginTop: 2 },
   disconnect: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, paddingBottom: 4 },
 
