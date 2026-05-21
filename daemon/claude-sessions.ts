@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
+
+
 const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
 export interface ClaudeSession {
@@ -12,16 +14,24 @@ export interface ClaudeSession {
   lastActiveAt: string;
 }
 
-function decodeProjectPath(encoded: string): string {
-  // Encoded path replaces '/' with '-', leading '-' is the root '/'
-  // e.g. '-Users-tim-Documents-myproject' -> '/Users/tim/Documents/myproject'
-  // Best-effort: replace leading '-' with '/' then try to match home dir
-  const home = homedir();
-  const homeEncoded = home.replace(/\//g, "-");
-  if (encoded.startsWith(homeEncoded)) {
-    return home + encoded.slice(homeEncoded.length).replace(/-/g, "/");
-  }
-  return "/" + encoded.slice(1).replace(/-/g, "/");
+// Read the cwd directly from the JSONL file — every entry has a "cwd" field
+// that is the exact project path Claude used. No encoding/decoding needed.
+function readProjectCwd(filePath: string): string | null {
+  try {
+    const buf = Buffer.alloc(4096);
+    const fs = require("fs");
+    const fd = fs.openSync(filePath, "r");
+    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+    fs.closeSync(fd);
+    const chunk = buf.subarray(0, bytesRead).toString("utf-8");
+    for (const line of chunk.split("\n").filter(Boolean)) {
+      try {
+        const json = JSON.parse(line);
+        if (json.cwd) return json.cwd as string;
+      } catch { /* incomplete line */ }
+    }
+  } catch { /* unreadable */ }
+  return null;
 }
 
 function projectLabel(projectPath: string): string {
@@ -98,6 +108,16 @@ export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
   return [];
 }
 
+export function claudeSessionExists(sessionId: string): boolean {
+  try {
+    const projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+    for (const dir of projectDirs) {
+      if (existsSync(join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`))) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
 export function listClaudeSessions(): ClaudeSession[] {
   const sessions: ClaudeSession[] = [];
 
@@ -107,15 +127,15 @@ export function listClaudeSessions(): ClaudeSession[] {
       const dirPath = join(CLAUDE_PROJECTS_DIR, dir);
       if (!statSync(dirPath).isDirectory()) continue;
 
-      const project = decodeProjectPath(dir);
-      const label = projectLabel(project);
-
       // Only top-level .jsonl files — skip subagent subdirectories
       const files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
       for (const file of files) {
         const filePath = join(dirPath, file);
         const id = file.replace(".jsonl", "");
         const stat = statSync(filePath);
+        // Read the real project path directly from the JSONL — no encoding/decoding
+        const project = readProjectCwd(filePath) ?? homedir();
+        const label = projectLabel(project);
         sessions.push({
           id,
           project,

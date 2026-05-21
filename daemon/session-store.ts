@@ -6,6 +6,7 @@ const SESSIONS_DIR = "./sessions";
 export interface SessionData {
   id: string;
   cli: string;
+  cliPath: string;
   project: string;
   cliSessionId?: string;
   createdAt: string;
