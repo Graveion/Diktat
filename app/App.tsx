@@ -9,6 +9,9 @@ import {
   Syne_800ExtraBold,
 } from "@expo-google-fonts/syne";
 import {
+  SpaceGrotesk_700Bold,
+} from "@expo-google-fonts/space-grotesk";
+import {
   Outfit_400Regular,
   Outfit_500Medium,
   Outfit_600SemiBold,
@@ -42,6 +45,7 @@ export default function App() {
   const [fontsLoaded] = useFonts({
     Syne_700Bold, Syne_800ExtraBold,
     Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
+    SpaceGrotesk_700Bold,
   });
 
   const [screen, setScreen] = useState<Screen>("connect");
