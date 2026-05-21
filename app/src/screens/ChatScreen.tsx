@@ -532,19 +532,6 @@ export function ChatScreen({
           ) : null}
         </View>
 
-        {/* History button — only shown when there's history and input is empty */}
-        {inputHistory.current.length > 0 && !input && !listening && (
-          <TouchableOpacity style={styles.historyButton} onPress={() => cycleHistory(1)}>
-            <Text style={styles.historyIcon}>↑</Text>
-          </TouchableOpacity>
-        )}
-        {/* Down history when browsing */}
-        {historyIdx.current >= 0 && !listening && (
-          <TouchableOpacity style={styles.historyButton} onPress={() => cycleHistory(-1)}>
-            <Text style={styles.historyIcon}>↓</Text>
-          </TouchableOpacity>
-        )}
-
         <TouchableOpacity
           style={[styles.sendButton, (!input.trim() || streaming) && styles.sendDisabled]}
           onPress={handleSend}
