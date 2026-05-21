@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { HistoryMessage } from "./claude-sessions";
+import { decodeCursorPath } from "./path-utils";
 
 const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
 
@@ -11,11 +12,6 @@ export interface CursorSession {
   projectLabel: string;
   firstMessage: string;
   lastActiveAt: string;
-}
-
-function decodeProjectPath(slug: string): string {
-  // Cursor slug: 'Users-timothygreen-Documents-Pacer' -> '/Users/timothygreen/Documents/Pacer'
-  return "/" + slug.replace(/-/g, "/");
 }
 
 function projectLabel(projectPath: string): string {
@@ -63,7 +59,7 @@ export function listCursorSessions(): CursorSession[] {
       const transcriptsDir = join(CURSOR_PROJECTS_DIR, dir, "agent-transcripts");
       if (!existsSync(transcriptsDir)) continue;
 
-      const project = decodeProjectPath(dir);
+      const project = decodeCursorPath(dir);
       const label = projectLabel(project);
 
       const sessionDirs = readdirSync(transcriptsDir);
