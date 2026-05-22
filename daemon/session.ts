@@ -2,6 +2,14 @@ import type { ServerWebSocket } from "bun";
 import { existsSync } from "fs";
 import { saveSession, loadSession, type SessionData } from "./session-store";
 import { sendPushNotification } from "./push";
+import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
+
+function pickToolPath(input: any): string | undefined {
+  if (!input) return undefined;
+  if (typeof input.file_path === "string") return input.file_path;
+  if (typeof input.path === "string") return input.path;
+  return undefined;
+}
 
 function buildArgs(cli: string, cliPath: string, text: string, cliSessionId?: string, mode?: string): string[] {
   switch (cli) {
@@ -174,8 +182,34 @@ export class Session {
             if (block.type === "text") {
               this.ws.send(JSON.stringify({ type: "output", text: block.text }));
             } else if (block.type === "tool_use") {
-              this.ws.send(JSON.stringify({ type: "tool_use", name: block.name }));
+              const preview = buildToolUsePreview(block.name, block.input);
+              const path = pickToolPath(block.input);
+              this.ws.send(JSON.stringify({
+                type: "tool_use",
+                id: block.id,
+                name: block.name,
+                ...(path ? { path } : {}),
+                ...(preview.diff ? { diff: preview.diff } : {}),
+                ...(preview.preview ? { preview: preview.preview } : {}),
+                ...(preview.command ? { command: preview.command } : {}),
+                ...(preview.truncated ? { truncated: true } : {}),
+                ...(preview.fullSize ? { fullSize: preview.fullSize } : {}),
+              }));
             }
+          }
+        } else if (json.type === "user" && Array.isArray(json.message?.content)) {
+          // Tool results arrive in subsequent user entries during -p stream-json.
+          for (const block of json.message.content) {
+            if (block?.type !== "tool_result") continue;
+            const result = buildToolResultPreview(block.content);
+            if (!result) continue;
+            this.ws.send(JSON.stringify({
+              type: "tool_result",
+              toolUseId: block.tool_use_id,
+              preview: result.preview,
+              truncated: result.truncated,
+              fullSize: result.fullSize,
+            }));
           }
         }
       } catch {
@@ -209,22 +243,124 @@ export class Session {
           }
         }
 
-        // Dedicated tool_call events give us the tool type and file path
-        if (json.type === "tool_call" && json.subtype === "started") {
-          const tc = json.tool_call ?? {};
-          let name = "Tool";
-          let path: string | undefined;
-          if (tc.readToolCall)        { name = "Read";  path = tc.readToolCall.args?.path; }
-          else if (tc.writeToolCall)  { name = "Write"; path = tc.writeToolCall.args?.path; }
-          else if (tc.editToolCall)   { name = "Edit";  path = tc.editToolCall.args?.path; }
-          else if (tc.bashToolCall)   { name = "Bash"; }
-          else if (tc.searchToolCall) { name = "Grep"; }
-          else if (tc.webToolCall)    { name = "WebFetch"; }
-          this.ws.send(JSON.stringify({ type: "tool_use", name, ...(path ? { path } : {}) }));
+        if (json.type === "tool_call") {
+          this.handleCursorToolCall(json);
         }
       } catch {
         // non-JSON stderr etc, ignore
       }
+    }
+  }
+
+  // Detect which tool wrapper is set on a Cursor tool_call and return:
+  //   name           — our display name (Read/Write/Edit/Bash/...)
+  //   wrapper        — the per-tool wrapper object (readToolCall, etc.)
+  //   anthropicInput — args remapped to Anthropic-style field names so
+  //                    buildToolUsePreview/path extraction work uniformly.
+  private extractCursorTool(tc: any): { name: string; wrapper: any; anthropicInput: any } | null {
+    if (!tc || typeof tc !== "object") return null;
+    if (tc.readToolCall) {
+      const a = tc.readToolCall.args ?? {};
+      return { name: "Read", wrapper: tc.readToolCall, anthropicInput: { file_path: a.path } };
+    }
+    if (tc.writeToolCall) {
+      const a = tc.writeToolCall.args ?? {};
+      // Cursor uses `fileText`; remap to Anthropic's `content` so Write previews work.
+      return { name: "Write", wrapper: tc.writeToolCall, anthropicInput: { file_path: a.path, content: a.fileText } };
+    }
+    if (tc.editToolCall) {
+      const a = tc.editToolCall.args ?? {};
+      // Edit args are not in the public docs; probe both snake_case and camelCase.
+      return {
+        name: "Edit",
+        wrapper: tc.editToolCall,
+        anthropicInput: {
+          file_path: a.path,
+          old_string: a.old_string ?? a.oldString ?? a.oldText ?? a.old,
+          new_string: a.new_string ?? a.newString ?? a.newText ?? a.new,
+        },
+      };
+    }
+    if (tc.bashToolCall) {
+      const a = tc.bashToolCall.args ?? {};
+      return { name: "Bash", wrapper: tc.bashToolCall, anthropicInput: { command: a.command ?? a.cmd ?? a.script } };
+    }
+    if (tc.searchToolCall) {
+      const a = tc.searchToolCall.args ?? {};
+      return { name: "Grep", wrapper: tc.searchToolCall, anthropicInput: { command: a.query ?? a.pattern } };
+    }
+    if (tc.webToolCall) {
+      const a = tc.webToolCall.args ?? {};
+      return { name: "WebFetch", wrapper: tc.webToolCall, anthropicInput: { command: a.url } };
+    }
+    return null;
+  }
+
+  // Pull a useful text payload out of a Cursor tool result.success object.
+  private extractCursorResultText(name: string, success: any): string | null {
+    if (!success || typeof success !== "object") return null;
+    switch (name) {
+      case "Read":
+        return typeof success.content === "string" ? success.content : null;
+      case "Write": {
+        const path = typeof success.path === "string" ? success.path : "";
+        const lines = typeof success.linesCreated === "number" ? success.linesCreated : null;
+        const size = typeof success.fileSize === "number" ? success.fileSize : null;
+        const parts: string[] = [];
+        if (path) parts.push(`Wrote ${path}`);
+        if (lines !== null) parts.push(`${lines} lines`);
+        if (size !== null) parts.push(`${size} bytes`);
+        return parts.length ? parts.join(" · ") : null;
+      }
+      default:
+        // Fields aren't documented for Edit/Bash/etc. — probe common shapes.
+        if (typeof success.output === "string") return success.output;
+        if (typeof success.content === "string") return success.content;
+        if (typeof success.text === "string") return success.text;
+        if (typeof success.stdout === "string") {
+          return success.stderr ? `${success.stdout}\n[stderr]\n${success.stderr}` : success.stdout;
+        }
+        return null;
+    }
+  }
+
+  private handleCursorToolCall(json: any): void {
+    const callId: string | undefined = typeof json.call_id === "string" ? json.call_id : undefined;
+    const extracted = this.extractCursorTool(json.tool_call);
+    if (!extracted) return;
+    const { name, wrapper, anthropicInput } = extracted;
+    const path = pickToolPath(anthropicInput);
+
+    if (json.subtype === "started") {
+      const preview = buildToolUsePreview(name, anthropicInput);
+      this.ws.send(JSON.stringify({
+        type: "tool_use",
+        ...(callId ? { id: callId } : {}),
+        name,
+        ...(path ? { path } : {}),
+        ...(preview.diff ? { diff: preview.diff } : {}),
+        ...(preview.preview ? { preview: preview.preview } : {}),
+        ...(preview.command ? { command: preview.command } : {}),
+        ...(preview.truncated ? { truncated: true } : {}),
+        ...(preview.fullSize ? { fullSize: preview.fullSize } : {}),
+      }));
+      return;
+    }
+
+    if (json.subtype === "completed") {
+      if (!callId) return;
+      const success = wrapper?.result?.success;
+      const text = this.extractCursorResultText(name, success);
+      if (!text) return;
+      const result = buildToolResultPreview(text);
+      if (!result) return;
+      this.ws.send(JSON.stringify({
+        type: "tool_result",
+        toolUseId: callId,
+        preview: result.preview,
+        truncated: result.truncated,
+        fullSize: result.fullSize,
+      }));
     }
   }
 }

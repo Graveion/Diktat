@@ -4,6 +4,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { detectCLIs } from "./cli-detector";
 import { getTailscaleIP } from "./tailscale";
+import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -176,6 +177,20 @@ async function main() {
     } else if (cli === "cursor") {
       // Cursor auth is managed by the IDE — no CLI login needed
       ok("Cursor auth is managed by the IDE");
+      // Check / offer to grant Shell(*) so the cursor CLI can run shell commands
+      if (cursorShellPermissionGranted()) {
+        ok("Shell(*) already granted in ~/.cursor/cli-config.json");
+      } else {
+        info("Shell(*) is not set in ~/.cursor/cli-config.json.");
+        info("Without it the Cursor CLI cannot run shell commands.");
+        const grant = (await ask("  Add Shell(*) to ~/.cursor/cli-config.json? (y/n): ")).trim().toLowerCase();
+        if (grant === "y") {
+          grantCursorShellPermission();
+          ok("Shell(*) added to ~/.cursor/cli-config.json");
+        } else {
+          info("Skipped — cursor sessions may have limited shell access.");
+        }
+      }
     }
   }
 

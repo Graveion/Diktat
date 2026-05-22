@@ -47,7 +47,14 @@
       }
     },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Diktat needs microphone access to record your voice instructions.",
+          "speechRecognitionPermission": "Diktat uses speech recognition to transcribe your voice into coding instructions."
+        }
+      ]
     ]
   }
 }

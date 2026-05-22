@@ -21,7 +21,8 @@ function resolveEncodedRelative(base: string, relEncoded: string): string {
       .sort((a, b) => b.encoded.length - a.encoded.length);
 
     if (candidates.length > 0) {
-      const { name, encoded } = candidates[0];
+      const best = candidates[0]!;
+      const { name, encoded } = best;
       const rest = remaining.slice(encoded.length);
       return resolveEncodedRelative(join(base, name), rest);
     }
