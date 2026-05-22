@@ -752,16 +752,26 @@ export function ChatScreen({
     });
   }, [speakingIdx]);
 
-  // Auto-scroll
+  // Auto-scroll on message count change (new bubble appended or history load).
   const prevLengthRef = useRef(0);
   useEffect(() => {
     if (messages.length === 0) { prevLengthRef.current = 0; return; }
     const isHistory = messages.length - prevLengthRef.current > 1;
     prevLengthRef.current = messages.length;
-    if (isAtBottom || isHistory) {
+    if (isAtBottomRef.current || isHistory) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: !isHistory }), isHistory ? 200 : 50);
     }
   }, [messages.length]);
+
+  // Streaming auto-scroll: fires on the same-bubble text-growth case where the
+  // array reference changes but messages.length doesn't. onContentSizeChange
+  // catches most of this but is flaky when children's text content grows
+  // in-place — this effect is the safety net.
+  useEffect(() => {
+    if (!isAtBottomRef.current) return;
+    const id = requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    return () => cancelAnimationFrame(id);
+  }, [messages, streaming, currentTool]);
 
   const startInitialListening = useCallback(() => {
     setInput("");
