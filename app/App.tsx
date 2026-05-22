@@ -234,6 +234,7 @@ function App() {
           streaming={diktat.streaming}
           currentTool={diktat.currentTool}
           reconnecting={diktat.reconnecting}
+          historyLoading={diktat.historyLoading}
           activeSessionId={diktat.activeSessionId}
           onSend={diktat.sendMessage}
           onCancel={diktat.cancelMessage}

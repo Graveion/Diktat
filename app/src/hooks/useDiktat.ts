@@ -56,6 +56,9 @@ export function useDiktat(host: string, port: number) {
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [currentTool, setCurrentTool] = useState<string | null>(null);
+  // True between spawned/resumed and the first history (or output) event.
+  // Lets the UI show a loading state instead of the empty-session placeholder.
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const connect = useCallback((overrideHost?: string, overridePort?: number) => {
     const h = overrideHost ?? lastHost.current;
@@ -144,6 +147,7 @@ export function useDiktat(host: string, port: number) {
           hasReceivedOutput.current = false;
           setMessages([]);
           setStreaming(false);
+          setHistoryLoading(true);
           info("SESSION", `${msg.type}: sessionId=${msg.session.id} cli=${msg.session.cli} project=${msg.session.project}`);
         }
         return;
@@ -151,6 +155,7 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "history") {
         const msgs = msg.messages ?? [];
+        setHistoryLoading(false);
         // Skip history if output has already started — history loading is async
         // and can race with the user's first message, wiping streamed content.
         if (hasReceivedOutput.current) {
@@ -218,6 +223,7 @@ export function useDiktat(host: string, port: number) {
           return;
         }
         hasReceivedOutput.current = true;
+        setHistoryLoading(false);
         setCurrentTool(null);
         setStreaming(true);
         setMessages((prev) => {
@@ -296,6 +302,7 @@ export function useDiktat(host: string, port: number) {
     setMessages([]);
     setStreaming(false);
     setCurrentTool(null);
+    setHistoryLoading(false);
   }, []);
 
   const cancelMessage = useCallback((sessionId: string) => {
@@ -349,7 +356,7 @@ export function useDiktat(host: string, port: number) {
 
   return {
     state, reconnecting, errorMessage, clis, projects, sessions, activeSessionId,
-    messages, streaming, currentTool, connect, disconnect,
+    messages, streaming, currentTool, historyLoading, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
   };
