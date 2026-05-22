@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
-  ScrollView, DeviceEventEmitter,
+  ScrollView, DeviceEventEmitter, ActivityIndicator,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Markdown from "react-native-markdown-display";
@@ -481,6 +481,7 @@ type Props = {
   streaming: boolean;
   currentTool: string | null;
   reconnecting: boolean;
+  historyLoading: boolean;
   activeSessionId: string | null;
   sessionCli?: string;
   onSend: (text: string) => void;
@@ -493,7 +494,7 @@ type Props = {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function ChatScreen({
-  messages, streaming, currentTool, reconnecting,
+  messages, streaming, currentTool, reconnecting, historyLoading,
   activeSessionId, sessionCli, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
 }: Props) {
   type Mode = "idle" | "listening" | "reviewing";
@@ -766,7 +767,12 @@ export function ChatScreen({
     const isHistory = messages.length - prevLengthRef.current > 1;
     prevLengthRef.current = messages.length;
     if (isAtBottomRef.current || isHistory) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: !isHistory }), isHistory ? 200 : 50);
+      // History loads render variable-height content — scroll twice: once at
+      // 250ms (first paint) and again at 600ms (after all images/markdown laid out).
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), isHistory ? 250 : 50);
+      if (isHistory) {
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 600);
+      }
     }
   }, [messages.length]);
 
@@ -991,25 +997,33 @@ export function ChatScreen({
           scrollEventThrottle={100}
         >
           {data.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>Session ready</Text>
-              <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
-              <View style={styles.emptyExamples}>
-                {EXAMPLE_PROMPTS.map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    style={styles.emptyExampleChip}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      onSend(p);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.emptyExampleText}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
+            historyLoading ? (
+              // History is in-flight — show a subtle loader rather than the
+              // "Session ready" placeholder, which would flash and then vanish.
+              <View style={styles.historyLoadingContainer}>
+                <ActivityIndicator color={colors.textMuted} size="small" />
               </View>
-            </View>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>Session ready</Text>
+                <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
+                <View style={styles.emptyExamples}>
+                  {EXAMPLE_PROMPTS.map((p) => (
+                    <TouchableOpacity
+                      key={p}
+                      style={styles.emptyExampleChip}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        onSend(p);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.emptyExampleText}>{p}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )
           ) : data.map((item, index) => {
             if (item.role === "typing") {
               return (
@@ -1355,6 +1369,7 @@ const styles = StyleSheet.create({
   },
   reconnectingRetryText: { fontFamily: fonts.bodySemi, color: colors.accent, fontSize: 11 },
   messages: { padding: 14, paddingBottom: 8 },
+  historyLoadingContainer: { alignItems: "center", marginTop: 100 },
   emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
   emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 8 },
   emptyHint: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, textAlign: "center", lineHeight: 20 },
