@@ -500,6 +500,7 @@ export function ChatScreen({
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("idle");
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const isAtBottomRef = useRef(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [showIdle, setShowIdle] = useState(false);
@@ -946,7 +947,15 @@ export function ChatScreen({
           keyboardDismissMode="on-drag"
           onScroll={(e) => {
             const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            setIsAtBottom(layoutMeasurement.height + contentOffset.y >= contentSize.height - 60);
+            const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 60;
+            setIsAtBottom(atBottom);
+            isAtBottomRef.current = atBottom;
+          }}
+          onContentSizeChange={() => {
+            // Follow streaming text growth when user is already at the bottom.
+            if (isAtBottomRef.current) {
+              listRef.current?.scrollToEnd({ animated: false });
+            }
           }}
           scrollEventThrottle={100}
         >
