@@ -535,6 +535,9 @@ export function ChatScreen({
     }, 500);
   }, []);
   const listRef = useRef<ScrollView>(null);
+  // Set when history loads so onContentSizeChange keeps scrolling to end
+  // regardless of isAtBottomRef, until an onScroll event confirms we arrived.
+  const pendingScrollToEnd = useRef(false);
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -766,13 +769,25 @@ export function ChatScreen({
     if (messages.length === 0) { prevLengthRef.current = 0; return; }
     const isHistory = messages.length - prevLengthRef.current > 1;
     prevLengthRef.current = messages.length;
-    if (isAtBottomRef.current || isHistory) {
-      // History loads render variable-height content — scroll twice: once at
-      // 250ms (first paint) and again at 600ms (after all images/markdown laid out).
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), isHistory ? 250 : 50);
-      if (isHistory) {
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 600);
-      }
+    if (isHistory) {
+      // Set the persistent flag so onContentSizeChange keeps scrolling until
+      // we actually land at the bottom (confirmed via onScroll).
+      pendingScrollToEnd.current = true;
+      // Also fire a few timed attempts as a belt-and-braces backstop.
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 350);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 700);
+    } else if (isAtBottomRef.current) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
+    }
+  }, [messages.length]);
+
+  // Reset scroll-follow state when we leave a session (messages cleared)
+  useEffect(() => {
+    if (messages.length === 0) {
+      pendingScrollToEnd.current = false;
+      userScrolledAwayRef.current = false;
+      isAtBottomRef.current = true;
     }
   }, [messages.length]);
 
@@ -780,9 +795,9 @@ export function ChatScreen({
   // messages.length doesn't change. Uses the same follow-or-not logic as
   // onContentSizeChange so behaviour stays consistent.
   useEffect(() => {
-    const shouldFollow = streamingRef.current
+    const shouldFollow = pendingScrollToEnd.current || (streamingRef.current
       ? !userScrolledAwayRef.current
-      : isAtBottomRef.current;
+      : isAtBottomRef.current);
     if (!shouldFollow) return;
     const id = requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
     return () => cancelAnimationFrame(id);
@@ -979,12 +994,24 @@ export function ChatScreen({
             const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - threshold;
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
+            if (atBottom) {
+              // Confirmed at bottom — stop the persistent history-load follow.
+              pendingScrollToEnd.current = false;
+              userScrolledAwayRef.current = false;
+            }
             // If the user is actively scrolling away while streaming, give up
             // following until they return to the bottom.
             if (streamingRef.current && !atBottom) userScrolledAwayRef.current = true;
-            if (atBottom) userScrolledAwayRef.current = false;
           }}
           onContentSizeChange={() => {
+            // pendingScrollToEnd: set after a history load, cleared only once
+            // onScroll confirms we've actually reached the bottom. This
+            // bypasses isAtBottomRef which can be stale (set false by an
+            // intermediate scroll event while content is still growing).
+            if (pendingScrollToEnd.current) {
+              listRef.current?.scrollToEnd({ animated: false });
+              return;
+            }
             // While streaming, follow content unless the user has scrolled
             // away on purpose. Outside streaming, honour the user's position.
             const shouldFollow = streamingRef.current
