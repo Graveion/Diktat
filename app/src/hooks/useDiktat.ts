@@ -44,6 +44,7 @@ export function useDiktat(host: string, port: number) {
   const lastPort = useRef(port);
   const pushTokenRef = useRef<string | null>(null);
   const pendingResumeRef = useRef<{ session: any } | null>(null);
+  const isAutoResumingRef = useRef(false);
 
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [reconnecting, setReconnecting] = useState(false);
@@ -112,10 +113,14 @@ export function useDiktat(host: string, port: number) {
         const all = [...claudeSessions, ...cursorSessions, ...filteredDaemon];
         setSessions(all);
         info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeSessions.length} cursor=${cursorSessions.length} daemon=${filteredDaemon.length})`);
-        // Auto-resume session if we reconnected mid-session
+        // Auto-resume session if we reconnected mid-session. Flag this case so
+        // the subsequent "resumed" event preserves in-memory messages instead
+        // of clearing them (otherwise the just-finished turn vanishes when
+        // history loads from JSONL, which may lag the most recent write).
         if (pendingResumeRef.current) {
           const { session } = pendingResumeRef.current;
           info("SESSION", `auto-resuming session ${session.id} after reconnect`);
+          isAutoResumingRef.current = true;
           socket.send(JSON.stringify({
             type: "resume",
             sessionId: session.id,
@@ -129,11 +134,18 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "spawned" || msg.type === "resumed") {
         discardOutput.current = false;
-        hasReceivedOutput.current = false;
         setActiveSessionId(msg.session.id);
-        setMessages([]);
-        setStreaming(false);
-        info("SESSION", `${msg.type}: sessionId=${msg.session.id} cli=${msg.session.cli} project=${msg.session.project}`);
+        if (msg.type === "resumed" && isAutoResumingRef.current) {
+          // Reconnect mid-session: keep current in-memory messages and the
+          // hasReceivedOutput gate so the trailing history load is skipped.
+          isAutoResumingRef.current = false;
+          info("SESSION", `resumed (auto, preserving in-memory msgs): sessionId=${msg.session.id}`);
+        } else {
+          hasReceivedOutput.current = false;
+          setMessages([]);
+          setStreaming(false);
+          info("SESSION", `${msg.type}: sessionId=${msg.session.id} cli=${msg.session.cli} project=${msg.session.project}`);
+        }
         return;
       }
 
