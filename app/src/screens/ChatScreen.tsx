@@ -536,8 +536,13 @@ export function ChatScreen({
   }, []);
   const listRef = useRef<ScrollView>(null);
   // Set when history loads so onContentSizeChange keeps scrolling to end
-  // regardless of isAtBottomRef, until an onScroll event confirms we arrived.
+  // regardless of isAtBottomRef, until an onScroll event confirms we arrived
+  // AND historyLoading is false. Must not clear on partial-render "at bottom."
   const pendingScrollToEnd = useRef(false);
+  // Mirror of historyLoading prop in a ref so scroll callbacks can read it
+  // synchronously without stale closure values.
+  const historyLoadingRef = useRef(historyLoading);
+  historyLoadingRef.current = historyLoading;
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -771,14 +776,14 @@ export function ChatScreen({
     prevLengthRef.current = messages.length;
     if (isHistory) {
       // Set the persistent flag so onContentSizeChange keeps scrolling until
-      // we actually land at the bottom (confirmed via onScroll).
+      // we actually land at the bottom AND historyLoading is false.
       pendingScrollToEnd.current = true;
-      // Also fire a few timed attempts as a belt-and-braces backstop.
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 350);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 700);
+      // Belt-and-braces timed attempts using large-y clamp (no stale contentSize).
+      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 80);
+      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 400);
+      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 800);
     } else if (isAtBottomRef.current) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 50);
+      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 50);
     }
   }, [messages.length]);
 
@@ -788,6 +793,9 @@ export function ChatScreen({
       pendingScrollToEnd.current = false;
       userScrolledAwayRef.current = false;
       isAtBottomRef.current = true;
+      // Reset native scroll offset so a stale offset from the previous session
+      // (which could be 1000s of px) doesn't interfere with the next history load.
+      listRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [messages.length]);
 
@@ -799,7 +807,7 @@ export function ChatScreen({
       ? !userScrolledAwayRef.current
       : isAtBottomRef.current);
     if (!shouldFollow) return;
-    const id = requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    const id = requestAnimationFrame(() => listRef.current?.scrollTo({ y: 99999, animated: false }));
     return () => cancelAnimationFrame(id);
   }, [messages, streaming, currentTool]);
 
@@ -995,8 +1003,13 @@ export function ChatScreen({
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
             if (atBottom) {
-              // Confirmed at bottom — stop the persistent history-load follow.
-              pendingScrollToEnd.current = false;
+              // Only stop the persistent follow once history is fully loaded.
+              // If we clear it during a partial-render "at bottom" the flag
+              // disappears before the remaining content has rendered, leaving
+              // the user stranded mid-scroll in a tall conversation.
+              if (!historyLoadingRef.current) {
+                pendingScrollToEnd.current = false;
+              }
               userScrolledAwayRef.current = false;
             }
             // If the user is actively scrolling away while streaming, give up
@@ -1005,11 +1018,13 @@ export function ChatScreen({
           }}
           onContentSizeChange={() => {
             // pendingScrollToEnd: set after a history load, cleared only once
-            // onScroll confirms we've actually reached the bottom. This
-            // bypasses isAtBottomRef which can be stale (set false by an
-            // intermediate scroll event while content is still growing).
+            // onScroll confirms we've reached the bottom AND historyLoading
+            // is false (so partial-render "at bottom" events don't kill it).
+            // Use scrollTo(y=99999) rather than scrollToEnd — the native layer
+            // clamps to the actual max offset without needing stale JS-side
+            // contentSize, which fixes the large-message blank-screen bug.
             if (pendingScrollToEnd.current) {
-              listRef.current?.scrollToEnd({ animated: false });
+              listRef.current?.scrollTo({ y: 99999, animated: false });
               return;
             }
             // While streaming, follow content unless the user has scrolled
@@ -1018,7 +1033,7 @@ export function ChatScreen({
               ? !userScrolledAwayRef.current
               : isAtBottomRef.current;
             if (shouldFollow) {
-              listRef.current?.scrollToEnd({ animated: false });
+              listRef.current?.scrollTo({ y: 99999, animated: false });
             }
           }}
           scrollEventThrottle={100}
