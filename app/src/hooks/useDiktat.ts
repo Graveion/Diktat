@@ -16,6 +16,15 @@ export type DiktatMessage = {
   text: string;
   toolName?: string;
   toolPath?: string;
+  // Tool enrichment — all optional, populated from daemon when available
+  toolId?: string;
+  toolDiff?: string;
+  toolPreview?: string;
+  toolCommand?: string;
+  toolResult?: string;
+  toolTruncated?: boolean;
+  toolResultTruncated?: boolean;
+  toolFullSize?: number;
 };
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -30,6 +39,7 @@ export function useDiktat(host: string, port: number) {
   const reconnectDelay = useRef(RECONNECT_DELAY_MS);
   const intentionalDisconnect = useRef(false);
   const discardOutput = useRef(false);
+  const hasReceivedOutput = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
   const pushTokenRef = useRef<string | null>(null);
@@ -119,6 +129,7 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "spawned" || msg.type === "resumed") {
         discardOutput.current = false;
+        hasReceivedOutput.current = false;
         setActiveSessionId(msg.session.id);
         setMessages([]);
         setStreaming(false);
@@ -128,6 +139,12 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "history") {
         const msgs = msg.messages ?? [];
+        // Skip history if output has already started — history loading is async
+        // and can race with the user's first message, wiping streamed content.
+        if (hasReceivedOutput.current) {
+          info("SESSION", `history: skipped (output already started), ${msgs.length} msgs`);
+          return;
+        }
         setMessages(msgs);
         info("SESSION", `history: ${msgs.length} messages loaded`);
         return;
@@ -142,10 +159,44 @@ export function useDiktat(host: string, port: number) {
           // Persist tool usage into message history
           setMessages((prev) => [
             ...prev,
-            { role: "tool" as const, text: "", toolName: toolStr ?? msg.name, toolPath: msg.path as string | undefined },
+            {
+              role: "tool" as const,
+              text: "",
+              toolName: toolStr ?? msg.name,
+              toolPath: msg.path as string | undefined,
+              toolId: msg.id as string | undefined,
+              toolDiff: msg.diff as string | undefined,
+              toolPreview: msg.preview as string | undefined,
+              toolCommand: msg.command as string | undefined,
+              toolTruncated: msg.truncated as boolean | undefined,
+              toolFullSize: msg.fullSize as number | undefined,
+            },
           ]);
         }
         info("MSG", `tool_use: ${msg.name}${msg.path ? ` (${msg.path})` : ""}`);
+        return;
+      }
+
+      if (msg.type === "tool_result") {
+        if (!discardOutput.current && msg.toolUseId) {
+          setMessages((prev) => {
+            const idx = [...prev].reverse().findIndex(
+              (m) => m.role === "tool" && m.toolId === msg.toolUseId,
+            );
+            if (idx === -1) return prev;
+            const realIdx = prev.length - 1 - idx;
+            const cur = prev[realIdx];
+            if (!cur) return prev;
+            const next = prev.slice();
+            next[realIdx] = {
+              ...cur,
+              toolResult: msg.preview as string | undefined,
+              toolResultTruncated: msg.truncated as boolean | undefined,
+              toolFullSize: cur.toolFullSize ?? (msg.fullSize as number | undefined),
+            };
+            return next;
+          });
+        }
         return;
       }
 
@@ -154,6 +205,7 @@ export function useDiktat(host: string, port: number) {
           info("MSG", "output: discarded (stale session)");
           return;
         }
+        hasReceivedOutput.current = true;
         setCurrentTool(null);
         setStreaming(true);
         setMessages((prev) => {

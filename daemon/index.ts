@@ -1,3 +1,6 @@
+import { existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { loadConfig } from "./config";
 import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
@@ -5,6 +8,7 @@ import { Session } from "./session";
 import { listSessions } from "./session-store";
 import { listClaudeSessions, claudeSessionExists, readHistory } from "./claude-sessions";
 import { listCursorSessions, readCursorHistory } from "./cursor-sessions";
+import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -15,6 +19,19 @@ if (!tailscaleIP) {
 }
 
 const availableCLIs = await detectCLIs();
+
+// On first startup (no cli-config.json yet), auto-create it with Shell(*).
+// If the file already exists we leave it alone — the user may have custom entries.
+// They can add Shell(*) themselves or re-run `diktat setup`.
+if (availableCLIs["cursor"] && !cursorShellPermissionGranted()) {
+  const configPath = join(homedir(), ".cursor", "cli-config.json");
+  if (!existsSync(configPath)) {
+    grantCursorShellPermission();
+    console.log("[cursor] Created ~/.cursor/cli-config.json with Shell(*) permission");
+  } else {
+    console.warn("[cursor] Shell(*) not set in ~/.cursor/cli-config.json — cursor sessions may have limited shell access. Run `diktat setup` to configure.");
+  }
+}
 
 const activeSessions = new Map<string, Session>();
 const clientPushTokens = new WeakMap<object, string>();
@@ -29,7 +46,7 @@ async function handleMessage(ws: any, msg: any): Promise<void> {
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
-    const session = Session.create(ws, msg.cli, availableCLIs[msg.cli], msg.project, msg.mode);
+    const session = Session.create(ws, msg.cli, availableCLIs[msg.cli]!, msg.project, msg.mode);
     activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;

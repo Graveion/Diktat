@@ -59,10 +59,40 @@ function readFirstMessage(filePath: string): string {
   }
 }
 
+import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
+
 export interface HistoryMessage {
   role: "user" | "assistant" | "tool";
   text: string;
   toolName?: string;
+  toolPath?: string;
+  // Enrichment for tool messages (all optional)
+  toolId?: string;
+  toolDiff?: string;
+  toolPreview?: string;
+  toolCommand?: string;
+  toolResult?: string;
+  toolTruncated?: boolean;
+  toolResultTruncated?: boolean;
+  toolFullSize?: number;
+}
+
+function extractToolPath(name: string, input: any): string | undefined {
+  if (!input) return undefined;
+  if (typeof input.file_path === "string") return input.file_path;
+  if (typeof input.path === "string") return input.path;
+  return undefined;
+}
+
+// Build the same "Name:filename" string that live tool_use events produce.
+export function toolDisplayName(name: string, input: any): string {
+  if (!input) return name;
+  const path: string | undefined = input.file_path ?? input.path ?? undefined;
+  if (path) return `${name}:${path.split("/").pop() ?? path}`;
+  if (name === "Bash" && typeof input.command === "string") {
+    return `${name}:${input.command.slice(0, 35)}`;
+  }
+  return name;
 }
 
 export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
@@ -74,18 +104,59 @@ export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
 
       const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
       const messages: HistoryMessage[] = [];
+      // tool_use id → index in `messages` so tool_result can update it
+      const toolIndexById = new Map<string, number>();
 
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
-          if (entry.type === "user" && typeof entry.message?.content === "string") {
-            messages.push({ role: "user", text: entry.message.content });
+          if (entry.type === "user") {
+            const content = entry.message?.content;
+            if (typeof content === "string") {
+              messages.push({ role: "user", text: content });
+            } else if (Array.isArray(content)) {
+              // User entries can contain tool_result blocks (after tool execution)
+              // and/or text blocks (when actually a user message). Handle both.
+              for (const block of content) {
+                if (block?.type === "tool_result") {
+                  const idx = toolIndexById.get(block.tool_use_id);
+                  if (idx === undefined) continue;
+                  const result = buildToolResultPreview(block.content);
+                  if (!result) continue;
+                  const msg = messages[idx];
+                  if (msg) {
+                    msg.toolResult = result.preview;
+                    msg.toolResultTruncated = result.truncated;
+                    if (!msg.toolFullSize) msg.toolFullSize = result.fullSize;
+                  }
+                }
+              }
+              const text = content
+                .filter((c: any) => c?.type === "text" && typeof c.text === "string")
+                .map((c: any) => c.text)
+                .join("");
+              if (text) messages.push({ role: "user", text });
+            }
           } else if (entry.type === "assistant") {
             const content = entry.message?.content;
             if (!Array.isArray(content)) continue;
-            const toolUses = content.filter((c: any) => c.type === "tool_use");
-            for (const tool of toolUses) {
-              messages.push({ role: "tool", toolName: tool.name, text: "" });
+            for (const block of content) {
+              if (block?.type !== "tool_use") continue;
+              const preview = buildToolUsePreview(block.name, block.input);
+              const msg: HistoryMessage = {
+                role: "tool",
+                text: "",
+                toolName: toolDisplayName(block.name, block.input),
+                toolPath: extractToolPath(block.name, block.input),
+                toolId: block.id,
+                toolDiff: preview.diff,
+                toolPreview: preview.preview,
+                toolCommand: preview.command,
+                toolTruncated: preview.truncated,
+                toolFullSize: preview.fullSize,
+              };
+              messages.push(msg);
+              if (block.id) toolIndexById.set(block.id, messages.length - 1);
             }
             const text = content
               .filter((c: any) => c.type === "text")

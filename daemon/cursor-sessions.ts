@@ -2,7 +2,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { HistoryMessage } from "./claude-sessions";
+import { toolDisplayName } from "./claude-sessions";
+import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
 import { decodeCursorPath } from "./path-utils";
+
+function extractToolPath(input: any): string | undefined {
+  if (!input) return undefined;
+  if (typeof input.file_path === "string") return input.file_path;
+  if (typeof input.path === "string") return input.path;
+  return undefined;
+}
 
 const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
 
@@ -95,6 +104,7 @@ export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage
 
       const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
       const messages: HistoryMessage[] = [];
+      const toolIndexById = new Map<string, number>();
 
       for (const line of lines) {
         try {
@@ -103,6 +113,39 @@ export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage
           if (role !== "user" && role !== "assistant") continue;
 
           const content = entry.message?.content ?? entry.content ?? [];
+
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (role === "assistant" && block?.type === "tool_use") {
+                const preview = buildToolUsePreview(block.name, block.input);
+                messages.push({
+                  role: "tool",
+                  text: "",
+                  toolName: toolDisplayName(block.name, block.input),
+                  toolPath: extractToolPath(block.input),
+                  toolId: block.id,
+                  toolDiff: preview.diff,
+                  toolPreview: preview.preview,
+                  toolCommand: preview.command,
+                  toolTruncated: preview.truncated,
+                  toolFullSize: preview.fullSize,
+                });
+                if (block.id) toolIndexById.set(block.id, messages.length - 1);
+              } else if (role === "user" && block?.type === "tool_result") {
+                const idx = toolIndexById.get(block.tool_use_id);
+                if (idx === undefined) continue;
+                const result = buildToolResultPreview(block.content);
+                if (!result) continue;
+                const msg = messages[idx];
+                if (msg) {
+                  msg.toolResult = result.preview;
+                  msg.toolResultTruncated = result.truncated;
+                  if (!msg.toolFullSize) msg.toolFullSize = result.fullSize;
+                }
+              }
+            }
+          }
+
           const text = Array.isArray(content)
             ? content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
             : typeof content === "string" ? content : "";
