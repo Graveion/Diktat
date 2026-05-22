@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
   ScrollView, DeviceEventEmitter,
 } from "react-native";
@@ -332,31 +332,36 @@ function ToolPreviewDrawer({
             </TouchableOpacity>
           </View>
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={toolDrawerStyles.bodyScroll}
-            contentContainerStyle={toolDrawerStyles.bodyContent}
+            style={toolDrawerStyles.bodyScrollV}
+            nestedScrollEnabled
           >
-            {b.kind === "diff" ? (
-              <View>
-                {b.text.split("\n").map((line, li) => (
-                  <Text
-                    key={li}
-                    style={[
-                      toolDrawerStyles.line,
-                      line.startsWith("+") ? toolDrawerStyles.lineAdd :
-                      line.startsWith("-") ? toolDrawerStyles.lineDel :
-                      line.startsWith("@@") ? toolDrawerStyles.lineHunk :
-                      toolDrawerStyles.lineCtx,
-                    ]}
-                  >
-                    {line}
-                  </Text>
-                ))}
-              </View>
-            ) : (
-              <Text style={[toolDrawerStyles.line, toolDrawerStyles.lineCtx]}>{b.text}</Text>
-            )}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={toolDrawerStyles.bodyContent}
+            >
+              {b.kind === "diff" ? (
+                <Text style={toolDrawerStyles.line}>
+                  {b.text.split("\n").map((line, li, arr) => (
+                    <Text
+                      key={li}
+                      style={
+                        line.startsWith("+") ? toolDrawerStyles.lineAdd :
+                        line.startsWith("-") ? toolDrawerStyles.lineDel :
+                        line.startsWith("@@") ? toolDrawerStyles.lineHunk :
+                        toolDrawerStyles.lineCtx
+                      }
+                    >
+                      {line}{li < arr.length - 1 ? "\n" : ""}
+                    </Text>
+                  ))}
+                </Text>
+              ) : (
+                <Text style={[toolDrawerStyles.line, toolDrawerStyles.lineCtx]}>
+                  {b.text}
+                </Text>
+              )}
+            </ScrollView>
           </ScrollView>
           {b.truncated ? (
             <Text style={toolDrawerStyles.truncated}>
@@ -520,7 +525,7 @@ export function ChatScreen({
       }
     }, 500);
   }, []);
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -935,10 +940,8 @@ export function ChatScreen({
 
       {/* Message list */}
       <View style={{ flex: 1 }}>
-        <FlatList
+        <ScrollView
           ref={listRef}
-          data={data}
-          keyExtractor={(_, i) => String(i)}
           contentContainerStyle={styles.messages}
           keyboardDismissMode="on-drag"
           onScroll={(e) => {
@@ -946,10 +949,31 @@ export function ChatScreen({
             setIsAtBottom(layoutMeasurement.height + contentOffset.y >= contentSize.height - 60);
           }}
           scrollEventThrottle={100}
-          renderItem={({ item, index }) => {
+        >
+          {data.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>Session ready</Text>
+              <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
+              <View style={styles.emptyExamples}>
+                {EXAMPLE_PROMPTS.map((p) => (
+                  <TouchableOpacity
+                    key={p}
+                    style={styles.emptyExampleChip}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      onSend(p);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.emptyExampleText}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ) : data.map((item, index) => {
             if (item.role === "typing") {
               return (
-                <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+                <View key={`typing-${index}`} style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
                   <View style={styles.typingBubble}>
                     <TypingIndicator />
                   </View>
@@ -961,12 +985,12 @@ export function ChatScreen({
               const toolStr = toolItem.toolName ?? toolItem.name ?? "";
               const { label, icon } = formatToolLabel(toolStr);
               const fullPath = (toolItem as DiktatMessage).toolPath;
-              const isLive = !toolItem.toolName; // live indicator has no toolName
+              const isLive = !toolItem.toolName;
               const tm = toolItem as DiktatMessage;
               const hasPreview = !!(tm.toolDiff || tm.toolPreview || tm.toolCommand || tm.toolResult);
               const expanded = expandedToolIdx === index;
               return (
-                <View style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
+                <View key={`tool-${index}`} style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
                   <TouchableOpacity
                     style={styles.toolBubble}
                     onPress={() => {
@@ -999,35 +1023,15 @@ export function ChatScreen({
             const msg = item as DiktatMessage;
             return (
               <MessageBubble
+                key={`msg-${index}`}
                 message={msg}
                 ttsEnabled={settings.ttsEnabled && msg.role === "assistant"}
                 isSpeaking={speakingIdx === index}
                 onSpeak={() => toggleSpeak(index, msg.text)}
               />
             );
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>Session ready</Text>
-              <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
-              <View style={styles.emptyExamples}>
-                {EXAMPLE_PROMPTS.map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    style={styles.emptyExampleChip}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      onSend(p);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.emptyExampleText}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          }
-        />
+          })}
+        </ScrollView>
 
         {/* Top fade — older messages dissolve upward */}
         <LinearGradient
@@ -1697,7 +1701,7 @@ const toolDrawerStyles = StyleSheet.create({
     fontSize: 10,
     color: "#58a6ff",
   },
-  bodyScroll: { maxHeight: 260 },
+  bodyScrollV: { maxHeight: 320 },
   bodyContent: { padding: 10 },
   line: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
