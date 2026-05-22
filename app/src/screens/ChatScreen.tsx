@@ -535,14 +535,10 @@ export function ChatScreen({
     }, 500);
   }, []);
   const listRef = useRef<ScrollView>(null);
-  // Set when history loads so onContentSizeChange keeps scrolling to end
-  // regardless of isAtBottomRef, until an onScroll event confirms we arrived
-  // AND historyLoading is false. Must not clear on partial-render "at bottom."
+  // Set when history loads; cleared by a timer (not by onScroll) so that
+  // partial-render "at bottom" events cannot kill it prematurely.
   const pendingScrollToEnd = useRef(false);
-  // Mirror of historyLoading prop in a ref so scroll callbacks can read it
-  // synchronously without stale closure values.
-  const historyLoadingRef = useRef(historyLoading);
-  historyLoadingRef.current = historyLoading;
+  const pendingScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -748,6 +744,7 @@ export function ChatScreen({
       stopAllVoice();
       clearCountdown();
       Speech.stop();
+      if (pendingScrollTimer.current) clearTimeout(pendingScrollTimer.current);
     };
   }, [stopAllVoice, clearCountdown]);
 
@@ -775,13 +772,22 @@ export function ChatScreen({
     const isHistory = messages.length - prevLengthRef.current > 1;
     prevLengthRef.current = messages.length;
     if (isHistory) {
-      // Set the persistent flag so onContentSizeChange keeps scrolling until
-      // we actually land at the bottom AND historyLoading is false.
+      // Arm the persistent follow flag and protect it with a 1.5s timer.
+      // Using a timer (not onScroll) is critical: with Fabric's multi-pass
+      // layout, onScroll can fire "at bottom" against a partial contentSize,
+      // clearing the flag before the full content has rendered. The timer
+      // survives all partial renders and naturally expires once layout settles.
       pendingScrollToEnd.current = true;
-      // Belt-and-braces timed attempts using large-y clamp (no stale contentSize).
+      if (pendingScrollTimer.current) clearTimeout(pendingScrollTimer.current);
+      pendingScrollTimer.current = setTimeout(() => {
+        pendingScrollToEnd.current = false;
+        pendingScrollTimer.current = null;
+      }, 1500);
+      // Belt-and-braces timed scrolls (onContentSizeChange also fires, but
+      // these catch cases where content renders after the last size change).
       setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 80);
       setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 400);
-      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 800);
+      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 900);
     } else if (isAtBottomRef.current) {
       setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 50);
     }
@@ -790,6 +796,7 @@ export function ChatScreen({
   // Reset scroll-follow state when we leave a session (messages cleared)
   useEffect(() => {
     if (messages.length === 0) {
+      if (pendingScrollTimer.current) { clearTimeout(pendingScrollTimer.current); pendingScrollTimer.current = null; }
       pendingScrollToEnd.current = false;
       userScrolledAwayRef.current = false;
       isAtBottomRef.current = true;
@@ -1003,13 +1010,6 @@ export function ChatScreen({
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
             if (atBottom) {
-              // Only stop the persistent follow once history is fully loaded.
-              // If we clear it during a partial-render "at bottom" the flag
-              // disappears before the remaining content has rendered, leaving
-              // the user stranded mid-scroll in a tall conversation.
-              if (!historyLoadingRef.current) {
-                pendingScrollToEnd.current = false;
-              }
               userScrolledAwayRef.current = false;
             }
             // If the user is actively scrolling away while streaming, give up
