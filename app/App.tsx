@@ -98,6 +98,25 @@ function App() {
     });
   }, []);
 
+  // Eager OTA pull: check for a newer bundle on every cold launch and apply
+  // it immediately. Default expo-updates behaviour downloads in the background
+  // and applies on the NEXT launch, which makes "did the latest OTA reach my
+  // phone?" annoyingly ambiguous. This trades ~1s of extra cold-start time
+  // for "if there's an update, you're on it after this launch."
+  useEffect(() => {
+    if (__DEV__) return;
+    (async () => {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (!check.isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      } catch (e) {
+        info("UPDATE", `OTA check failed: ${(e as Error).message}`);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     // Only advance to sessions from the connect screen — never override chat
     if (diktat.state === "connected" && screen === "connect") {
