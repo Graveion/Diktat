@@ -535,10 +535,10 @@ export function ChatScreen({
     }, 500);
   }, []);
   const listRef = useRef<ScrollView>(null);
-  // Set when history loads; cleared by a timer (not by onScroll) so that
-  // partial-render "at bottom" events cannot kill it prematurely.
-  const pendingScrollToEnd = useRef(false);
-  const pendingScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set true when history loads; cleared once we've actually scrolled to the bottom.
+  const wantScrollToBottom = useRef(false);
+  // Exact viewport height from the ScrollView's onLayout — needed to compute offset.
+  const viewportHeight = useRef(0);
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -744,7 +744,6 @@ export function ChatScreen({
       stopAllVoice();
       clearCountdown();
       Speech.stop();
-      if (pendingScrollTimer.current) clearTimeout(pendingScrollTimer.current);
     };
   }, [stopAllVoice, clearCountdown]);
 
@@ -765,58 +764,56 @@ export function ChatScreen({
     });
   }, [speakingIdx]);
 
-  // Auto-scroll on message count change (new bubble appended or history load).
+  // ─── Scroll to bottom logic ──────────────────────────────────────────────
+  //
+  // Three cases:
+  // 1. History load (messages go from 0 → N): set wantScrollToBottom=true.
+  //    onContentSizeChange fires with the exact content height → compute
+  //    the precise offset and scroll. No timers, no guessing.
+  //
+  // 2. Streaming (text appending to last bubble, length unchanged):
+  //    onContentSizeChange fires on each token → follow unless user scrolled away.
+  //
+  // 3. New user/assistant bubble appended (length +1):
+  //    If we were at the bottom, scroll to follow.
+
   const prevLengthRef = useRef(0);
+
   useEffect(() => {
-    if (messages.length === 0) { prevLengthRef.current = 0; return; }
+    if (messages.length === 0) {
+      prevLengthRef.current = 0;
+      wantScrollToBottom.current = false;
+      userScrolledAwayRef.current = false;
+      isAtBottomRef.current = true;
+      listRef.current?.scrollTo({ y: 0, animated: false });
+      return;
+    }
     const isHistory = messages.length - prevLengthRef.current > 1;
     prevLengthRef.current = messages.length;
     if (isHistory) {
-      // Arm the persistent follow flag and protect it with a 1.5s timer.
-      // Using a timer (not onScroll) is critical: with Fabric's multi-pass
-      // layout, onScroll can fire "at bottom" against a partial contentSize,
-      // clearing the flag before the full content has rendered. The timer
-      // survives all partial renders and naturally expires once layout settles.
-      pendingScrollToEnd.current = true;
-      if (pendingScrollTimer.current) clearTimeout(pendingScrollTimer.current);
-      pendingScrollTimer.current = setTimeout(() => {
-        pendingScrollToEnd.current = false;
-        pendingScrollTimer.current = null;
-      }, 1500);
-      // Belt-and-braces timed scrolls (onContentSizeChange also fires, but
-      // these catch cases where content renders after the last size change).
-      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 80);
-      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 400);
-      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 900);
+      wantScrollToBottom.current = true;
+      // Fallback: if onContentSizeChange already fired before this effect
+      // (possible in Fabric when effects are deferred), scroll explicitly.
+      requestAnimationFrame(() => {
+        if (wantScrollToBottom.current) {
+          const offset = Math.max(0, viewportHeight.current > 0
+            ? 99999  // viewportHeight known → use large-y clamp as exact fallback
+            : 0);
+          listRef.current?.scrollTo({ y: offset, animated: false });
+        }
+      });
     } else if (isAtBottomRef.current) {
-      setTimeout(() => listRef.current?.scrollTo({ y: 99999, animated: false }), 50);
+      listRef.current?.scrollTo({ y: 99999, animated: false });
     }
   }, [messages.length]);
 
-  // Reset scroll-follow state when we leave a session (messages cleared)
+  // Streaming: follow as text grows (length doesn't change, content does).
   useEffect(() => {
-    if (messages.length === 0) {
-      if (pendingScrollTimer.current) { clearTimeout(pendingScrollTimer.current); pendingScrollTimer.current = null; }
-      pendingScrollToEnd.current = false;
-      userScrolledAwayRef.current = false;
-      isAtBottomRef.current = true;
-      // Reset native scroll offset so a stale offset from the previous session
-      // (which could be 1000s of px) doesn't interfere with the next history load.
-      listRef.current?.scrollTo({ y: 0, animated: false });
-    }
-  }, [messages.length]);
-
-  // Streaming auto-scroll safety net for the same-bubble text-growth case where
-  // messages.length doesn't change. Uses the same follow-or-not logic as
-  // onContentSizeChange so behaviour stays consistent.
-  useEffect(() => {
-    const shouldFollow = pendingScrollToEnd.current || (streamingRef.current
-      ? !userScrolledAwayRef.current
-      : isAtBottomRef.current);
-    if (!shouldFollow) return;
+    if (!streamingRef.current) return;
+    if (userScrolledAwayRef.current) return;
     const id = requestAnimationFrame(() => listRef.current?.scrollTo({ y: 99999, animated: false }));
     return () => cancelAnimationFrame(id);
-  }, [messages, streaming, currentTool]);
+  }, [messages, currentTool]);
 
   const startInitialListening = useCallback(() => {
     setInput("");
@@ -1000,39 +997,28 @@ export function ChatScreen({
           ref={listRef}
           contentContainerStyle={styles.messages}
           keyboardDismissMode="on-drag"
-          onScroll={(e) => {
-            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            // Loosen the threshold during streaming so transient scroll lag
-            // (offset behind by tens-of-px after a scrollToEnd) doesn't latch
-            // us into "not at bottom".
+          onLayout={({ nativeEvent }) => {
+            viewportHeight.current = nativeEvent.layout.height;
+          }}
+          onScroll={({ nativeEvent: { layoutMeasurement, contentOffset, contentSize } }) => {
             const threshold = streamingRef.current ? 240 : 60;
             const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - threshold;
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
-            if (atBottom) {
-              userScrolledAwayRef.current = false;
-            }
-            // If the user is actively scrolling away while streaming, give up
-            // following until they return to the bottom.
+            if (atBottom) userScrolledAwayRef.current = false;
             if (streamingRef.current && !atBottom) userScrolledAwayRef.current = true;
           }}
-          onContentSizeChange={() => {
-            // pendingScrollToEnd: set after a history load, cleared only once
-            // onScroll confirms we've reached the bottom AND historyLoading
-            // is false (so partial-render "at bottom" events don't kill it).
-            // Use scrollTo(y=99999) rather than scrollToEnd — the native layer
-            // clamps to the actual max offset without needing stale JS-side
-            // contentSize, which fixes the large-message blank-screen bug.
-            if (pendingScrollToEnd.current) {
-              listRef.current?.scrollTo({ y: 99999, animated: false });
+          onContentSizeChange={(_w, contentHeight) => {
+            if (wantScrollToBottom.current) {
+              // Exact offset: content height minus viewport height, clamped to 0.
+              // This is deterministic — no stale refs, no race with partial layouts.
+              const offset = Math.max(0, contentHeight - viewportHeight.current);
+              listRef.current?.scrollTo({ y: offset, animated: false });
+              wantScrollToBottom.current = false;
+              isAtBottomRef.current = true;
               return;
             }
-            // While streaming, follow content unless the user has scrolled
-            // away on purpose. Outside streaming, honour the user's position.
-            const shouldFollow = streamingRef.current
-              ? !userScrolledAwayRef.current
-              : isAtBottomRef.current;
-            if (shouldFollow) {
+            if (streamingRef.current && !userScrolledAwayRef.current) {
               listRef.current?.scrollTo({ y: 99999, animated: false });
             }
           }}
