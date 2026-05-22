@@ -501,6 +501,13 @@ export function ChatScreen({
   const [mode, setMode] = useState<Mode>("idle");
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
+  // Tracks whether the user has deliberately scrolled up during the current
+  // streaming response. While streaming we ignore isAtBottom (which thrashes
+  // false due to scrollToEnd against stale contentSize) UNLESS the user
+  // explicitly scrolled away.
+  const userScrolledAwayRef = useRef(false);
+  const streamingRef = useRef(false);
+  streamingRef.current = streaming;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [showIdle, setShowIdle] = useState(false);
@@ -763,12 +770,14 @@ export function ChatScreen({
     }
   }, [messages.length]);
 
-  // Streaming auto-scroll: fires on the same-bubble text-growth case where the
-  // array reference changes but messages.length doesn't. onContentSizeChange
-  // catches most of this but is flaky when children's text content grows
-  // in-place — this effect is the safety net.
+  // Streaming auto-scroll safety net for the same-bubble text-growth case where
+  // messages.length doesn't change. Uses the same follow-or-not logic as
+  // onContentSizeChange so behaviour stays consistent.
   useEffect(() => {
-    if (!isAtBottomRef.current) return;
+    const shouldFollow = streamingRef.current
+      ? !userScrolledAwayRef.current
+      : isAtBottomRef.current;
+    if (!shouldFollow) return;
     const id = requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
     return () => cancelAnimationFrame(id);
   }, [messages, streaming, currentTool]);
@@ -957,13 +966,25 @@ export function ChatScreen({
           keyboardDismissMode="on-drag"
           onScroll={(e) => {
             const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 60;
+            // Loosen the threshold during streaming so transient scroll lag
+            // (offset behind by tens-of-px after a scrollToEnd) doesn't latch
+            // us into "not at bottom".
+            const threshold = streamingRef.current ? 240 : 60;
+            const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - threshold;
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
+            // If the user is actively scrolling away while streaming, give up
+            // following until they return to the bottom.
+            if (streamingRef.current && !atBottom) userScrolledAwayRef.current = true;
+            if (atBottom) userScrolledAwayRef.current = false;
           }}
           onContentSizeChange={() => {
-            // Follow streaming text growth when user is already at the bottom.
-            if (isAtBottomRef.current) {
+            // While streaming, follow content unless the user has scrolled
+            // away on purpose. Outside streaming, honour the user's position.
+            const shouldFollow = streamingRef.current
+              ? !userScrolledAwayRef.current
+              : isAtBottomRef.current;
+            if (shouldFollow) {
               listRef.current?.scrollToEnd({ animated: false });
             }
           }}
