@@ -1,13 +1,8 @@
 import { Modal, TouchableOpacity, View, Text, StyleSheet, Switch } from "react-native";
-import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import { colors, fonts } from "../theme";
 import { AutoSendMode, AUTO_SEND_LABELS, MicMode, MIC_LABELS, Settings } from "../utils/settings";
-
-const APP_VERSION =
-  (Constants.expoConfig?.version as string | undefined) ??
-  (Constants.manifest2 as any)?.runtimeVersion ??
-  "dev";
+import { APP_VERSION, UPDATE_LABEL } from "../../App";
 
 type Props = {
   visible: boolean;
@@ -108,7 +103,7 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
             <Text style={styles.doneText}>Done</Text>
           </TouchableOpacity>
 
-          <Text style={styles.versionFooter}>Diktat · v{APP_VERSION}</Text>
+          <Text style={styles.versionFooter}>v{APP_VERSION} · {UPDATE_LABEL}</Text>
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
