@@ -21,6 +21,7 @@ import {
 import * as Notifications from "expo-notifications";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
+import { useMockDiktat } from "./src/hooks/useMockDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
@@ -28,6 +29,12 @@ import { ChatScreen } from "./src/screens/ChatScreen";
 import { DebugScreen } from "./src/screens/DebugScreen";
 import { loadConfig } from "./src/store/config";
 import { info } from "./src/utils/logger";
+
+// ─── Mock mode ────────────────────────────────────────────────────────────────
+// Only active in local dev builds (`npx expo start`). Never ships in OTA.
+// The app starts "connected" with a single mock Pacer session so ChatScreen
+// can be exercised without a running daemon.
+const MOCK_MODE = __DEV__;
 
 type Screen = "connect" | "sessions" | "chat" | "debug";
 
@@ -72,7 +79,28 @@ export const UPDATE_LABEL: string = (() => {
   return `${short}${time ? " · " + time : ""}`;
 })();
 
+function AppWithRealDiktat() {
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState(9000);
+  const diktat = useDiktat(host, port);
+  return <AppInner diktat={diktat} host={host} port={port} setHost={setHost} setPort={setPort} />;
+}
+
+function AppWithMockDiktat() {
+  const diktat = useMockDiktat();
+  // host must be non-empty so the !host guard in AppInner doesn't force ConnectScreen
+  return <AppInner diktat={diktat} host="mock" port={9000} setHost={() => {}} setPort={() => {}} />;
+}
+
 function App() {
+  return MOCK_MODE ? <AppWithMockDiktat /> : <AppWithRealDiktat />;
+}
+
+function AppInner({ diktat, host, port, setHost, setPort }: {
+  diktat: ReturnType<typeof useDiktat>;
+  host: string; port: number;
+  setHost: (h: string) => void; setPort: (p: number) => void;
+}) {
   const [fontsLoaded] = useFonts({
     Syne_700Bold, Syne_800ExtraBold,
     Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
@@ -80,11 +108,9 @@ function App() {
   });
 
   const [screen, setScreen] = useState<Screen>("connect");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState(9000);
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
 
-  const diktat = useDiktat(host, port);
+  void port;
   const pushToken = usePushToken();
   const prevScreen = useRef<Screen>("connect");
 

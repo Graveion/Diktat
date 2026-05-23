@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
-  ScrollView, DeviceEventEmitter, ActivityIndicator,
+  ScrollView, DeviceEventEmitter, ActivityIndicator, Keyboard,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Markdown from "react-native-markdown-display";
@@ -443,26 +443,29 @@ function MessageBubble({
   );
 }
 
-// Markdown rules — all use plain RN components (no HTML elements like <code>/<span>
-// which crash on the new architecture)
-const markdownRules = {
-  code_inline: (node: any, _c: any, _p: any, styles_: any) => (
-    <Text key={node.key} style={styles_.code_inline}>{node.content}</Text>
-  ),
-  fence: (node: any) => (
-    <View key={node.key} style={codeBlockStyles.wrapper}>
+// On Fabric (New Architecture), a horizontal ScrollView with no explicit height
+// inside a vertical ScrollView inflates to the outer viewport height. Setting
+// `height` on a plain View wrapper (not on the ScrollView itself) is what Fabric
+// respects for the outer content flow measurement, so we pre-compute height from
+// line count and apply it to the wrapper.
+function FenceCodeBlock({ nodeKey, content }: { nodeKey: string; content: string }) {
+  const trimmed = (content ?? "").trimEnd();
+  const lineCount = (trimmed.match(/\n/g) ?? []).length + 1;
+  const codeHeight = lineCount * 18 + 24; // lineHeight * lines + padding top+bottom
+  return (
+    <View style={[codeBlockStyles.wrapper, { height: codeHeight }]}>
       <ScrollView
         horizontal
         style={codeBlockStyles.scroll}
         contentContainerStyle={codeBlockStyles.content}
         showsHorizontalScrollIndicator={false}
       >
-        <Text style={codeBlockStyles.text}>{(node.content ?? "").trimEnd()}</Text>
+        <Text style={codeBlockStyles.text}>{trimmed}</Text>
       </ScrollView>
       <TouchableOpacity
         style={codeBlockStyles.copyBtn}
         onPress={() => {
-          Clipboard.setStringAsync((node.content ?? "").trimEnd());
+          Clipboard.setStringAsync(trimmed);
           emitCopied();
         }}
         activeOpacity={0.7}
@@ -471,7 +474,16 @@ const markdownRules = {
         <Text style={codeBlockStyles.copyBtnText}>copy</Text>
       </TouchableOpacity>
     </View>
+  );
+}
+
+// Markdown rules — all use plain RN components (no HTML elements like <code>/<span>
+// which crash on the new architecture)
+const markdownRules = {
+  code_inline: (node: any, _c: any, _p: any, styles_: any) => (
+    <Text key={node.key} style={styles_.code_inline}>{node.content}</Text>
   ),
+  fence: (node: any) => <FenceCodeBlock key={node.key} nodeKey={node.key} content={node.content} />,
 };
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -502,10 +514,6 @@ export function ChatScreen({
   const [mode, setMode] = useState<Mode>("idle");
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
-  // Tracks whether the user has deliberately scrolled up during the current
-  // streaming response. While streaming we ignore isAtBottom (which thrashes
-  // false due to scrollToEnd against stale contentSize) UNLESS the user
-  // explicitly scrolled away.
   const userScrolledAwayRef = useRef(false);
   const streamingRef = useRef(false);
   streamingRef.current = streaming;
@@ -535,10 +543,6 @@ export function ChatScreen({
     }, 500);
   }, []);
   const listRef = useRef<ScrollView>(null);
-  // Set true when history loads; cleared once we've actually scrolled to the bottom.
-  const wantScrollToBottom = useRef(false);
-  // Exact viewport height from the ScrollView's onLayout — needed to compute offset.
-  const viewportHeight = useRef(0);
   const inputRef = useRef<TextInput>(null);
   const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownProgress = useRef(new Animated.Value(1)).current;
@@ -764,56 +768,47 @@ export function ChatScreen({
     });
   }, [speakingIdx]);
 
-  // ─── Scroll to bottom logic ──────────────────────────────────────────────
-  //
-  // Three cases:
-  // 1. History load (messages go from 0 → N): set wantScrollToBottom=true.
-  //    onContentSizeChange fires with the exact content height → compute
-  //    the precise offset and scroll. No timers, no guessing.
-  //
-  // 2. Streaming (text appending to last bubble, length unchanged):
-  //    onContentSizeChange fires on each token → follow unless user scrolled away.
-  //
-  // 3. New user/assistant bubble appended (length +1):
-  //    If we were at the bottom, scroll to follow.
-
-  const prevLengthRef = useRef(0);
-
+  // Reset scroll state when a session ends/changes.
   useEffect(() => {
     if (messages.length === 0) {
-      prevLengthRef.current = 0;
-      wantScrollToBottom.current = false;
       userScrolledAwayRef.current = false;
       isAtBottomRef.current = true;
-      listRef.current?.scrollTo({ y: 0, animated: false });
-      return;
-    }
-    const isHistory = messages.length - prevLengthRef.current > 1;
-    prevLengthRef.current = messages.length;
-    if (isHistory) {
-      wantScrollToBottom.current = true;
-      // Fallback: if onContentSizeChange already fired before this effect
-      // (possible in Fabric when effects are deferred), scroll explicitly.
-      requestAnimationFrame(() => {
-        if (wantScrollToBottom.current) {
-          const offset = Math.max(0, viewportHeight.current > 0
-            ? 99999  // viewportHeight known → use large-y clamp as exact fallback
-            : 0);
-          listRef.current?.scrollTo({ y: offset, animated: false });
-        }
-      });
-    } else if (isAtBottomRef.current) {
-      listRef.current?.scrollTo({ y: 99999, animated: false });
+      setIsAtBottom(true);
     }
   }, [messages.length]);
 
-  // Streaming: follow as text grows (length doesn't change, content does).
+  // Scroll to the bottom whenever messages arrive or streaming progresses.
+  // setTimeout(0) defers past the current JS render cycle so Fabric has
+  // committed the new layout heights to the native layer before we call
+  // scrollToEnd — without this the call can fire before the content has
+  // been measured, leaving the viewport stuck at y=0.
   useEffect(() => {
-    if (!streamingRef.current) return;
-    if (userScrolledAwayRef.current) return;
-    const id = requestAnimationFrame(() => listRef.current?.scrollTo({ y: 99999, animated: false }));
-    return () => cancelAnimationFrame(id);
-  }, [messages, currentTool]);
+    // Always scroll to end when messages load (diagnostic: no isAtBottom guard)
+    const t = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 100); // 100ms to ensure Fabric layout is committed
+    return () => clearTimeout(t);
+  }, [messages.length, streaming]);
+
+  // Reset all ephemeral UI state when we switch to a new session (or leave one).
+  // Without this, state from session A bleeds into session B.
+  useEffect(() => {
+    clearCountdown();
+    stopAllVoice();
+    Speech.stop();
+    setInput("");
+    setMode("idle");
+    setExpandedToolIdx(null);
+    setPeekPath(null);
+    setShowIdle(false);
+    setSpeakingIdx(null);
+    historyIdx.current = -1;
+    userScrolledAwayRef.current = false;
+    isAtBottomRef.current = true;
+    setIsAtBottom(true);
+    AsyncStorage.removeItem(DRAFT_KEY);
+    Keyboard.dismiss();
+  }, [activeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startInitialListening = useCallback(() => {
     setInput("");
@@ -991,74 +986,64 @@ export function ChatScreen({
         </View>
       ) : null}
 
-      {/* Message list */}
+      {/* Message list.
+          Plain top-down layout; the useEffect below calls scrollToEnd via
+          setTimeout(0) whenever messages arrive, which defers past Fabric's
+          async layout commit so the scroll lands on real content rather than
+          stale zero-height measurements. ScrollView (not FlatList) avoids a
+          new-arch crash where FlatList internally accesses .scrollView on ref. */}
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={listRef}
-          contentContainerStyle={styles.messages}
+          style={styles.messageList}
+          contentContainerStyle={styles.messagesContent}
           keyboardDismissMode="on-drag"
-          onLayout={({ nativeEvent }) => {
-            viewportHeight.current = nativeEvent.layout.height;
+          onContentSizeChange={(_w, _h) => {
+            if (!userScrolledAwayRef.current) {
+              listRef.current?.scrollToEnd({ animated: false });
+            }
           }}
-          onScroll={({ nativeEvent: { layoutMeasurement, contentOffset, contentSize } }) => {
+          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
             const threshold = streamingRef.current ? 240 : 60;
-            const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - threshold;
+            const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            const atBottom = distanceFromBottom < threshold;
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
             if (atBottom) userScrolledAwayRef.current = false;
             if (streamingRef.current && !atBottom) userScrolledAwayRef.current = true;
           }}
-          onContentSizeChange={(_w, contentHeight) => {
-            if (wantScrollToBottom.current) {
-              // Exact offset: content height minus viewport height, clamped to 0.
-              // This is deterministic — no stale refs, no race with partial layouts.
-              const offset = Math.max(0, contentHeight - viewportHeight.current);
-              listRef.current?.scrollTo({ y: offset, animated: false });
-              wantScrollToBottom.current = false;
-              isAtBottomRef.current = true;
-              return;
-            }
-            if (streamingRef.current && !userScrolledAwayRef.current) {
-              listRef.current?.scrollTo({ y: 99999, animated: false });
-            }
-          }}
           scrollEventThrottle={100}
         >
           {data.length === 0 ? (
-            historyLoading ? (
-              // History is in-flight — show a subtle loader rather than the
-              // "Session ready" placeholder, which would flash and then vanish.
-              <View style={styles.historyLoadingContainer}>
-                <ActivityIndicator color={colors.textMuted} size="small" />
-              </View>
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>Session ready</Text>
-                <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
-                <View style={styles.emptyExamples}>
-                  {EXAMPLE_PROMPTS.map((p) => (
-                    <TouchableOpacity
-                      key={p}
-                      style={styles.emptyExampleChip}
-                      onPress={() => {
-                        Haptics.selectionAsync();
-                        onSend(p);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.emptyExampleText}>{p}</Text>
-                    </TouchableOpacity>
-                  ))}
+            <View>
+              {historyLoading ? (
+                <View style={styles.historyLoadingContainer}>
+                  <ActivityIndicator color={colors.textMuted} size="small" />
                 </View>
-              </View>
-            )
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyTitle}>Session ready</Text>
+                  <Text style={styles.emptyHint}>Tap the mic and describe what you want to build, fix, or change.</Text>
+                  <View style={styles.emptyExamples}>
+                    {EXAMPLE_PROMPTS.map((p) => (
+                      <TouchableOpacity
+                        key={p}
+                        style={styles.emptyExampleChip}
+                        onPress={() => { Haptics.selectionAsync(); onSend(p); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.emptyExampleText}>{p}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
           ) : data.map((item, index) => {
             if (item.role === "typing") {
               return (
                 <View key={`typing-${index}`} style={[bubbleStyles.row, bubbleStyles.assistantRow]}>
-                  <View style={styles.typingBubble}>
-                    <TypingIndicator />
-                  </View>
+                  <View style={styles.typingBubble}><TypingIndicator /></View>
                 </View>
               );
             }
@@ -1076,46 +1061,34 @@ export function ChatScreen({
                   <TouchableOpacity
                     style={styles.toolBubble}
                     onPress={() => {
-                      if (hasPreview) {
-                        Haptics.selectionAsync();
-                        setExpandedToolIdx(expanded ? null : index);
-                      } else if (fullPath) {
-                        Haptics.selectionAsync();
-                        setPeekPath(fullPath);
-                      }
+                      if (hasPreview) { Haptics.selectionAsync(); setExpandedToolIdx(expanded ? null : index); }
+                      else if (fullPath) { Haptics.selectionAsync(); setPeekPath(fullPath); }
                     }}
                     activeOpacity={hasPreview || fullPath ? 0.6 : 1}
                   >
                     <Text style={styles.toolIcon}>{icon}</Text>
-                    <Text style={styles.toolText} numberOfLines={1} ellipsizeMode="middle">
-                      {label}{isLive ? "…" : ""}
-                    </Text>
-                    {hasPreview ? (
-                      <Text style={styles.toolChevron}>{expanded ? "▾" : "▸"}</Text>
-                    ) : fullPath ? (
-                      <Text style={styles.toolChevron}>›</Text>
-                    ) : null}
+                    <Text style={styles.toolText} numberOfLines={1} ellipsizeMode="middle">{label}{isLive ? "…" : ""}</Text>
+                    {hasPreview ? <Text style={styles.toolChevron}>{expanded ? "▾" : "▸"}</Text>
+                      : fullPath ? <Text style={styles.toolChevron}>›</Text> : null}
                   </TouchableOpacity>
-                  {expanded && hasPreview ? (
-                    <ToolPreviewDrawer message={tm} onCopy={emitCopied} />
-                  ) : null}
+                  {expanded && hasPreview ? <ToolPreviewDrawer message={tm} onCopy={emitCopied} /> : null}
                 </View>
               );
             }
             const msg = item as DiktatMessage;
             return (
-              <MessageBubble
-                key={`msg-${index}`}
-                message={msg}
-                ttsEnabled={settings.ttsEnabled && msg.role === "assistant"}
-                isSpeaking={speakingIdx === index}
-                onSpeak={() => toggleSpeak(index, msg.text)}
-              />
+              <View key={`msg-${index}`}>
+                <MessageBubble
+                  message={msg}
+                  ttsEnabled={settings.ttsEnabled && msg.role === "assistant"}
+                  isSpeaking={speakingIdx === index}
+                  onSpeak={() => toggleSpeak(index, msg.text)}
+                />
+              </View>
             );
           })}
         </ScrollView>
 
-        {/* Top fade — older messages dissolve upward */}
         <LinearGradient
           colors={[colors.bg, "transparent"]}
           style={styles.fadeTop}
@@ -1396,7 +1369,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 1,
   },
   reconnectingRetryText: { fontFamily: fonts.bodySemi, color: colors.accent, fontSize: 11 },
-  messages: { padding: 14, paddingBottom: 8 },
+  messageList: { flex: 1 },
+  // No flexGrow here — if you set flexGrow:1 on the content container together
+  // with justifyContent:flex-end, Fabric adds an extra viewport-height of space
+  // AFTER the last message, so scrollToEnd lands on blank content. Simple
+  // padding-only container lets messages stack naturally from the top, and
+  // scrollToEnd (called from the useEffect below) jumps to the correct end.
+  messagesContent: { padding: 14, paddingBottom: 8 },
   historyLoadingContainer: { alignItems: "center", marginTop: 100 },
   emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
   emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 8 },

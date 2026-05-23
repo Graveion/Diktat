@@ -245,6 +245,7 @@ export function ConnectScreen({ onConnect, connectionState }: Props) {
               desc="Tap Scan above and point your camera at the terminal." />
           </Animated.View>
         )}
+
       </View>
     </KeyboardAvoidingView>
   );

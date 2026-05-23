@@ -33,8 +33,8 @@ const CLI_COLOR: Record<string, string> = {
   cursor: "#a78bfa",
 };
 
-function SessionCard({ session: s, label, onPress, onHide, formatDate }: {
-  session: DiktatSession; label: string;
+function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {
+  session: DiktatSession; showProject?: string;
   onPress: () => void; onHide: () => void;
   formatDate: (iso: string) => string;
 }) {
@@ -44,28 +44,34 @@ function SessionCard({ session: s, label, onPress, onHide, formatDate }: {
     </TouchableOpacity>
   );
 
+  const preview = typeof s.firstMessage === "string" && s.firstMessage.trim()
+    ? s.firstMessage.trim()
+    : null;
+  const shortId = s.id.slice(0, 8);
+
   return (
     <Swipeable renderRightActions={renderRightActions} overshootRight={false}>
       <TouchableOpacity
         style={styles.sessionCard}
         onPress={onPress}
         activeOpacity={0.7}
+        testID={`session-card-${s.id}`}
       >
         <View style={styles.sessionCardInner}>
           <View style={styles.sessionTop}>
-            <Text style={styles.sessionProject} numberOfLines={1}>{label}</Text>
+            <Text style={[styles.sessionTitle, !preview && styles.sessionTitleEmpty]} numberOfLines={1}>
+              {preview ?? "Empty session"}
+            </Text>
             <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
               <Text style={[styles.cliBadgeText, { color: CLI_COLOR[s.cli] ?? colors.textSub }]}>
                 {CLI_LABELS[s.cli] ?? s.cli}
               </Text>
             </View>
           </View>
-          {s.firstMessage ? (
-            <Text style={styles.sessionPreview} numberOfLines={1}>
-              {typeof s.firstMessage === "string" ? s.firstMessage : ""}
-            </Text>
+          {showProject ? (
+            <Text style={styles.sessionProjectLabel} numberOfLines={1}>{showProject}</Text>
           ) : null}
-          <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
+          <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}  ·  {shortId}</Text>
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -246,11 +252,11 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
               keyExtractor={(s) => `${s.source}:${s.id}`}
               renderItem={({ item }) => {
                 const nameAmbiguous = (nameCounts.get(projectName(item.project)) ?? 0) > 1;
-                const label = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : bestProjectName(item.project));
+                const projectLabel = item.projectLabel ?? (nameAmbiguous ? projectContext(item.project) : bestProjectName(item.project));
                 return (
                   <SessionCard
                     session={item}
-                    label={label}
+                    showProject={projectLabel}
                     onPress={() => onResume(item)}
                     onHide={() => handleHide(item)}
                     formatDate={formatDate}
@@ -299,12 +305,9 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
                 return <Text style={styles.groupHeader}>{bestProjectName(item.project)}</Text>;
               }
               const { session: s } = item;
-              const nameAmbiguous = (nameCounts.get(projectName(s.project)) ?? 0) > 1;
-              const label = s.projectLabel ?? (nameAmbiguous ? projectContext(s.project) : bestProjectName(s.project));
               return (
                 <SessionCard
                   session={s}
-                  label={label}
                   onPress={() => onResume(s)}
                   onHide={() => handleHide(s)}
                   formatDate={formatDate}
@@ -446,14 +449,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   sessionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
-  sessionProject: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15, flex: 1, marginRight: 8 },
+  sessionTitle: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 14, flex: 1, marginRight: 8, lineHeight: 20 },
+  sessionTitleEmpty: { color: colors.textMuted, fontFamily: fonts.body, fontStyle: "italic" },
+  sessionProjectLabel: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, marginBottom: 5 },
   cliBadge: {
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 6, borderWidth: 1,
   },
   cliBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 },
-  sessionPreview: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, marginBottom: 6, lineHeight: 18 },
-  sessionDate: { fontFamily: fonts.body, color: colors.textSub, fontSize: 11 },
+  sessionDate: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
 
   hideAction: {
     backgroundColor: colors.error, justifyContent: "center",
@@ -464,13 +468,12 @@ const styles = StyleSheet.create({
   separator: { height: 0 },
   empty: { fontFamily: fonts.body, color: colors.textSub, textAlign: "center", marginTop: 48, fontSize: 14 },
   groupHeader: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.textSub,
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
+    fontFamily: fonts.bodySemi,
+    color: colors.text,
+    fontSize: 13,
+    letterSpacing: 0,
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 20,
     paddingBottom: 6,
   },
 });
