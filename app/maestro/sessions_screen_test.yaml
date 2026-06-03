@@ -1,0 +1,36 @@
+appId: com.graveion.diktat
+---
+# Sessions list: rendering, card content, and search filtering.
+- launchApp:
+    clearState: false
+
+# Dismiss the one-time system notification prompt if it appears.
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+
+# Sessions screen landmarks
+- assertVisible: "Pacer"
+- assertVisible:
+    id: "new-session-button"
+- assertVisible:
+    id: "session-card-mock-session-001"
+- takeScreenshot: "maestro/screenshots/sessions_01_list"
+
+# Search: matching query keeps the card
+- tapOn:
+    id: "session-search-input"
+- inputText: "pac"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "session-card-mock-session-001"
+- takeScreenshot: "maestro/screenshots/sessions_02_search_match"
+
+# Search: non-matching query shows empty state
+- eraseText
+- inputText: "zzzzz"
+- waitForAnimationToEnd
+- assertVisible:
+    text: "No matching sessions.*"
+- takeScreenshot: "maestro/screenshots/sessions_03_search_empty"

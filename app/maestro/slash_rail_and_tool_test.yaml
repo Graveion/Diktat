@@ -1,0 +1,62 @@
+appId: com.graveion.diktat
+---
+# Slash-command rail (cursor session) + tool drawer expansion.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible: "Pacer"
+
+- tapOn:
+    id: "session-card-mock-session-001"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Slash rail shows the cursor command set
+- assertVisible:
+    id: "slash-/plan"
+- assertVisible:
+    id: "slash-/ask"
+- assertVisible:
+    id: "slash-/compress"
+- takeScreenshot: "maestro/screenshots/rail_01_visible"
+
+# Tapping a slash chip prefixes the input
+- tapOn:
+    id: "slash-/plan"
+- waitForAnimationToEnd
+- assertVisible: "/plan"
+- takeScreenshot: "maestro/screenshots/rail_02_applied"
+
+# Clear the input so the rail filter resets
+- tapOn:
+    id: "message-input"
+- eraseText
+- waitForAnimationToEnd
+
+# Tool drawer: scroll up to the tool card and expand it.
+# formatToolLabel renders toolName "Edit:OnlineStorage.swift" as the label
+# "Editing OnlineStorage.swift". The icon + label + chevron collapse into one
+# accessibility node ("✏️, Editing OnlineStorage.swift, ▸"), so selectors use a
+# .*-wrapped regex (Maestro text matching is a full match). scrollUntilVisible
+# doesn't drive this ScrollView reliably, so we swipe explicitly to reach it.
+- repeat:
+    times: 4
+    commands:
+      - swipe:
+          start: "50%, 25%"
+          end: "50%, 90%"
+      - waitForAnimationToEnd
+- assertVisible:
+    text: ".*Editing OnlineStorage.*"
+- tapOn:
+    text: ".*Editing OnlineStorage.*"
+- waitForAnimationToEnd
+- assertVisible:
+    text: ".*diff.*"
+- assertVisible:
+    text: ".*output.*"
+- takeScreenshot: "maestro/screenshots/tool_01_expanded"

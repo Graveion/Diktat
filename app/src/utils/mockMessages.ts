@@ -24,6 +24,17 @@ export const MOCK_MESSAGES: DiktatMessage[] = [
     text: "Here are the best **refactor + independent test** candidates, ordered by payoff for the sync chain you've been building.\n\n---\n\n## Tier 1 — Do next (same pattern as `AvatarURLOutboundSync`)\n\n### 1. `deleteRemoteAvatarURLForCurrentUser` (+ router delete path)\n**Symmetry with what you just shipped.**\n\nToday: Supabase row delete + storage remove inline in `OnlineStorage`.\n\nExtract: `AvatarURLOutboundDelete` with ports:\n- `authUserId`\n- `deleteAvatarURLRow(userId)`\n- `removeStorageObject(path)`\n\nTest independently; `OutboundSyncRouter` delete test already partially covers settlement — storage delete would be its own spy test.\n\n---\n\n### 2. `PendingSyncQueue.mergeInboundDeltas(with:)`\n**Highest-value refactor that isn't OnlineStorage at all.**\n\nThis is mostly **pure logic**:\n\n```\nlocals + remote deltas → (loser sync_entity ids, inbound deltas to persist)\n```\n\nExtract to something like `InboundDeltaMerge.decide(locals:remote:)` with no DB, no Supabase. Then:\n\n- Unit test every branch (remote newer, no local, tie-break on `updatedAt`) **without polling**\n- Keep one thin DB test that losers get flipped to `.inbound(.update)`",
   },
   {
+    role: "tool",
+    text: "",
+    toolName: "Edit:OnlineStorage.swift",
+    toolPath: "/Users/timothy.green/personal/Pacer/Sources/OnlineStorage.swift",
+    toolDiff: "- func syncAvatar() {\n-   // old\n+ func syncAvatar() async throws {\n+   // new",
+    toolResult: "The file has been edited successfully.",
+    toolTruncated: false,
+    toolResultTruncated: false,
+    toolFullSize: 1280,
+  },
+  {
     role: "user",
     text: "Ok let's do inbound tests",
   },

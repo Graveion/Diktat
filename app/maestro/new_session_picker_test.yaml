@@ -1,0 +1,38 @@
+appId: com.graveion.diktat
+---
+# New-session picker modal: open, select CLI + project, start.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible: "Pacer"
+
+# Open the picker
+- tapOn:
+    id: "new-session-button"
+- waitForAnimationToEnd
+- assertVisible: "New Session"
+- assertVisible:
+    id: "cli-cursor"
+- assertVisible:
+    id: "cli-claude"
+- takeScreenshot: "maestro/screenshots/picker_01_open"
+
+# Select Cursor CLI (project auto-selects to the first available — Pacer)
+- tapOn:
+    id: "cli-cursor"
+- waitForAnimationToEnd
+- assertVisible: "Agent"
+- assertVisible: "Plan"
+- assertVisible: "Ask"
+- takeScreenshot: "maestro/screenshots/picker_02_selected"
+
+# Start the session → lands on an empty chat (mock spawnSession)
+- tapOn:
+    id: "start-session-button"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "Session ready"
+- takeScreenshot: "maestro/screenshots/picker_03_empty_chat"

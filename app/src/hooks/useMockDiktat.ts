@@ -34,6 +34,18 @@ export function useMockDiktat(_host?: string, _port?: number) {
     }, 400);
   }, []);
 
+  const spawnSession = useCallback((_cli: string, _project: string, _mode?: string) => {
+    // Create a NEW empty session and make it active with no messages,
+    // so the empty-state placeholder is reachable.
+    setActiveSessionId(`mock-session-${Date.now()}`);
+    setMessages([]);
+    setHistoryLoading(false);
+  }, []);
+
+  const sendMessage = useCallback((text: string) => {
+    setMessages((prev) => [...prev, { role: "user", text }]);
+  }, []);
+
   const leaveSession = useCallback(() => {
     setActiveSessionId(null);
     setMessages([]);
@@ -54,9 +66,9 @@ export function useMockDiktat(_host?: string, _port?: number) {
     historyLoading,
     connect: () => {},
     disconnect: () => {},
-    spawnSession: () => {},
+    spawnSession,
     resumeSession,
-    sendMessage: () => {},
+    sendMessage,
     leaveSession,
     cancelMessage: () => {},
     registerPushToken: () => {},

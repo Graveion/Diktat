@@ -38,6 +38,7 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
               return (
                 <TouchableOpacity
                   key={m}
+                  testID={`autosend-${m}`}
                   style={[styles.option, active && styles.optionActive]}
                   onPress={() => {
                     Haptics.selectionAsync();
@@ -64,6 +65,7 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
               return (
                 <TouchableOpacity
                   key={m}
+                  testID={`micmode-${m}`}
                   style={[styles.option, active && styles.optionActive]}
                   onPress={() => {
                     Haptics.selectionAsync();
@@ -88,6 +90,7 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
               <Text style={styles.sectionHintInline}>Read assistant replies aloud.</Text>
             </View>
             <Switch
+              testID="tts-toggle"
               value={settings.ttsEnabled}
               onValueChange={(val) => {
                 Haptics.selectionAsync();
@@ -99,7 +102,7 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
             />
           </View>
 
-          <TouchableOpacity style={styles.done} onPress={onClose} activeOpacity={0.85}>
+          <TouchableOpacity testID="settings-done-button" style={styles.done} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.doneText}>Done</Text>
           </TouchableOpacity>
 

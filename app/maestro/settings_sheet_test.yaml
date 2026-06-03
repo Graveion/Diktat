@@ -1,0 +1,31 @@
+appId: com.graveion.diktat
+---
+# Settings sheet smoke test: tapping the gear opens the sheet without crashing.
+#
+# NOTE: The sheet's content collapses into a single iOS accessibility node
+# (see ChatScreen/SettingsSheet), so Maestro cannot assert on or tap individual
+# options — this flow is screenshot-only. Option-level behavior is covered by
+# unit tests (src/utils/settings + AUTO_SEND_* constants). Making the sheet's
+# rows individually accessible is tracked as a follow-up.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible: "Pacer"
+
+# Resume session so the chat header (with the settings gear) is visible
+- tapOn:
+    id: "session-card-mock-session-001"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Open settings — the gear is queryable; the sheet content is not.
+- assertVisible:
+    id: "settings-button"
+- tapOn:
+    id: "settings-button"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: "maestro/screenshots/settings_01_open"

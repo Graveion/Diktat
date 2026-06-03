@@ -796,11 +796,11 @@ export function ChatScreen({
         </Text>
         <View style={styles.headerRight}>
           {streaming && activeSessionId ? (
-            <TouchableOpacity onPress={() => onCancel(activeSessionId)} style={styles.cancelButton}>
+            <TouchableOpacity testID="stop-button" onPress={() => onCancel(activeSessionId)} style={styles.cancelButton}>
               <Text style={styles.cancelText}>Stop</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity onPress={() => setSettingsOpen(true)} style={styles.settingsBtn}>
+            <TouchableOpacity testID="settings-button" onPress={() => setSettingsOpen(true)} style={styles.settingsBtn}>
               <Text style={styles.settingsIcon}>⚙</Text>
             </TouchableOpacity>
           )}
@@ -940,6 +940,7 @@ export function ChatScreen({
         {/* Scroll-to-bottom button */}
         {!isAtBottom && (
           <TouchableOpacity
+            testID="scroll-to-bottom-button"
             style={styles.scrollToBottom}
             onPress={() => listRef.current?.scrollToEnd({ animated: true })}
           >
@@ -1021,6 +1022,7 @@ export function ChatScreen({
           {/* Action buttons */}
           <View style={styles.reviewActions}>
             <TouchableOpacity
+              testID="review-cancel-button"
               style={[styles.reviewActionBtn, styles.reviewCancelBtn]}
               onPress={discardDraft}
               activeOpacity={0.7}
@@ -1028,6 +1030,7 @@ export function ChatScreen({
               <Text style={styles.reviewCancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              testID="review-send-button"
               style={[styles.reviewActionBtn, styles.reviewSendBtn]}
               onPress={sendDraft}
               activeOpacity={0.85}
@@ -1072,6 +1075,7 @@ export function ChatScreen({
                 {railCommands.map((c) => (
                   <TouchableOpacity
                     key={c.cmd}
+                    testID={`slash-${c.cmd}`}
                     style={styles.chip}
                     onPress={() => applyCommand(c.cmd)}
                     activeOpacity={0.7}
@@ -1093,6 +1097,7 @@ export function ChatScreen({
           {/* Input area */}
           <View style={styles.inputRow}>
             <TouchableOpacity
+              testID="mic-button"
               style={[styles.micButton, listening && styles.micButtonActive]}
               onPress={settings.micMode === "toggle" ? toggleListening : undefined}
               onPressIn={settings.micMode === "hold" ? onMicPressIn : undefined}
@@ -1114,6 +1119,7 @@ export function ChatScreen({
               ) : (
                 <TextInput
                   ref={inputRef}
+                  testID="message-input"
                   style={styles.input}
                   value={input}
                   onChangeText={handleInputChange}
@@ -1128,6 +1134,7 @@ export function ChatScreen({
             </View>
 
             <TouchableOpacity
+              testID="send-button"
               style={[styles.sendButton, (!input.trim() || streaming) && styles.sendDisabled]}
               onPress={handleSend}
               disabled={!input.trim() || streaming}

@@ -1,0 +1,36 @@
+appId: com.graveion.diktat
+---
+# Send-message flow: type into the input and send; the mock appends a user bubble.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible: "Pacer"
+
+# Resume the mock session and wait for history
+- tapOn:
+    id: "session-card-mock-session-001"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Type a message
+- tapOn:
+    id: "message-input"
+- waitForAnimationToEnd
+- tapOn:
+    id: "message-input"
+- inputText: "hello from maestro"
+- waitForAnimationToEnd
+- assertVisible: "hello from maestro"
+- takeScreenshot: "maestro/screenshots/send_01_typed"
+
+# Send it → mock appends a user bubble with the same text
+- tapOn:
+    id: "send-button"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "hello from maestro"
+- takeScreenshot: "maestro/screenshots/send_02_sent"

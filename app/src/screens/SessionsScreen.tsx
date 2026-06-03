@@ -208,6 +208,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
 
       <View style={styles.newButtonWrap}>
         <TouchableOpacity
+          testID="new-session-button"
           style={[styles.newButton, clis.length === 0 && styles.newButtonDisabled]}
           onPress={openPicker}
           disabled={clis.length === 0}
@@ -224,6 +225,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
 
       {visibleSessions.length > 0 && (
         <TextInput
+          testID="session-search-input"
           style={styles.searchInput}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -335,6 +337,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
               {clis.map((cli) => (
                 <TouchableOpacity
                   key={cli}
+                  testID={`cli-${cli}`}
                   style={[pickerStyles.chip, selectedCli === cli && pickerStyles.chipSelected]}
                   onPress={() => { setSelectedCli(cli); if (cli !== "cursor") setSelectedMode(null); }}
                 >
@@ -383,10 +386,11 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
             </ScrollView>
 
             <View style={pickerStyles.actions}>
-              <TouchableOpacity style={pickerStyles.cancelButton} onPress={() => setShowPicker(false)}>
+              <TouchableOpacity testID="cancel-new-session-button" style={pickerStyles.cancelButton} onPress={() => setShowPicker(false)}>
                 <Text style={pickerStyles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                testID="start-session-button"
                 style={[pickerStyles.startButton, (!selectedCli || !selectedProject) && pickerStyles.startButtonDisabled]}
                 onPress={handleStart}
                 disabled={!selectedCli || !selectedProject}
