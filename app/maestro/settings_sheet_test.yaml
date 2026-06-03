@@ -1,12 +1,11 @@
 appId: com.graveion.diktat
 ---
-# Settings sheet smoke test: tapping the gear opens the sheet without crashing.
+# Settings sheet test: opens the sheet and exercises individual options.
 #
-# NOTE: The sheet's content collapses into a single iOS accessibility node
-# (see ChatScreen/SettingsSheet), so Maestro cannot assert on or tap individual
-# options — this flow is screenshot-only. Option-level behavior is covered by
-# unit tests (src/utils/settings + AUTO_SEND_* constants). Making the sheet's
-# rows individually accessible is tracked as a follow-up.
+# The sheet's rows are now individually accessible (SettingsSheet wraps its
+# content in a plain View instead of a TouchableOpacity, so iOS no longer
+# merges the children into one accessibility node), so Maestro can assert on
+# and tap each option by testID.
 - launchApp:
     clearState: false
 - tapOn:
@@ -21,7 +20,7 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 
-# Open settings — the gear is queryable; the sheet content is not.
+# Open settings
 - assertVisible:
     id: "settings-button"
 - tapOn:
@@ -29,3 +28,28 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - takeScreenshot: "maestro/screenshots/settings_01_open"
+
+# Individual options are now reachable by testID
+- assertVisible:
+    id: "autosend-relaxed"
+- assertVisible:
+    id: "tts-toggle"
+- assertVisible:
+    id: "settings-done-button"
+
+# Tap an auto-send option and toggle voice playback
+- tapOn:
+    id: "autosend-relaxed"
+- waitForAnimationToEnd
+- tapOn:
+    id: "tts-toggle"
+- waitForAnimationToEnd
+- takeScreenshot: "maestro/screenshots/settings_02_options"
+
+# Close the sheet and confirm it dismissed
+- tapOn:
+    id: "settings-done-button"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: "settings-done-button"

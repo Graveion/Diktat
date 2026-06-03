@@ -1,4 +1,4 @@
-import { Modal, TouchableOpacity, View, Text, StyleSheet, Switch } from "react-native";
+import { Modal, Pressable, TouchableOpacity, View, Text, StyleSheet, Switch } from "react-native";
 import * as Haptics from "expo-haptics";
 import { colors, fonts } from "../theme";
 import { AutoSendMode, AUTO_SEND_LABELS, MicMode, MIC_LABELS, Settings } from "../utils/settings";
@@ -22,8 +22,18 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
       animationType="slide"
       onRequestClose={onClose}
     >
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={styles.sheet} onPress={() => {}}>
+      <Pressable style={styles.overlay} accessible={false} onPress={onClose}>
+        {/*
+          Plain View (not a TouchableOpacity): on iOS a touchable becomes an
+          accessibility container that merges all its children into one node,
+          which made VoiceOver and Maestro see the whole sheet as a single
+          element. onStartShouldSetResponder claims the touch so taps on the
+          sheet's dead areas don't fall through to the overlay's dismiss.
+        */}
+        <View
+          style={styles.sheet}
+          onStartShouldSetResponder={() => true}
+        >
           <View style={styles.handle} />
           <Text style={styles.title}>Settings</Text>
 
@@ -39,6 +49,9 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
                 <TouchableOpacity
                   key={m}
                   testID={`autosend-${m}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={AUTO_SEND_LABELS[m]}
                   style={[styles.option, active && styles.optionActive]}
                   onPress={() => {
                     Haptics.selectionAsync();
@@ -66,6 +79,9 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
                 <TouchableOpacity
                   key={m}
                   testID={`micmode-${m}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={MIC_LABELS[m]}
                   style={[styles.option, active && styles.optionActive]}
                   onPress={() => {
                     Haptics.selectionAsync();
@@ -102,13 +118,13 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
             />
           </View>
 
-          <TouchableOpacity testID="settings-done-button" style={styles.done} onPress={onClose} activeOpacity={0.85}>
+          <TouchableOpacity testID="settings-done-button" accessibilityRole="button" style={styles.done} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.doneText}>Done</Text>
           </TouchableOpacity>
 
           <Text style={styles.versionFooter}>v{APP_VERSION} · {UPDATE_LABEL}</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </View>
+      </Pressable>
     </Modal>
   );
 }
