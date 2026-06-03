@@ -19,14 +19,37 @@ const MOCK_SESSION: DiktatSession = {
   source: "cursor",
 };
 
+// Dedicated fixture session for exercising the reconnecting banner in UI tests.
+// Resuming it leaves the hook in a reconnecting state instead of loading history.
+export const MOCK_RECONNECTING_SESSION_ID = "mock-session-reconnecting";
+const MOCK_RECONNECTING_SESSION: DiktatSession = {
+  id: MOCK_RECONNECTING_SESSION_ID,
+  cli: "cursor",
+  project: "/Users/timothy.green/personal/Reconnecting",
+  projectLabel: "Reconnecting",
+  firstMessage: "This session stays in the reconnecting state",
+  lastActiveAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(), // 3 min ago
+  source: "cursor",
+};
+
 export function useMockDiktat(_host?: string, _port?: number) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const resumeSession = useCallback((session: DiktatSession) => {
-    setHistoryLoading(true);
     setActiveSessionId(session.id);
+    // The dedicated reconnecting fixture parks in the reconnecting state
+    // (banner + Retry) rather than loading history.
+    if (session.id === MOCK_RECONNECTING_SESSION_ID) {
+      setReconnecting(true);
+      setMessages([]);
+      setHistoryLoading(false);
+      return;
+    }
+    setReconnecting(false);
+    setHistoryLoading(true);
     // Simulate a short history-load delay, just like the real hook
     setTimeout(() => {
       setMessages(MOCK_MESSAGES);
@@ -50,21 +73,32 @@ export function useMockDiktat(_host?: string, _port?: number) {
     setActiveSessionId(null);
     setMessages([]);
     setHistoryLoading(false);
+    setReconnecting(false);
+  }, []);
+
+  // Retry on the reconnecting banner clears the reconnecting state and loads history.
+  const connect = useCallback(() => {
+    setReconnecting(false);
+    setHistoryLoading(true);
+    setTimeout(() => {
+      setMessages(MOCK_MESSAGES);
+      setHistoryLoading(false);
+    }, 400);
   }, []);
 
   return {
     state: "connected" as const,
-    reconnecting: false,
+    reconnecting,
     errorMessage: null,
     clis: ["cursor", "claude"],
     projects: ["/Users/timothy.green/personal/Pacer"],
-    sessions: [MOCK_SESSION],
+    sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION],
     activeSessionId,
     messages,
     streaming: false,
     currentTool: null,
     historyLoading,
-    connect: () => {},
+    connect,
     disconnect: () => {},
     spawnSession,
     resumeSession,

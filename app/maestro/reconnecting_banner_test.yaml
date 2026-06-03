@@ -1,0 +1,31 @@
+appId: com.graveion.diktat
+---
+# Reconnecting banner: the dedicated mock "Reconnecting" session parks in the
+# reconnecting state (banner + Retry); Retry clears it and loads history.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible: "Pacer"
+
+# Resume the reconnecting fixture session
+- tapOn:
+    id: "session-card-mock-session-reconnecting"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "reconnecting-banner"
+- assertVisible: "Reconnecting…"
+- assertVisible:
+    id: "reconnect-retry-button"
+- takeScreenshot: "maestro/screenshots/reconnecting_01_banner"
+
+# Retry clears the reconnecting state → history loads, banner disappears
+- tapOn:
+    id: "reconnect-retry-button"
+- extendedWaitUntil:
+    notVisible:
+      id: "reconnecting-banner"
+    timeout: 5000
+- takeScreenshot: "maestro/screenshots/reconnecting_02_recovered"

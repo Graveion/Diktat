@@ -328,6 +328,9 @@ type Props = {
   onBack: () => void;
   onRetryConnect?: () => void;
   sessionLabel?: string;
+  // Overridable only so mock/dev builds can shorten the 30s idle delay for UI
+  // tests. Defaults to the production constant; never set in real builds.
+  idleDelayMs?: number;
 };
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -335,6 +338,7 @@ type Props = {
 export function ChatScreen({
   messages, streaming, currentTool, reconnecting, historyLoading,
   activeSessionId, sessionCli, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
+  idleDelayMs = IDLE_DELAY_MS,
 }: Props) {
   type Mode = "idle" | "listening" | "reviewing";
   const [input, setInput] = useState("");
@@ -402,11 +406,11 @@ export function ChatScreen({
     idleTimerRef.current = setTimeout(() => {
       setShowIdle(true);
       Animated.timing(idleOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
-    }, IDLE_DELAY_MS);
+    }, idleDelayMs);
     return () => {
       if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
     };
-  }, [streaming, mode, messages.length, input]);
+  }, [streaming, mode, messages.length, input, idleDelayMs]);
 
   // ─── Countdown / send orchestration ──────────────────────────────────────
   const clearCountdown = useCallback(() => {
@@ -808,10 +812,11 @@ export function ChatScreen({
       </View>
 
       {reconnecting ? (
-        <View style={styles.reconnectingBanner}>
+        <View style={styles.reconnectingBanner} testID="reconnecting-banner">
           <Text style={styles.reconnectingText}>Reconnecting…</Text>
           {onRetryConnect ? (
             <TouchableOpacity
+              testID="reconnect-retry-button"
               onPress={() => { Haptics.selectionAsync(); onRetryConnect(); }}
               style={styles.reconnectingRetry}
               activeOpacity={0.7}
@@ -1043,12 +1048,13 @@ export function ChatScreen({
         <>
           {/* Idle suggestions — fade in after 30s of no activity */}
           {showIdle && (
-            <Animated.View style={[styles.idleRow, { opacity: idleOpacity }]}>
+            <Animated.View style={[styles.idleRow, { opacity: idleOpacity }]} testID="idle-suggestions">
               {buildIdleSuggestions(
                 [...messages].reverse().find((m) => m.role === "assistant")?.text,
               ).map((suggestion, i) => (
                 <TouchableOpacity
                   key={i}
+                  testID={`idle-chip-${i}`}
                   style={styles.idleChip}
                   onPress={() => {
                     idleOpacity.setValue(0);
