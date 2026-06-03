@@ -85,14 +85,29 @@ function extractToolPath(name: string, input: any): string | undefined {
 }
 
 // Build the same "Name:filename" string that live tool_use events produce.
+// Canonical display names for tool variants across Claude and Cursor CLIs.
+const TOOL_CANONICAL: Record<string, string> = {
+  // Cursor aliases for standard tools
+  ReadFile: "Read",
+  StrReplace: "Edit",
+  ApplyPatch: "Edit",
+  rg: "Grep",
+  AwaitShell: "Bash",
+  ReadLints: "Bash",
+  Delete: "Write",
+  call_mcp_tool: "Task",
+  CallMcpTool: "Task",
+};
+
 export function toolDisplayName(name: string, input: any): string {
-  if (!input) return name;
+  const canonical = TOOL_CANONICAL[name] ?? name;
+  if (!input) return canonical;
   const path: string | undefined = input.file_path ?? input.path ?? undefined;
-  if (path) return `${name}:${path.split("/").pop() ?? path}`;
-  if (name === "Bash" && typeof input.command === "string") {
-    return `${name}:${input.command.slice(0, 35)}`;
+  if (path) return `${canonical}:${path.split("/").pop() ?? path}`;
+  if ((canonical === "Bash" || name === "AwaitShell") && typeof input.command === "string") {
+    return `${canonical}:${input.command.slice(0, 35)}`;
   }
-  return name;
+  return canonical;
 }
 
 export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {

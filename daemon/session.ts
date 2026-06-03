@@ -237,8 +237,9 @@ export class Session {
           const content = json.message?.content ?? [];
           for (const block of content) {
             if (block.type === "text" && block.text) {
+              // Strip Cursor's [redacted] markers and send the cleaned text.
               const text = block.text.replace(/\[redacted\]/gi, "").trim();
-              if (text) this.ws.send(JSON.stringify({ type: "output", text: block.text }));
+              if (text) this.ws.send(JSON.stringify({ type: "output", text }));
             }
           }
         }

@@ -147,10 +147,16 @@ export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage
           }
 
           const text = Array.isArray(content)
-            ? content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
-            : typeof content === "string" ? content : "";
+            ? content
+                .filter((c: any) => c.type === "text")
+                .map((c: any) => ((c.text ?? "") as string).replace(/\[REDACTED\]/gi, "").trim())
+                .filter(Boolean)
+                .join("\n\n")
+            : typeof content === "string"
+              ? content.replace(/\[REDACTED\]/g, "").trim()
+              : "";
 
-          if (text) messages.push({ role, text });
+          if (text.trim()) messages.push({ role, text });
         } catch {
           // skip malformed lines
         }

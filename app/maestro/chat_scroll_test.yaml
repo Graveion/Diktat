@@ -1,0 +1,31 @@
+appId: com.graveion.diktat
+---
+# Launch fresh
+- launchApp:
+    clearState: false
+
+# Dismiss system notification prompt if present (only appears once after install)
+# "Don't Allow" button is on the left, roughly 27% from left, 64% from top
+- tapOn:
+    point: "27%,64%"
+- waitForAnimationToEnd
+
+# App should navigate to sessions screen (mock mode is auto-connected)
+- assertVisible: "Pacer"
+- takeScreenshot: "maestro/screenshots/01_sessions_screen"
+
+# Tap the Pacer session row via testID
+- tapOn:
+    id: "session-card-mock-session-001"
+- waitForAnimationToEnd
+- takeScreenshot: "maestro/screenshots/02_chat_immediately_after_tap"
+
+# Wait for the 400ms mock history load delay + scroll settle
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: "maestro/screenshots/03_chat_after_history_load"
+
+# Extra settle time for the scroll to commit on Fabric
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: "maestro/screenshots/04_chat_settled"

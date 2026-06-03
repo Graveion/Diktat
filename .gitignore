@@ -1,2 +1,8 @@
 .ignored/
 *.ipa
+
+# Claude Code local settings and agent worktrees
+.claude/
+
+# Stray screenshots at repo root (Maestro writes to app/maestro/screenshots/)
+/*.png

@@ -15,123 +15,15 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-spe
 import type { DiktatMessage } from "../hooks/useDiktat";
 import { useSettings } from "../hooks/useSettings";
 import { AUTO_SEND_DURATIONS } from "../utils/settings";
+import {
+  buildContextualStrings, matchVoiceCommand, detectSlashCommand,
+  adaptiveCountdownMultiplier, COMMAND_VOCAB,
+} from "../utils/voice";
+import { stripMarkdown } from "../utils/markdown";
+import { suggestCommands, buildIdleSuggestions, IDLE_DELAY_MS } from "../utils/suggestions";
+import { formatToolLabel } from "../utils/tools";
 import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
-
-// ─── Voice vocabulary ────────────────────────────────────────────────────────
-// 50 general dev terms that general-purpose speech recognisers reliably mishear.
-// Kept language-agnostic so they apply to any project.
-const CODING_VOCAB_BASE = [
-  // Auth & security
-  "authentication", "authorization", "OAuth", "JSON web token",
-  // Testing
-  "unit test", "integration test", "end to end test", "test case",
-  "assertion", "mock", "stub", "fixture",
-  // Architecture & patterns
-  "interface", "dependency injection", "singleton", "middleware",
-  "repository", "factory", "observer", "decorator",
-  // API & networking
-  "endpoint", "REST API", "WebSocket", "request payload", "response body",
-  "GraphQL", "webhook",
-  // Database
-  "migration", "schema", "transaction", "query",
-  // Dev workflow
-  "refactor", "debug", "deploy", "pull request", "code review",
-  "merge conflict", "environment variable",
-  // Code structure
-  "component", "service", "module", "utility", "config",
-  "callback", "event handler", "error handling",
-  // State & data
-  "loading state", "error state", "data fetching", "state management",
-  // General technical
-  "validation", "serialization", "encryption", "pagination",
-  "caching", "rate limiting",
-];
-
-// Build final list: static vocab + up to 10 dynamic project-specific slots.
-function buildContextualStrings(projectLabel?: string): string[] {
-  const dynamic: string[] = [];
-  if (projectLabel) dynamic.push(projectLabel);
-  return [...CODING_VOCAB_BASE, ...dynamic].slice(0, 100);
-}
-
-// ─── Intent → command suggestions ────────────────────────────────────────────
-// Maps natural-language phrases in the transcript to relevant slash commands.
-// Only suggests commands that actually exist for the active CLI.
-const INTENT_RULES: Array<{ patterns: RegExp[]; cmd: string }> = [
-  { patterns: [/\b(plan|figure out|design|come up with|map out|think about|strategy)\b/i],     cmd: "/plan" },
-  { patterns: [/\b(explore|explain|what is|how does|what does|tell me about|read only)\b/i],  cmd: "/ask" },
-  { patterns: [/\b(start over|fresh start|reset)\b/i],                                         cmd: "/clear" },
-  { patterns: [/\b(new chat|new session)\b/i],                                                 cmd: "/new-chat" },
-  { patterns: [/\b(compact|condense)\b/i],                                                     cmd: "/compact" },
-  { patterns: [/\b(compress|free context|free space)\b/i],                                     cmd: "/compress" },
-];
-
-// ─── Idle suggestions ────────────────────────────────────────────────────────
-// Short follow-up prompts shown after a session has been idle for IDLE_DELAY_MS.
-// Light context-awareness based on the last assistant message.
-const IDLE_DELAY_MS = 30000;
-
-function buildIdleSuggestions(lastAssistantText?: string): string[] {
-  const base = ["Continue", "Explain what you did"];
-  if (!lastAssistantText) return [...base, "What's next?"];
-  const lower = lastAssistantText.toLowerCase();
-  const extra: string[] = [];
-  if (/\btest|spec\b/.test(lower)) extra.push("Run the tests");
-  if (/\bcommit|stage|git\b/.test(lower)) extra.push("Commit this");
-  if (/\berror|fail|broken|issue\b/.test(lower)) extra.push("Try a different approach");
-  if (/\bplan|todo|next step\b/.test(lower)) extra.push("Start on step one");
-  if (extra.length === 0) extra.push("What's next?");
-  return [...extra.slice(0, 2), base[0]].slice(0, 3);
-}
-
-// ─── Adaptive countdown ──────────────────────────────────────────────────────
-// Adjusts the base countdown duration based on transcript characteristics.
-// Returns a multiplier on the base duration, or 0 to suppress auto-send entirely.
-function adaptiveCountdownMultiplier(text: string): number {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-  const words = trimmed.split(/\s+/);
-  // Hesitation markers → don't auto-send, user is still thinking
-  if (/\b(uh|uhm|um+|hmm+|err+|wait|hold on|let me think|actually)\b/i.test(trimmed)) return 0;
-  // Single word → likely a false trigger or pending more
-  if (words.length === 1) return 0;
-  // Ends with a question mark → user likely wants to re-read it
-  if (/\?$/.test(trimmed)) return 1.5;
-  // Long utterance → more to review
-  if (words.length > 30) return 1.4;
-  // Short, decisive → ship it
-  if (words.length < 5) return 0.7;
-  return 1.0;
-}
-
-function suggestCommands(text: string, availableCmds: string[]): string[] {
-  if (!text || text.trim().startsWith("/")) return [];
-  const matched = new Set<string>();
-  for (const rule of INTENT_RULES) {
-    if (!availableCmds.includes(rule.cmd)) continue;
-    if (rule.patterns.some((p) => p.test(text))) matched.add(rule.cmd);
-    if (matched.size >= 2) break;
-  }
-  return Array.from(matched);
-}
-
-// ─── Post-transcript voice commands ─────────────────────────────────────────
-// Short utterances heard while the review card is up are interpreted as commands
-// rather than appended to the draft.
-type VoiceCommand = "send" | "cancel" | "edit" | "plan";
-function matchVoiceCommand(text: string): VoiceCommand | null {
-  const lower = text.toLowerCase().trim().replace(/[.,!?]+$/, "");
-  const words = lower.split(/\s+/);
-  if (words.length > 4) return null; // too long — treat as additional dictation
-  if (/^(yeah\s+|yes\s+|ok(ay)?\s+)?send(\s+it)?$/.test(lower) || lower === "submit" || lower === "go") return "send";
-  if (["cancel", "discard", "scrap", "nevermind", "never mind", "no wait", "delete that", "nope", "stop"].includes(lower)) return "cancel";
-  if (["edit", "edit it", "let me edit", "let me fix that", "let me fix it"].includes(lower)) return "edit";
-  if (lower === "plan" || lower === "slash plan" || lower === "make a plan") return "plan";
-  return null;
-}
-
-const COMMAND_VOCAB = ["send", "cancel", "discard", "edit", "scrap", "nevermind", "submit", "plan", "stop"];
 
 const DRAFT_KEY = "diktat:draft";
 
@@ -143,34 +35,6 @@ const EXAMPLE_PROMPTS = [
 
 const COPIED_EVENT = "diktat:copied";
 const emitCopied = () => DeviceEventEmitter.emit(COPIED_EVENT);
-
-// ─── Tool labels & icons ────────────────────────────────────────────────────
-
-const TOOL_LABELS: Record<string, string> = {
-  Read: "Reading", Write: "Writing", Edit: "Editing", MultiEdit: "Editing",
-  Bash: "Running", Grep: "Searching", Glob: "Searching",
-  WebSearch: "Searching", WebFetch: "Fetching",
-  TodoWrite: "Updating plan", Task: "Sub-agent",
-};
-const TOOL_ICONS: Record<string, string> = {
-  Read: "📄", Write: "✏️", Edit: "✏️", MultiEdit: "✏️",
-  Bash: "⚡", Grep: "🔍", Glob: "🔍",
-  WebSearch: "🌐", WebFetch: "🌐",
-  TodoWrite: "📋", Task: "🤖",
-};
-
-function formatToolLabel(tool: string): { label: string; icon: string } {
-  const colon = tool.indexOf(":");
-  if (colon === -1) {
-    return { label: TOOL_LABELS[tool] ?? tool, icon: TOOL_ICONS[tool] ?? "🔧" };
-  }
-  const name = tool.slice(0, colon);
-  const file = tool.slice(colon + 1);
-  return {
-    label: `${TOOL_LABELS[name] ?? name} ${file}`,
-    icon: TOOL_ICONS[name] ?? "🔧",
-  };
-}
 
 // ─── Slash commands ──────────────────────────────────────────────────────────
 
@@ -190,27 +54,6 @@ const SLASH_COMMANDS: Record<string, Array<{ cmd: string; description: string }>
     { cmd: "/model",    description: "Set model" },
   ],
 };
-
-// ─── Voice → slash command mapping ──────────────────────────────────────────
-
-const VOICE_TO_SLASH: Array<{ patterns: string[]; command: string }> = [
-  { patterns: ["slash plan", "plan mode", "switch to plan"],       command: "/plan" },
-  { patterns: ["slash ask", "ask mode", "read only mode"],          command: "/ask" },
-  { patterns: ["compress", "compress context", "free context"],    command: "/compress" },
-  { patterns: ["new chat", "start fresh", "clear chat"],           command: "/new-chat" },
-  { patterns: ["auto run", "enable auto run", "toggle auto run"],  command: "/auto-run" },
-  { patterns: ["max mode", "enable max mode", "toggle max mode"],  command: "/max-mode" },
-  { patterns: ["slash clear", "clear context"],                    command: "/clear" },
-  { patterns: ["compact", "compact context"],                      command: "/compact" },
-];
-
-function detectSlashCommand(text: string): string {
-  const lower = text.toLowerCase().trim();
-  for (const { patterns, command } of VOICE_TO_SLASH) {
-    if (patterns.some((p) => lower === p || lower.startsWith(p + " "))) return command;
-  }
-  return text;
-}
 
 // ─── Voice waveform ──────────────────────────────────────────────────────────
 
@@ -284,22 +127,6 @@ function TypingIndicator() {
 }
 
 // ─── Message bubble ──────────────────────────────────────────────────────────
-
-// Strip markdown for TTS — speech engines stumble over symbols like # * ` etc.
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, "code block") // fenced code → placeholder
-    .replace(/`[^`]+`/g, "")                    // inline code → drop
-    .replace(/^#{1,6}\s+/gm, "")                // headings
-    .replace(/\*\*([^*]+)\*\*/g, "$1")          // bold
-    .replace(/\*([^*]+)\*/g, "$1")              // italic
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")    // links → text only
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")       // images
-    .replace(/^[\s-]*[-*+]\s+/gm, ". ")         // bullets → pause
-    .replace(/\n{2,}/g, ". ")                   // paragraphs → period
-    .replace(/\n/g, " ")
-    .trim();
-}
 
 function ToolPreviewDrawer({
   message, onCopy,
@@ -777,18 +604,28 @@ export function ChatScreen({
     }
   }, [messages.length]);
 
-  // Scroll to the bottom whenever messages arrive or streaming progresses.
-  // setTimeout(0) defers past the current JS render cycle so Fabric has
-  // committed the new layout heights to the native layer before we call
-  // scrollToEnd — without this the call can fire before the content has
-  // been measured, leaving the viewport stuck at y=0.
+  // Scroll to the bottom whenever a new message arrives.
+  // Guard on userScrolledAway so streaming doesn't yank the user back while
+  // they're reading earlier messages.
   useEffect(() => {
-    // Always scroll to end when messages load (diagnostic: no isAtBottom guard)
+    if (userScrolledAwayRef.current) return;
     const t = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: false });
-    }, 100); // 100ms to ensure Fabric layout is committed
+    }, 100);
     return () => clearTimeout(t);
-  }, [messages.length, streaming]);
+  }, [messages.length]);
+
+  // When the keyboard appears the KAV shrinks the scroll view from the bottom,
+  // which can push the last message out of view. Re-scroll to end so the user
+  // can see what they're replying to.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidShow", () => {
+      if (!userScrolledAwayRef.current) {
+        listRef.current?.scrollToEnd({ animated: false });
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // Reset all ephemeral UI state when we switch to a new session (or leave one).
   // Without this, state from session A bleeds into session B.
@@ -1004,13 +841,18 @@ export function ChatScreen({
             }
           }}
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            const threshold = streamingRef.current ? 240 : 60;
             const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-            const atBottom = distanceFromBottom < threshold;
+            // Show the scroll-to-bottom button when > 60px from bottom.
+            const atBottom = distanceFromBottom < 60;
             setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
-            if (atBottom) userScrolledAwayRef.current = false;
-            if (streamingRef.current && !atBottom) userScrolledAwayRef.current = true;
+            // 30px hair-trigger: any noticeable upward scroll stops auto-scroll,
+            // including during streaming so the user can read earlier messages.
+            if (distanceFromBottom < 30) {
+              userScrolledAwayRef.current = false;
+            } else {
+              userScrolledAwayRef.current = true;
+            }
           }}
           scrollEventThrottle={100}
         >
@@ -1280,9 +1122,7 @@ export function ChatScreen({
                   multiline
                   editable={!streaming}
                   returnKeyType="default"
-                  autoCorrect={false}
                   autoCapitalize="none"
-                  spellCheck={false}
                 />
               )}
             </View>
