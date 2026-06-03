@@ -13,7 +13,7 @@ function extractToolPath(input: any): string | undefined {
   return undefined;
 }
 
-const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
+export const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
 
 export interface CursorSession {
   id: string;
@@ -28,7 +28,7 @@ function projectLabel(projectPath: string): string {
   return parts[parts.length - 1] ?? projectPath;
 }
 
-function readFirstUserMessage(filePath: string): string {
+export function readFirstUserMessage(filePath: string): string {
   try {
     const buf = Buffer.alloc(4096);
     const fs = require("fs");
@@ -59,13 +59,13 @@ function readFirstUserMessage(filePath: string): string {
   }
 }
 
-export function listCursorSessions(): CursorSession[] {
+export function listCursorSessions(projectsDir = CURSOR_PROJECTS_DIR): CursorSession[] {
   const sessions: CursorSession[] = [];
 
   try {
-    const projectDirs = readdirSync(CURSOR_PROJECTS_DIR);
+    const projectDirs = readdirSync(projectsDir);
     for (const dir of projectDirs) {
-      const transcriptsDir = join(CURSOR_PROJECTS_DIR, dir, "agent-transcripts");
+      const transcriptsDir = join(projectsDir, dir, "agent-transcripts");
       if (!existsSync(transcriptsDir)) continue;
 
       const project = decodeCursorPath(dir);
@@ -95,11 +95,11 @@ export function listCursorSessions(): CursorSession[] {
   return unique.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).slice(0, 50);
 }
 
-export function readCursorHistory(sessionId: string, limit = 20): HistoryMessage[] {
+export function readCursorHistory(sessionId: string, limit = 20, projectsDir = CURSOR_PROJECTS_DIR): HistoryMessage[] {
   try {
-    const projectDirs = readdirSync(CURSOR_PROJECTS_DIR);
+    const projectDirs = readdirSync(projectsDir);
     for (const dir of projectDirs) {
-      const filePath = join(CURSOR_PROJECTS_DIR, dir, "agent-transcripts", sessionId, `${sessionId}.jsonl`);
+      const filePath = join(projectsDir, dir, "agent-transcripts", sessionId, `${sessionId}.jsonl`);
       if (!existsSync(filePath)) continue;
 
       const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);

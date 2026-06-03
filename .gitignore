@@ -6,3 +6,6 @@
 
 # Stray screenshots at repo root (Maestro writes to app/maestro/screenshots/)
 /*.png
+
+# Maestro screenshots wherever they land (incl. repo root if run from here)
+**/maestro/screenshots/

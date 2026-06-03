@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { info, warn, error as logError } from "../utils/logger";
+import { mergeSessions, toolDisplayString, appendOutput } from "../utils/messages";
 
 export type DiktatSession = {
   id: string;
@@ -108,14 +109,16 @@ export function useDiktat(host: string, port: number) {
         setState("connected");
         setClis(msg.clis ?? []);
         setProjects(msg.projects ?? []);
-        const daemonSessions: any[] = (msg.sessions ?? []).map((s: any) => ({ ...s, source: "daemon" }));
-        const claudeSessions: any[] = (msg.claudeSessions ?? []).map((s: any) => ({ ...s, source: "claude", cli: "claude" }));
-        const cursorSessions: any[] = (msg.cursorSessions ?? []).map((s: any) => ({ ...s, source: "cursor", cli: "cursor" }));
-        const nativeIds = new Set([...claudeSessions, ...cursorSessions].map((s) => s.id));
-        const filteredDaemon = daemonSessions.filter((s) => !s.cliSessionId || !nativeIds.has(s.cliSessionId));
-        const all = [...claudeSessions, ...cursorSessions, ...filteredDaemon];
+        const all = mergeSessions({
+          sessions: msg.sessions,
+          claudeSessions: msg.claudeSessions,
+          cursorSessions: msg.cursorSessions,
+        });
         setSessions(all);
-        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeSessions.length} cursor=${cursorSessions.length} daemon=${filteredDaemon.length})`);
+        const claudeCount = all.filter((s) => s.source === "claude").length;
+        const cursorCount = all.filter((s) => s.source === "cursor").length;
+        const daemonCount = all.filter((s) => s.source === "daemon").length;
+        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeCount} cursor=${cursorCount} daemon=${daemonCount})`);
         // Auto-resume session if we reconnected mid-session. Flag this case so
         // the subsequent "resumed" event preserves in-memory messages instead
         // of clearing them (otherwise the just-finished turn vanishes when
@@ -169,9 +172,7 @@ export function useDiktat(host: string, port: number) {
 
       if (msg.type === "tool_use") {
         if (!discardOutput.current) {
-          const toolStr = msg.path
-            ? `${msg.name}:${(msg.path as string).split("/").pop() ?? msg.path}`
-            : (msg.name ?? null);
+          const toolStr = toolDisplayString(msg.name, msg.path as string | undefined);
           setCurrentTool(toolStr);
           // Persist tool usage into message history
           setMessages((prev) => [
@@ -226,13 +227,7 @@ export function useDiktat(host: string, port: number) {
         setHistoryLoading(false);
         setCurrentTool(null);
         setStreaming(true);
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant") {
-            return [...prev.slice(0, -1), { role: "assistant", text: last.text + msg.text }];
-          }
-          return [...prev, { role: "assistant", text: msg.text }];
-        });
+        setMessages((prev) => appendOutput(prev, msg.text));
         return;
       }
 

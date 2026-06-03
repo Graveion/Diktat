@@ -6,9 +6,10 @@ import { getTailscaleIP } from "./tailscale";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
 import { listSessions } from "./session-store";
-import { listClaudeSessions, claudeSessionExists, readHistory } from "./claude-sessions";
-import { listCursorSessions, readCursorHistory } from "./cursor-sessions";
+import { listClaudeSessions, claudeSessionExists } from "./claude-sessions";
+import { listCursorSessions } from "./cursor-sessions";
 import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
+import { handleClientMessage, type MessageContext } from "./message-handler";
 
 const config = loadConfig();
 const tailscaleIP = getTailscaleIP();
@@ -36,87 +37,15 @@ if (availableCLIs["cursor"] && !cursorShellPermissionGranted()) {
 const activeSessions = new Map<string, Session>();
 const clientPushTokens = new WeakMap<object, string>();
 
-async function handleMessage(ws: any, msg: any): Promise<void> {
-  if (msg.type === "spawn") {
-    if (!availableCLIs[msg.cli]) {
-      ws.send(JSON.stringify({ type: "error", message: `CLI not available: ${msg.cli}` }));
-      return;
-    }
-    if (!config.projects.includes(msg.project)) {
-      ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
-      return;
-    }
-    const session = Session.create(ws, msg.cli, availableCLIs[msg.cli]!, msg.project, msg.mode);
-    activeSessions.set(session.id, session);
-    ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
-    return;
-  }
+const messageContext: MessageContext = {
+  availableCLIs,
+  projects: config.projects,
+  activeSessions,
+  clientPushTokens,
+};
 
-  if (msg.type === "resume") {
-    const session = msg.isClaudeSession
-      ? Session.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd(), availableCLIs["claude"] ?? "claude")
-      : msg.isCursorSession
-        ? Session.fromCursorSession(ws, msg.sessionId, msg.project ?? process.cwd(), availableCLIs["cursor"] ?? "agent")
-        : Session.resume(ws, msg.sessionId);
-    if (!session) {
-      ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
-      return;
-    }
-    activeSessions.set(session.id, session);
-    ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
-    // Read history async — don't block the event loop on large JSONL files
-    const historyId = msg.isClaudeSession ? msg.sessionId : session.summary.cliSessionId;
-    if (historyId) {
-      setImmediate(async () => {
-        try {
-          const history = msg.isCursorSession
-            ? readCursorHistory(historyId)
-            : readHistory(historyId);
-          if (history.length > 0) {
-            ws.send(JSON.stringify({ type: "history", messages: history }));
-          }
-        } catch (e) {
-          console.error("Error loading history:", e);
-        }
-      });
-    }
-    return;
-  }
-
-  if (msg.type === "input") {
-    const session = activeSessions.get(msg.sessionId);
-    if (!session) {
-      ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
-      return;
-    }
-    const pushToken = clientPushTokens.get(ws as object);
-    try {
-      await session.send(msg.text, pushToken);
-    } catch (e) {
-      console.error("Error in session.send:", e);
-      try { ws.send(JSON.stringify({ type: "error", message: `Session error: ${(e as Error).message}` })); } catch {}
-    }
-    return;
-  }
-
-  if (msg.type === "cancel") {
-    const session = activeSessions.get(msg.sessionId);
-    if (session) {
-      session.cancel();
-      ws.send(JSON.stringify({ type: "exit", code: -1 }));
-    }
-    return;
-  }
-
-  if (msg.type === "register_push") {
-    if (msg.token) clientPushTokens.set(ws as object, msg.token);
-    return;
-  }
-
-  if (msg.type === "ping") {
-    ws.send(JSON.stringify({ type: "pong" }));
-    return;
-  }
+function handleMessage(ws: any, msg: any): Promise<void> {
+  return handleClientMessage(messageContext, ws, msg);
 }
 
 const server = Bun.serve({

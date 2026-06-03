@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
+export const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
 export interface ClaudeSession {
   id: string;
@@ -14,7 +14,7 @@ export interface ClaudeSession {
 
 // Read the cwd directly from the JSONL file — every entry has a "cwd" field
 // that is the exact project path Claude used. No encoding/decoding needed.
-function readProjectCwd(filePath: string): string | null {
+export function readProjectCwd(filePath: string): string | null {
   try {
     const buf = Buffer.alloc(4096);
     const fs = require("fs");
@@ -37,7 +37,7 @@ function projectLabel(projectPath: string): string {
   return parts[parts.length - 1] ?? projectPath;
 }
 
-function readFirstMessage(filePath: string): string {
+export function readFirstMessage(filePath: string): string {
   try {
     const buf = Buffer.alloc(4096);
     const fs = require("fs");
@@ -110,11 +110,11 @@ export function toolDisplayName(name: string, input: any): string {
   return canonical;
 }
 
-export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
+export function readHistory(sessionId: string, limit = 20, projectsDir = CLAUDE_PROJECTS_DIR): HistoryMessage[] {
   try {
-    const projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+    const projectDirs = readdirSync(projectsDir);
     for (const dir of projectDirs) {
-      const filePath = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+      const filePath = join(projectsDir, dir, `${sessionId}.jsonl`);
       if (!existsSync(filePath)) continue;
 
       const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
@@ -192,23 +192,23 @@ export function readHistory(sessionId: string, limit = 20): HistoryMessage[] {
   return [];
 }
 
-export function claudeSessionExists(sessionId: string): boolean {
+export function claudeSessionExists(sessionId: string, projectsDir = CLAUDE_PROJECTS_DIR): boolean {
   try {
-    const projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+    const projectDirs = readdirSync(projectsDir);
     for (const dir of projectDirs) {
-      if (existsSync(join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`))) return true;
+      if (existsSync(join(projectsDir, dir, `${sessionId}.jsonl`))) return true;
     }
   } catch { /* ignore */ }
   return false;
 }
 
-export function listClaudeSessions(): ClaudeSession[] {
+export function listClaudeSessions(projectsDir = CLAUDE_PROJECTS_DIR): ClaudeSession[] {
   const sessions: ClaudeSession[] = [];
 
   try {
-    const projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+    const projectDirs = readdirSync(projectsDir);
     for (const dir of projectDirs) {
-      const dirPath = join(CLAUDE_PROJECTS_DIR, dir);
+      const dirPath = join(projectsDir, dir);
       if (!statSync(dirPath).isDirectory()) continue;
 
       // Only top-level .jsonl files — skip subagent subdirectories

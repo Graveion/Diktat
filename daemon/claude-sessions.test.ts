@@ -1,8 +1,8 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, utimesSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
-import { toolDisplayName, readHistory } from "./claude-sessions";
+import { tmpdir } from "os";
+import { toolDisplayName, readHistory, listClaudeSessions } from "./claude-sessions";
 
 // ---------------------------------------------------------------------------
 // toolDisplayName — pure exported function, tested directly
@@ -46,14 +46,12 @@ test("toolDisplayName: path takes priority over command", () => {
 });
 
 // ---------------------------------------------------------------------------
-// readHistory — exercises the real function against a fixture written into the
-// hardcoded CLAUDE_PROJECTS_DIR (~/.claude/projects). We create a throwaway
-// project subdir + session JSONL and remove it afterward.
+// readHistory — exercises the REAL function against a temp projectsDir, passed
+// via the injectable third parameter. Layout: <projectsDir>/<proj>/<id>.jsonl
 // ---------------------------------------------------------------------------
 
-const projectsDir = join(homedir(), ".claude", "projects");
-const fixtureDirName = `diktat-readhistory-test-${Date.now()}`;
-const fixtureDir = join(projectsDir, fixtureDirName);
+let projectsDir: string;
+let fixtureDir: string;
 const sessionId = `test-session-${Date.now()}`;
 
 function writeSession(lines: object[]) {
@@ -64,13 +62,19 @@ function writeSession(lines: object[]) {
   );
 }
 
+function readHistoryTmp(id = sessionId, limit = 20) {
+  return readHistory(id, limit, projectsDir);
+}
+
 beforeAll(() => {
+  projectsDir = join(tmpdir(), `diktat-claude-test-${Date.now()}`);
+  fixtureDir = join(projectsDir, "encoded-project-dir");
   mkdirSync(fixtureDir, { recursive: true });
 });
 
 afterAll(() => {
   try {
-    rmSync(fixtureDir, { recursive: true, force: true });
+    rmSync(projectsDir, { recursive: true, force: true });
   } catch { /* best-effort */ }
 });
 
@@ -96,7 +100,7 @@ test("readHistory: parses user/assistant text and tool_use + tool_result", () =>
     },
   ]);
 
-  const messages = readHistory(sessionId);
+  const messages = readHistoryTmp();
 
   const userMsg = messages.find((m) => m.role === "user");
   expect(userMsg?.text).toBe("What files exist?");
@@ -132,7 +136,7 @@ test("readHistory: tool_result boilerplate is suppressed (no toolResult set)", (
     },
   ]);
 
-  const messages = readHistory(sessionId);
+  const messages = readHistoryTmp();
   const toolMsg = messages.find((m) => m.role === "tool");
   expect(toolMsg).toBeDefined();
   expect(toolMsg!.toolName).toBe("Write:f.ts");
@@ -146,7 +150,7 @@ test("readHistory: respects the limit (returns last N messages)", () => {
   }));
   writeSession(lines);
 
-  const messages = readHistory(sessionId, 5);
+  const messages = readHistoryTmp(sessionId, 5);
   expect(messages).toHaveLength(5);
   expect(messages[4]!.text).toBe("msg 29");
 });
@@ -163,12 +167,83 @@ test("readHistory: malformed lines skipped, valid lines kept", () => {
     "utf-8",
   );
 
-  const messages = readHistory(sessionId);
+  const messages = readHistoryTmp();
   expect(messages).toHaveLength(2);
   expect(messages[0]!.text).toBe("valid one");
   expect(messages[1]!.text).toBe("valid two");
 });
 
 test("readHistory: unknown session id returns empty array", () => {
-  expect(readHistory("definitely-not-a-real-session-id-zzz")).toEqual([]);
+  expect(readHistory("definitely-not-a-real-session-id-zzz", 20, projectsDir)).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// listClaudeSessions — REAL function against a temp projectsDir
+// ---------------------------------------------------------------------------
+
+test("listClaudeSessions: lists top-level jsonl, reads cwd + first message", () => {
+  const dir = join(tmpdir(), `diktat-claude-list-${Date.now()}`);
+  const proj = join(dir, "encoded-proj");
+  mkdirSync(proj, { recursive: true });
+  writeFileSync(
+    join(proj, "sess-a.jsonl"),
+    [
+      JSON.stringify({ type: "user", cwd: "/Users/me/code/myrepo", message: { content: "First user line" } }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }),
+    ].join("\n") + "\n",
+    "utf-8",
+  );
+
+  const sessions = listClaudeSessions(dir);
+  const found = sessions.find((s) => s.id === "sess-a");
+  expect(found).toBeDefined();
+  expect(found!.project).toBe("/Users/me/code/myrepo");
+  expect(found!.projectLabel).toBe("myrepo");
+  expect(found!.firstMessage).toBe("First user line");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("listClaudeSessions: skips subagent subdirectories (only top-level jsonl)", () => {
+  const dir = join(tmpdir(), `diktat-claude-sub-${Date.now()}`);
+  const proj = join(dir, "p");
+  const subagent = join(proj, "subagent");
+  mkdirSync(subagent, { recursive: true });
+  writeFileSync(join(proj, "top.jsonl"), JSON.stringify({ type: "user", cwd: "/x", message: { content: "hi" } }) + "\n", "utf-8");
+  // This nested file must NOT be picked up
+  writeFileSync(join(subagent, "nested.jsonl"), JSON.stringify({ type: "user", cwd: "/x", message: { content: "nested" } }) + "\n", "utf-8");
+
+  const sessions = listClaudeSessions(dir);
+  expect(sessions.map((s) => s.id)).toContain("top");
+  expect(sessions.map((s) => s.id)).not.toContain("nested");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("listClaudeSessions: dedupes by id, sorts desc by lastActiveAt, caps at 50", () => {
+  const dir = join(tmpdir(), `diktat-claude-cap-${Date.now()}`);
+  const proj = join(dir, "p");
+  mkdirSync(proj, { recursive: true });
+  const base = Date.now();
+  for (let i = 0; i < 55; i++) {
+    const fp = join(proj, `cap-${String(i).padStart(3, "0")}.jsonl`);
+    writeFileSync(fp, JSON.stringify({ type: "user", cwd: "/x", message: { content: `m${i}` } }) + "\n", "utf-8");
+    // Stagger mtimes so sort order is deterministic (later index = newer)
+    const t = new Date(base + i * 1000);
+    utimesSync(fp, t, t);
+  }
+
+  const sessions = listClaudeSessions(dir);
+  expect(sessions.length).toBe(50);
+  for (let i = 1; i < sessions.length; i++) {
+    expect(sessions[i - 1]!.lastActiveAt >= sessions[i]!.lastActiveAt).toBe(true);
+  }
+  // Newest (cap-054) should be first; oldest 5 dropped by cap
+  expect(sessions[0]!.id).toBe("cap-054");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("listClaudeSessions: missing dir returns empty array", () => {
+  expect(listClaudeSessions(join(tmpdir(), `diktat-claude-missing-${Date.now()}`))).toEqual([]);
 });
