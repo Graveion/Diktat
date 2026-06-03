@@ -42,13 +42,17 @@ appId: com.graveion.diktat
 # "Editing OnlineStorage.swift". The icon + label + chevron collapse into one
 # accessibility node ("✏️, Editing OnlineStorage.swift, ▸"), so selectors use a
 # .*-wrapped regex (Maestro text matching is a full match). scrollUntilVisible
-# doesn't drive this ScrollView reliably, so we swipe explicitly to reach it.
+# doesn't drive this ScrollView, and a fixed swipe count is fragile (message
+# heights vary), so swipe up until the tool card is visible (capped).
 - repeat:
-    times: 4
+    times: 8
+    while:
+      notVisible:
+        text: ".*Editing OnlineStorage.*"
     commands:
       - swipe:
-          start: "50%, 25%"
-          end: "50%, 90%"
+          start: "50%, 30%"
+          end: "50%, 80%"
       - waitForAnimationToEnd
 - assertVisible:
     text: ".*Editing OnlineStorage.*"
