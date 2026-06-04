@@ -50,6 +50,10 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
   const intentionalDisconnect = useRef(false);
   const discardOutput = useRef(false);
   const hasReceivedOutput = useRef(false);
+  // True once a socket has successfully opened. Gates the "Reconnecting…" banner
+  // so it only appears when an established connection drops — not during the
+  // first connect attempt or a machine that was never online.
+  const hasConnected = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
   const relayRef = useRef<RelayDescriptor | undefined>(relay);
@@ -116,6 +120,7 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
     socket.onopen = () => {
       if (ws.current !== socket) { info("WS", "onopen: stale socket — ignoring"); return; }
       reconnectDelay.current = RECONNECT_DELAY_MS;
+      hasConnected.current = true;
       setReconnecting(false);
       setState("connected");
       info("WS", `Connected to ws://${h}:${p}`);
@@ -329,11 +334,11 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
       info("MSG", `unhandled message type: ${msg.type}`);
     };
 
-    socket.onerror = (e) => {
+    socket.onerror = () => {
       if (ws.current !== socket) return;
-      logError("WS", `WebSocket error on ws://${h}:${p}`);
-      setState("error");
-      setErrorMessage("Could not reach daemon. Check Tailscale is running.");
+      // Transient transport error — don't show a sticky error banner. onclose
+      // follows and drives reconnect; the "Reconnecting…" banner covers it.
+      logError("WS", "WebSocket transport error (will reconnect)");
     };
 
     socket.onclose = (e) => {
@@ -345,7 +350,9 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
         setReconnecting(false);
         return;
       }
-      setReconnecting(true);
+      // Only surface the reconnecting banner if an established connection
+      // dropped; stay quiet during the initial connect.
+      setReconnecting(hasConnected.current);
       const delay = reconnectDelay.current;
       reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS);
       info("WS", `Scheduling reconnect in ${delay}ms`);

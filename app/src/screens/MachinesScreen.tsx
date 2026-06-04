@@ -9,7 +9,6 @@ import {
   Alert,
   RefreshControl,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
@@ -115,19 +114,18 @@ export function MachinesScreen({
         />
         <View style={styles.codeWrap}>
           <Text style={styles.codeTitle}>Pair a machine</Text>
-          <Text style={styles.codeSub}>On your Mac, in the Diktat daemon folder, run:</Text>
+          <Text style={styles.codeSub}>On the Mac you want to control, open Terminal and run:</Text>
 
-          <TouchableOpacity
-            style={styles.codeBox}
-            onPress={() => {
-              Clipboard.setStringAsync(`bun run pair ${code.code}`);
-              Haptics.selectionAsync().catch(() => {});
-            }}
-          >
-            <Text style={styles.codeCmd}>bun run pair</Text>
-            <Text style={styles.codeValue}>{code.code}</Text>
-            <Text style={styles.codeTapHint}>tap to copy</Text>
-          </TouchableOpacity>
+          <View style={styles.codeBox}>
+            <Text style={styles.codeCmd}>
+              diktat pair <Text style={styles.codeValue}>{code.code}</Text>
+            </Text>
+          </View>
+
+          <Text style={styles.codeHint}>
+            Don't have it yet? Install the Diktat daemon on your Mac first, then run the
+            command above.
+          </Text>
 
           <View style={styles.waitingRow}>
             <ActivityIndicator color={colors.accent} size="small" />
@@ -272,21 +270,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: radii.lg,
     paddingVertical: space.lg,
-    paddingHorizontal: space.xl,
+    paddingHorizontal: space.lg,
     borderWidth: 1,
     borderColor: colors.accentDim,
     alignItems: "center",
     width: "100%",
   },
-  codeCmd: { fontFamily: fonts.mono, fontSize: 13, color: colors.textSub, marginBottom: 8 },
+  codeCmd: { fontFamily: fonts.mono, fontSize: 20, color: colors.textSub },
   codeValue: {
     fontFamily: fonts.mono,
-    fontSize: 40,
+    fontSize: 20,
     color: colors.accentBright,
-    letterSpacing: 6,
+    letterSpacing: 2,
     fontWeight: "700",
   },
-  codeTapHint: { fontFamily: fonts.body, fontSize: 11, color: colors.textMuted, marginTop: 10 },
+  codeHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: "center",
+    lineHeight: 17,
+    marginTop: 14,
+  },
 
   waitingRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 28 },
   waitingText: { fontFamily: fonts.body, fontSize: 14, color: colors.textSub },
