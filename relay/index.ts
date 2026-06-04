@@ -140,6 +140,27 @@ const server = Bun.serve<ConnData, never>({
       return result.ok ? json({ ok: true, machineId: result.machineId }) : json({ error: result.error }, result.status);
     }
 
+    // Account deletion (App Store requirement): an authed user erases their
+    // account. FKs cascade from auth.users, so removing the user also removes
+    // their machines, pairing codes, and billing state.
+    if (url.pathname === "/account/delete") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!supaDeps || !SUPABASE_URL || !SUPABASE_SECRET_KEY) return json({ error: "unavailable" }, 503);
+      const token = bearer(req);
+      if (!token) return json({ error: "missing bearer token" }, 401);
+      const accountId = await supaDeps.verifyAccountToken(token);
+      if (!accountId) return json({ error: "unauthorized" }, 401);
+      const res = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/admin/users/${encodeURIComponent(accountId)}`,
+        {
+          method: "DELETE",
+          headers: { apikey: SUPABASE_SECRET_KEY, Authorization: `Bearer ${SUPABASE_SECRET_KEY}` },
+        },
+      ).catch(() => null);
+      if (!res || !res.ok) return json({ error: "delete failed" }, 502);
+      return json({ ok: true });
+    }
+
     // QR pairing — daemon polls until the phone claims (then gets the token once).
     if (url.pathname === "/pair/poll") {
       if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);

@@ -290,6 +290,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
           onClaim={machines.claimQrPairing}
           onUnpair={machines.unpair}
           onSignOut={auth.signOut}
+          onDeleteAccount={auth.deleteAccount}
         />
       ) : screen === "sessions" ? (
         <SessionsScreen

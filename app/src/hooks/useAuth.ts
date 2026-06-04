@@ -7,7 +7,11 @@ import {
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import type { Session } from "@supabase/supabase-js";
-import { GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, supabase } from "../store/supabase";
+import { GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, RELAY_URL, supabase } from "../store/supabase";
+
+function relayHttpBase(u: string): string {
+  return u.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/$/, "");
+}
 
 // In MOCK_MODE (simulator dev) we bypass real auth with a fake session so the
 // app is usable without a sign-in round-trip. Mirrors useMockDiktat.
@@ -33,6 +37,8 @@ export interface AuthApi {
   signInWithApple: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  /** Permanently delete the account (server-side) and sign out. */
+  deleteAccount: () => Promise<void>;
 }
 
 export function useAuth(): AuthApi {
@@ -110,5 +116,41 @@ export function useAuth(): AuthApi {
     await supabase.auth.signOut();
   }, []);
 
-  return { session, loading, error, appleAvailable, signInWithApple, signInWithGoogle, signOut };
+  const deleteAccount = useCallback(async () => {
+    setError(null);
+    if (MOCK_MODE) {
+      setSession(null);
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Not signed in");
+    const res = await fetch(`${relayHttpBase(RELAY_URL)}/account/delete`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Delete failed (${res.status})`);
+    }
+    // Account is gone server-side; clear all local auth state.
+    try {
+      await GoogleSignin.signOut();
+    } catch {
+      /* not signed in with Google — fine */
+    }
+    await supabase.auth.signOut();
+    setSession(null);
+  }, []);
+
+  return {
+    session,
+    loading,
+    error,
+    appleAvailable,
+    signInWithApple,
+    signInWithGoogle,
+    signOut,
+    deleteAccount,
+  };
 }

@@ -25,6 +25,7 @@ type Props = {
   onClaim: (nonce: string) => Promise<{ ok: boolean; machineId?: string; error?: string }>;
   onUnpair: (id: string) => Promise<void>;
   onSignOut: () => void;
+  onDeleteAccount: () => Promise<void>;
 };
 
 function relativeTime(iso: string | null): string {
@@ -45,12 +46,14 @@ export function MachinesScreen({
   onClaim,
   onUnpair,
   onSignOut,
+  onDeleteAccount,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const doRefresh = async () => {
     setRefreshing(true);
@@ -92,6 +95,30 @@ export function MachinesScreen({
       { text: "Cancel", style: "cancel" },
       { text: "Unpair", style: "destructive", onPress: () => onUnpair(m.id) },
     ]);
+  };
+
+  const confirmDeleteAccount = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    Alert.alert(
+      "Delete account",
+      "This permanently deletes your account, unpairs all your machines, and erases your data. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await onDeleteAccount();
+            } catch (e: any) {
+              setDeleting(false);
+              Alert.alert("Couldn't delete account", e?.message ?? "Please try again.");
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (scanning) {
@@ -170,6 +197,14 @@ export function MachinesScreen({
             <Text style={styles.addBtnText}>⊞  Pair a machine</Text>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity onPress={confirmDeleteAccount} disabled={deleting} hitSlop={8}>
+          {deleting ? (
+            <ActivityIndicator color={colors.error} size="small" style={{ marginTop: 4 }} />
+          ) : (
+            <Text style={styles.deleteAccount}>Delete account</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -213,6 +248,7 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: space.lg, paddingBottom: 40, gap: 8 },
   addBtn: { borderRadius: radii.md, padding: 17, alignItems: "center", overflow: "hidden" },
   addBtnText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 16 },
+  deleteAccount: { fontFamily: fonts.body, fontSize: 13, color: colors.textMuted, textAlign: "center", paddingVertical: 8 },
 
   errorText: { fontFamily: fonts.body, fontSize: 13, color: colors.error, textAlign: "center", marginTop: 8 },
 });
