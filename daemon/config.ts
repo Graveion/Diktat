@@ -7,10 +7,10 @@ interface Config {
 
 const CONFIG_PATH = "./config.json";
 
-export function loadConfig(): Config {
-  if (!existsSync(CONFIG_PATH)) {
+export function loadConfig(configPath = CONFIG_PATH): Config {
+  if (!existsSync(configPath)) {
     console.error(`No config.json found. Copy config.example.json to config.json and edit it.`);
     process.exit(1);
   }
-  return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+  return JSON.parse(readFileSync(configPath, "utf-8"));
 }
