@@ -39,8 +39,8 @@ async function main() {
   });
   await sleep(700);
 
-  // Phone connects over the PUBLIC tunnel URL.
-  const url = `${RELAY_PUBLIC.replace(/\/$/, "")}/client?machineId=${MACHINE}`;
+  // Phone connects over the PUBLIC tunnel URL. (Guarded above with process.exit.)
+  const url = `${RELAY_PUBLIC!.replace(/\/$/, "")}/client?machineId=${MACHINE}`;
   console.log(`  phone → ${url}`);
   const frames: any[] = [];
   let opened = false;

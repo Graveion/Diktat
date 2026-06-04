@@ -1,5 +1,12 @@
 import { loadConfig } from "./config.ts";
-import { authResult, Broker, type Leg, type RelaySocket } from "./broker.ts";
+import {
+  Broker,
+  staticAuthenticator,
+  type Authenticator,
+  type Leg,
+  type RelaySocket,
+} from "./broker.ts";
+import { createSupabaseDeps, makeSupabaseAuthenticator } from "./supabase-auth.ts";
 
 /** Per-connection data attached at upgrade time. */
 interface ConnData {
@@ -8,7 +15,22 @@ interface ConnData {
   accountId: string;
 }
 
-const config = loadConfig();
+// Supabase-backed auth when configured (prod); static relay-config.json otherwise
+// (local/dev/tests). Bun auto-loads relay/.env, so these are present in deploy.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+
+let authenticate: Authenticator;
+if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
+  authenticate = makeSupabaseAuthenticator(
+    createSupabaseDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY }),
+  );
+  console.log("[diktat-relay] auth: Supabase (JWKS + machines table)");
+} else {
+  authenticate = staticAuthenticator(loadConfig());
+  console.log("[diktat-relay] auth: static relay-config.json");
+}
+
 const broker = new Broker();
 
 const PORT = Number(process.env.PORT ?? 9090);
@@ -30,7 +52,7 @@ function asRelaySocket(ws: { send(d: string): void; close(c?: number, r?: string
 
 const server = Bun.serve<ConnData, never>({
   port: PORT,
-  fetch(req, srv) {
+  async fetch(req, srv) {
     const url = new URL(req.url);
     let leg: Leg;
     if (url.pathname === "/agent") leg = "agent";
@@ -43,7 +65,7 @@ const server = Bun.serve<ConnData, never>({
     const token = bearer(req);
     if (!token) return new Response("missing bearer token", { status: 401 });
 
-    const auth = authResult(config, leg, machineId, token);
+    const auth = await authenticate(leg, machineId, token);
     if (!auth.ok) {
       // Surface the relay close-code intent over HTTP for pre-upgrade failures.
       return new Response("auth failed", { status: 401, headers: { "x-relay-close": String(auth.code) } });

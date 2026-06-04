@@ -9,7 +9,8 @@
     "test": "bun run test-connection.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/qrcode-terminal": "^0.12.2"
   },
   "peerDependencies": {
     "typescript": "^5"

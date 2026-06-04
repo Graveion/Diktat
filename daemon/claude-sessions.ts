@@ -77,7 +77,7 @@ export interface HistoryMessage {
   toolFullSize?: number;
 }
 
-function extractToolPath(name: string, input: any): string | undefined {
+function extractToolPath(_name: string, input: any): string | undefined {
   if (!input) return undefined;
   if (typeof input.file_path === "string") return input.file_path;
   if (typeof input.path === "string") return input.path;

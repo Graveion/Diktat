@@ -67,6 +67,22 @@ export function authResult(
   return { ok: true, accountId };
 }
 
+/**
+ * Async auth seam. The static path resolves synchronously; the Supabase path
+ * does network IO (JWKS verify + machine lookup). index.ts awaits this before
+ * upgrading the socket, so both legs are authenticated pre-upgrade either way.
+ */
+export type Authenticator = (
+  leg: Leg,
+  machineId: string,
+  token: string,
+) => Promise<AuthResult>;
+
+/** Wrap the pure static-config decision as an Authenticator (tests / local mode). */
+export function staticAuthenticator(config: RelayConfig): Authenticator {
+  return async (leg, machineId, token) => authResult(config, leg, machineId, token);
+}
+
 /** A control frame is a JSON object with `_relay: true`. */
 export function isControlFrame(raw: string): boolean {
   let parsed: unknown;
