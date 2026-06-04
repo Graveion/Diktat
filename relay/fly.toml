@@ -11,9 +11,13 @@ primary_region = 'lhr'
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'off'
+  # Sleep when idle, wake on connection. The relay only needs to be up while a
+  # daemon (or phone) is connected — Fly keeps a machine running as long as there
+  # are active WebSockets, and suspends it (fast resume) when there are none. So
+  # you pay only while a machine is actually in use.
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
 [[vm]]
   size = 'shared-cpu-1x'
