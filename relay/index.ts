@@ -7,6 +7,7 @@ import {
   type RelaySocket,
 } from "./broker.ts";
 import { createSupabaseDeps, makeSupabaseAuthenticator } from "./supabase-auth.ts";
+import { completePairing, createPairingDeps, type PairingDeps } from "./pairing.ts";
 
 /** Per-connection data attached at upgrade time. */
 interface ConnData {
@@ -31,6 +32,13 @@ if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
   console.log("[diktat-relay] auth: static relay-config.json");
 }
 
+// Pairing endpoint is only available with a Supabase backend (it needs the
+// service role to mint machines + consume codes). Null in static/local mode.
+const pairingDeps: PairingDeps | null =
+  SUPABASE_URL && SUPABASE_SECRET_KEY
+    ? createPairingDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY })
+    : null;
+
 const broker = new Broker();
 
 const PORT = Number(process.env.PORT ?? 9090);
@@ -54,6 +62,35 @@ const server = Bun.serve<ConnData, never>({
   port: PORT,
   async fetch(req, srv) {
     const url = new URL(req.url);
+
+    // Pairing: daemon redeems a code for a per-machine token (RELAY.md pairing).
+    if (url.pathname === "/pair/complete") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!pairingDeps) return new Response("pairing unavailable", { status: 503 });
+      let body: { code?: string; machineId?: string; name?: string };
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return new Response(JSON.stringify({ error: "invalid JSON" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const result = await completePairing(pairingDeps, {
+        code: body.code ?? "",
+        machineId: body.machineId ?? "",
+        name: body.name,
+      });
+      const status = result.ok ? 200 : result.status;
+      const payload = result.ok
+        ? { daemonToken: result.daemonToken, machineId: result.machineId, accountId: result.accountId }
+        : { error: result.error };
+      return new Response(JSON.stringify(payload), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     let leg: Leg;
     if (url.pathname === "/agent") leg = "agent";
     else if (url.pathname === "/client") leg = "client";
