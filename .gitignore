@@ -9,3 +9,6 @@
 
 # Maestro screenshots wherever they land (incl. repo root if run from here)
 **/maestro/screenshots/
+
+# Store working files (listing copy, screenshots) — local only
+store/
