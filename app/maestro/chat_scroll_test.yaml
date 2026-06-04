@@ -11,10 +11,10 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 
 # App should navigate to sessions screen (mock mode is auto-connected)
-- assertVisible: "Pacer"
+- assertVisible: "storefront"
 - takeScreenshot: "maestro/screenshots/01_sessions_screen"
 
-# Tap the Pacer session row via testID
+# Tap the storefront session row via testID
 - tapOn:
     id: "session-card-mock-session-001"
 - waitForAnimationToEnd

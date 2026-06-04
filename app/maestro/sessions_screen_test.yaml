@@ -11,7 +11,7 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 
 # Sessions screen landmarks
-- assertVisible: "Pacer"
+- assertVisible: "storefront"
 - assertVisible:
     id: "new-session-button"
 - assertVisible:

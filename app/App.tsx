@@ -37,7 +37,7 @@ import { info } from "./src/utils/logger";
 
 // ─── Mock mode ────────────────────────────────────────────────────────────────
 // Only active in local dev builds (`npx expo start`). Never ships in OTA.
-// The app starts "connected" with a single mock Pacer session so ChatScreen
+// The app starts "connected" with a single fabricated demo session so ChatScreen
 // can be exercised without a running daemon.
 const MOCK_MODE = __DEV__;
 

@@ -8,7 +8,7 @@ appId: com.graveion.diktat
     point: "27%,64%"
     optional: true
 - waitForAnimationToEnd
-- assertVisible: "Pacer"
+- assertVisible: "storefront"
 
 # Resume the reconnecting fixture session
 - tapOn:

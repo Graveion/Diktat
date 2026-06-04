@@ -12,9 +12,9 @@ import { MOCK_MESSAGES } from "../utils/mockMessages";
 const MOCK_SESSION: DiktatSession = {
   id: "mock-session-001",
   cli: "cursor",
-  project: "/Users/timothy.green/personal/Pacer",
-  projectLabel: "Pacer",
-  firstMessage: "Are there any other candidates for the refactor",
+  project: "/Users/you/code/storefront",
+  projectLabel: "storefront",
+  firstMessage: "Add rate limiting to the checkout endpoint",
   lastActiveAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(), // 12 min ago
   source: "cursor",
 };
@@ -25,8 +25,8 @@ export const MOCK_RECONNECTING_SESSION_ID = "mock-session-reconnecting";
 const MOCK_RECONNECTING_SESSION: DiktatSession = {
   id: MOCK_RECONNECTING_SESSION_ID,
   cli: "cursor",
-  project: "/Users/timothy.green/personal/Reconnecting",
-  projectLabel: "Reconnecting",
+  project: "/Users/you/code/landing-page",
+  projectLabel: "landing-page",
   firstMessage: "This session stays in the reconnecting state",
   lastActiveAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(), // 3 min ago
   source: "cursor",
@@ -91,7 +91,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     reconnecting,
     errorMessage: null,
     clis: ["cursor", "claude"],
-    projects: ["/Users/timothy.green/personal/Pacer"],
+    projects: ["/Users/you/code/storefront"],
     sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION],
     activeSessionId,
     messages,

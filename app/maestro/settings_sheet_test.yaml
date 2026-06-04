@@ -12,7 +12,7 @@ appId: com.graveion.diktat
     point: "27%,64%"
     optional: true
 - waitForAnimationToEnd
-- assertVisible: "Pacer"
+- assertVisible: "storefront"
 
 # Resume session so the chat header (with the settings gear) is visible
 - tapOn:
