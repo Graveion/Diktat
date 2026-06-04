@@ -6,8 +6,19 @@ import {
   type Leg,
   type RelaySocket,
 } from "./broker.ts";
-import { createSupabaseDeps, makeMachineToucher, makeSupabaseAuthenticator } from "./supabase-auth.ts";
-import { completePairing, createPairingDeps, type PairingDeps } from "./pairing.ts";
+import {
+  createSupabaseDeps,
+  makeMachineToucher,
+  makeSupabaseAuthenticator,
+  type SupabaseAuthDeps,
+} from "./supabase-auth.ts";
+import {
+  claimPairing,
+  completePairing,
+  createPairingDeps,
+  PairingStore,
+  type PairingDeps,
+} from "./pairing.ts";
 
 /** Per-connection data attached at upgrade time. */
 interface ConnData {
@@ -22,22 +33,25 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 let authenticate: Authenticator;
+let supaDeps: SupabaseAuthDeps | null = null;
 if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
-  authenticate = makeSupabaseAuthenticator(
-    createSupabaseDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY }),
-  );
+  supaDeps = createSupabaseDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY });
+  authenticate = makeSupabaseAuthenticator(supaDeps);
   console.log("[diktat-relay] auth: Supabase (JWKS + machines table)");
 } else {
   authenticate = staticAuthenticator(loadConfig());
   console.log("[diktat-relay] auth: static relay-config.json");
 }
 
-// Pairing endpoint is only available with a Supabase backend (it needs the
-// service role to mint machines + consume codes). Null in static/local mode.
+// Pairing (typed code + QR) is only available with a Supabase backend (needs the
+// service role to mint machines). Null in static/local mode.
 const pairingDeps: PairingDeps | null =
   SUPABASE_URL && SUPABASE_SECRET_KEY
     ? createPairingDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY })
     : null;
+
+// In-memory pending QR pairings (Tier 0, single instance).
+const pairingStore = new PairingStore();
 
 // Presence stamp for the app's online indicator (Supabase mode only).
 const touchMachine: ((machineId: string) => void) | null =
@@ -95,6 +109,45 @@ const server = Bun.serve<ConnData, never>({
         status,
         headers: { "content-type": "application/json" },
       });
+    }
+
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+    // QR pairing — daemon registers a pending pairing and gets a nonce to show.
+    if (url.pathname === "/pair/init") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
+      let b: { machineId?: string; name?: string };
+      try { b = (await req.json()) as typeof b; } catch { return json({ error: "invalid JSON" }, 400); }
+      if (!b.machineId) return json({ error: "missing machineId" }, 400);
+      const nonce = pairingStore.init(b.machineId, b.name?.trim() || "My Mac");
+      return json({ nonce, expiresInSec: 300 });
+    }
+
+    // QR pairing — phone claims a nonce for its account (authed with the JWT).
+    if (url.pathname === "/pair/claim") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!pairingDeps || !supaDeps) return json({ error: "pairing unavailable" }, 503);
+      const token = bearer(req);
+      if (!token) return json({ error: "missing bearer token" }, 401);
+      const accountId = await supaDeps.verifyAccountToken(token);
+      if (!accountId) return json({ error: "unauthorized" }, 401);
+      let b: { nonce?: string };
+      try { b = (await req.json()) as typeof b; } catch { return json({ error: "invalid JSON" }, 400); }
+      if (!b.nonce) return json({ error: "missing nonce" }, 400);
+      const result = await claimPairing(pairingStore, pairingDeps, accountId, b.nonce);
+      return result.ok ? json({ ok: true, machineId: result.machineId }) : json({ error: result.error }, result.status);
+    }
+
+    // QR pairing — daemon polls until the phone claims (then gets the token once).
+    if (url.pathname === "/pair/poll") {
+      if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
+      const nonce = url.searchParams.get("nonce");
+      if (!nonce) return json({ error: "missing nonce" }, 400);
+      const taken = pairingStore.take(nonce);
+      if (taken) return json({ status: "claimed", daemonToken: taken.daemonToken, machineId: taken.machineId });
+      return json({ status: pairingStore.get(nonce) ? "pending" : "expired" });
     }
 
     let leg: Leg;

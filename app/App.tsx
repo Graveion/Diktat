@@ -287,7 +287,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
           error={machines.error}
           onRefresh={machines.refresh}
           onSelect={handleSelectMachine}
-          onCreateCode={machines.createPairingCode}
+          onClaim={machines.claimQrPairing}
           onUnpair={machines.unpair}
           onSignOut={auth.signOut}
         />

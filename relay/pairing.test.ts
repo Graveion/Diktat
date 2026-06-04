@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
+  claimPairing,
   completePairing,
   generateDaemonToken,
+  PairingStore,
   type PairingCodeRow,
   type PairingDeps,
 } from "./pairing.ts";
@@ -89,6 +91,69 @@ describe("completePairing", () => {
     expect(r).toMatchObject({ ok: false, status: 409 });
     expect(rec.upserted).toHaveLength(0);
     expect(rec.consumed).toHaveLength(0);
+  });
+});
+
+describe("PairingStore", () => {
+  it("init → get → markClaimed → take (one-time)", () => {
+    let n = 0;
+    const store = new PairingStore(1000, () => 0, () => `nonce${n++}`);
+    const nonce = store.init("m1", "Studio");
+    expect(nonce).toBe("nonce0");
+    expect(store.get(nonce)?.status).toBe("pending");
+    expect(store.markClaimed(nonce, "tok")).toBe(true);
+    expect(store.take(nonce)).toEqual({ daemonToken: "tok", machineId: "m1" });
+    expect(store.take(nonce)).toBeNull(); // already taken
+  });
+
+  it("expires entries past the TTL", () => {
+    let t = 0;
+    const store = new PairingStore(1000, () => t, () => "n");
+    store.init("m1", "x");
+    t = 1001;
+    expect(store.get("n")).toBeNull();
+  });
+
+  it("take returns null while still pending", () => {
+    const store = new PairingStore(1000, () => 0, () => "n");
+    store.init("m1", "x");
+    expect(store.take("n")).toBeNull();
+  });
+});
+
+describe("claimPairing", () => {
+  const store = () => new PairingStore(10_000, () => 0, () => "n");
+
+  it("claims a pending nonce: mints token, upserts machine", async () => {
+    const s = store();
+    s.init("m1", "Studio");
+    const { deps: d, rec } = deps();
+    const r = await claimPairing(s, d, ACCT, "n");
+    expect(r).toEqual({ ok: true, machineId: "m1" });
+    expect(rec.upserted[0]).toMatchObject({ id: "m1", accountId: ACCT, name: "Studio" });
+    // daemon can now collect the token once
+    expect(s.take("n")).toMatchObject({ machineId: "m1" });
+  });
+
+  it("rejects an unknown/expired nonce (404)", async () => {
+    const { deps: d } = deps();
+    expect(await claimPairing(store(), d, ACCT, "missing")).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("rejects a second claim of the same nonce (409)", async () => {
+    const s = store();
+    s.init("m1", "x");
+    const { deps: d } = deps();
+    await claimPairing(s, d, ACCT, "n");
+    expect(await claimPairing(s, d, ACCT, "n")).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("refuses to hijack a machine owned by another account (409)", async () => {
+    const s = store();
+    s.init("m1", "x");
+    const { deps: d, rec } = deps({ getMachineAccount: async () => "other" });
+    expect(await claimPairing(s, d, ACCT, "n")).toMatchObject({ ok: false, status: 409 });
+    expect(rec.upserted).toHaveLength(0);
   });
 });
 

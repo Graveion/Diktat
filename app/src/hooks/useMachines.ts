@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "../store/supabase";
+import { RELAY_URL, supabase } from "../store/supabase";
+
+function relayHttpBase(u: string): string {
+  return u.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/$/, "");
+}
 
 // MOCK_MODE (simulator dev) serves a fake machine so the UI is exercisable
 // without a Supabase round-trip. Mirrors useAuth / useMockDiktat.
@@ -38,6 +42,8 @@ export interface MachinesApi {
   error: string | null;
   refresh: () => Promise<void>;
   createPairingCode: () => Promise<PairingCode>;
+  /** Claim a QR pairing nonce (scanned from the Mac) for this account. */
+  claimQrPairing: (nonce: string) => Promise<{ ok: boolean; machineId?: string; error?: string }>;
   unpair: (id: string) => Promise<void>;
 }
 
@@ -84,6 +90,34 @@ export function useMachines(): MachinesApi {
     return { code, expiresAt };
   }, []);
 
+  const claimQrPairing = useCallback(
+    async (nonce: string): Promise<{ ok: boolean; machineId?: string; error?: string }> => {
+      if (MOCK_MODE) {
+        setMachines(MOCK_MACHINES);
+        return { ok: true, machineId: MOCK_MACHINES[0]!.id };
+      }
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return { ok: false, error: "Not signed in" };
+      try {
+        const res = await fetch(`${relayHttpBase(RELAY_URL)}/pair/claim`, {
+          method: "POST",
+          headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ nonce }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; machineId?: string; error?: string };
+        if (!res.ok || !body.ok) {
+          return { ok: false, error: body.error ?? `Pairing failed (${res.status})` };
+        }
+        await refresh();
+        return { ok: true, machineId: body.machineId };
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? "Network error" };
+      }
+    },
+    [refresh],
+  );
+
   const unpair = useCallback(
     async (id: string) => {
       if (MOCK_MODE) {
@@ -100,5 +134,5 @@ export function useMachines(): MachinesApi {
     [refresh],
   );
 
-  return { machines, loading, error, refresh, createPairingCode, unpair };
+  return { machines, loading, error, refresh, createPairingCode, claimQrPairing, unpair };
 }

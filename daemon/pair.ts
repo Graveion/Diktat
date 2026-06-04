@@ -1,5 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { hostname } from "os";
+import qrcode from "qrcode-terminal";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * `diktat pair <code>` — redeem a pairing code shown in the phone app for a
@@ -90,36 +93,82 @@ async function main() {
   const machineId = (existing.machineId as string | undefined) ?? crypto.randomUUID();
   const name = args.name ?? hostname();
 
-  console.log(`Pairing machine "${name}" (${machineId}) with ${relayUrl}…`);
+  const base = relayHttpBase(relayUrl);
+  const token = args.code
+    ? await pairWithCode(base, args.code, machineId, name)
+    : await pairWithQr(base, machineId, name);
 
+  const config = buildPairedConfig(existing, { relayUrl, machineId, daemonToken: token });
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+  console.log(`\n✓ Paired. Wrote relay config to daemon/config.json`);
+  console.log(`  Machine: ${name} (${machineId})`);
+  console.log(`\n  Run 'diktat start' to connect via the relay.\n`);
+}
+
+/** Typed-code fallback: redeem a code the phone displayed. */
+async function pairWithCode(base: string, code: string, machineId: string, name: string): Promise<string> {
+  console.log(`Pairing "${name}"…`);
   let res: Response;
   try {
-    res = await fetch(`${relayHttpBase(relayUrl)}/pair/complete`, {
+    res = await fetch(`${base}/pair/complete`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: args.code, machineId, name }),
+      body: JSON.stringify({ code, machineId, name }),
     });
   } catch (e) {
     console.error(`Could not reach the relay: ${(e as Error).message}`);
     process.exit(1);
   }
-
   const body = (await res.json().catch(() => ({}))) as PairResponse;
   if (!res.ok || !body.daemonToken) {
     console.error(`Pairing failed (${res.status}): ${body.error ?? "unknown error"}`);
     process.exit(1);
   }
+  return body.daemonToken;
+}
 
-  const config = buildPairedConfig(existing, {
-    relayUrl,
-    machineId,
-    daemonToken: body.daemonToken,
-  });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+/** QR flow: register a pending pairing, show a QR, poll until the phone claims it. */
+async function pairWithQr(base: string, machineId: string, name: string): Promise<string> {
+  let nonce: string;
+  try {
+    const res = await fetch(`${base}/pair/init`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ machineId, name }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { nonce?: string; error?: string };
+    if (!res.ok || !body.nonce) {
+      console.error(`Could not start pairing (${res.status}): ${body.error ?? "unknown error"}`);
+      process.exit(1);
+    }
+    nonce = body.nonce;
+  } catch (e) {
+    console.error(`Could not reach the relay: ${(e as Error).message}`);
+    process.exit(1);
+  }
 
-  console.log(`\n✓ Paired. Wrote relay config to daemon/config.json`);
-  console.log(`  Machine: ${name} (${machineId})`);
-  console.log(`\n  Run 'bun start' to connect via the relay.\n`);
+  console.log(`\nIn the Diktat app, tap “Pair a machine” and scan this:\n`);
+  qrcode.generate(`diktat://pair?n=${nonce}`, { small: true });
+  console.log(`\nWaiting for the app to scan…  (expires in 5 min, Ctrl-C to cancel)\n`);
+
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(2000);
+    try {
+      const res = await fetch(`${base}/pair/poll?nonce=${encodeURIComponent(nonce)}`);
+      const body = (await res.json().catch(() => ({}))) as { status?: string; daemonToken?: string };
+      if (body.status === "claimed" && body.daemonToken) return body.daemonToken;
+      if (body.status === "expired") {
+        console.error("Pairing expired. Run `diktat pair` again.");
+        process.exit(1);
+      }
+    } catch {
+      /* transient — keep polling */
+    }
+  }
+  console.error("Timed out waiting for the app. Run `diktat pair` again.");
+  process.exit(1);
 }
 
 // Only run when invoked directly, not when imported by tests.
