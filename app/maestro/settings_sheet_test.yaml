@@ -31,18 +31,18 @@ appId: com.graveion.diktat
 
 # Individual options are now reachable by testID
 - assertVisible:
-    id: "autosend-relaxed"
+    id: "micmode-toggle"
 - assertVisible:
-    id: "tts-toggle"
+    id: "micmode-hold"
 - assertVisible:
     id: "settings-done-button"
 
-# Tap an auto-send option and toggle voice playback
+# Tap a microphone-mode option
 - tapOn:
-    id: "autosend-relaxed"
+    id: "micmode-hold"
 - waitForAnimationToEnd
 - tapOn:
-    id: "tts-toggle"
+    id: "micmode-toggle"
 - waitForAnimationToEnd
 - takeScreenshot: "maestro/screenshots/settings_02_options"
 

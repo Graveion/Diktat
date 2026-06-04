@@ -10,17 +10,13 @@ import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
-import * as Speech from "expo-speech";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import type { DiktatMessage } from "../hooks/useDiktat";
 import { useSettings } from "../hooks/useSettings";
-import { AUTO_SEND_DURATIONS } from "../utils/settings";
 import {
-  buildContextualStrings, matchVoiceCommand, detectSlashCommand,
-  adaptiveCountdownMultiplier, COMMAND_VOCAB,
+  buildContextualStrings, detectSlashCommand,
 } from "../utils/voice";
-import { stripMarkdown } from "../utils/markdown";
-import { suggestCommands, buildIdleSuggestions, IDLE_DELAY_MS } from "../utils/suggestions";
+import { suggestCommands } from "../utils/suggestions";
 import { formatToolLabel } from "../utils/tools";
 import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
@@ -202,12 +198,9 @@ function ToolPreviewDrawer({
 }
 
 function MessageBubble({
-  message, ttsEnabled, isSpeaking, onSpeak,
+  message,
 }: {
   message: DiktatMessage;
-  ttsEnabled: boolean;
-  isSpeaking: boolean;
-  onSpeak: () => void;
 }) {
   const handleLongPress = useCallback(() => {
     Clipboard.setStringAsync(message.text);
@@ -254,18 +247,6 @@ function MessageBubble({
           {message.text}
         </Markdown>
       </View>
-      {ttsEnabled && message.text.trim().length > 0 ? (
-        <TouchableOpacity
-          style={bubbleStyles.speakerBtn}
-          onPress={onSpeak}
-          activeOpacity={0.6}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-        >
-          <Text style={bubbleStyles.speakerIcon}>
-            {isSpeaking ? "■ Stop" : "🔊 Read aloud"}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
     </TouchableOpacity>
   );
 }
@@ -328,9 +309,6 @@ type Props = {
   onBack: () => void;
   onRetryConnect?: () => void;
   sessionLabel?: string;
-  // Overridable only so mock/dev builds can shorten the 30s idle delay for UI
-  // tests. Defaults to the production constant; never set in real builds.
-  idleDelayMs?: number;
 };
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -338,7 +316,6 @@ type Props = {
 export function ChatScreen({
   messages, streaming, currentTool, reconnecting, historyLoading,
   activeSessionId, sessionCli, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
-  idleDelayMs = IDLE_DELAY_MS,
 }: Props) {
   type Mode = "idle" | "listening" | "reviewing";
   const [input, setInput] = useState("");
@@ -349,10 +326,6 @@ export function ChatScreen({
   const streamingRef = useRef(false);
   streamingRef.current = streaming;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
-  const [showIdle, setShowIdle] = useState(false);
-  const idleOpacity = useRef(new Animated.Value(0)).current;
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { settings, update: updateSettings } = useSettings();
 
@@ -375,14 +348,10 @@ export function ChatScreen({
   }, []);
   const listRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
-  const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownProgress = useRef(new Animated.Value(1)).current;
-  const listeningPhaseRef = useRef<"initial" | "commands">("initial");
   const prevStreaming = useRef(streaming);
   const inputHistory = useRef<string[]>([]);
   const historyIdx = useRef(-1);
 
-  const autoSendDuration = AUTO_SEND_DURATIONS[settings.autoSendMode];
   const listening = mode === "listening";
   const reviewing = mode === "reviewing";
 
@@ -394,118 +363,37 @@ export function ChatScreen({
     prevStreaming.current = streaming;
   }, [streaming]);
 
-  // Idle suggestions: show after IDLE_DELAY_MS of no activity post-response
-  useEffect(() => {
-    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
-    if (showIdle) {
-      // Going from visible → hidden: snap-hide (no fade-out, mirrors original behavior)
-      idleOpacity.setValue(0);
-      setShowIdle(false);
-    }
-    if (streaming || mode !== "idle" || messages.length === 0 || input.length > 0) return;
-    idleTimerRef.current = setTimeout(() => {
-      setShowIdle(true);
-      Animated.timing(idleOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
-    }, idleDelayMs);
-    return () => {
-      if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
-    };
-  }, [streaming, mode, messages.length, input, idleDelayMs]);
-
-  // ─── Countdown / send orchestration ──────────────────────────────────────
-  const clearCountdown = useCallback(() => {
-    if (sendTimeoutRef.current) { clearTimeout(sendTimeoutRef.current); sendTimeoutRef.current = null; }
-    countdownProgress.stopAnimation();
-  }, [countdownProgress]);
-
-  const startCountdown = useCallback(() => {
-    clearCountdown();
-    if (autoSendDuration === 0) {
-      // Manual mode — no auto-send. Keep the progress bar visually empty.
-      countdownProgress.setValue(0);
-      return;
-    }
-    // Smart adaptive: adjust base duration based on transcript characteristics.
-    // Multiplier of 0 means "don't auto-send, wait for explicit action".
-    const multiplier = adaptiveCountdownMultiplier(inputRef2.current);
-    if (multiplier === 0) {
-      countdownProgress.setValue(0);
-      return;
-    }
-    const duration = Math.round(autoSendDuration * multiplier);
-    countdownProgress.setValue(1);
-    Animated.timing(countdownProgress, {
-      toValue: 0,
-      duration,
-      useNativeDriver: false,
-    }).start();
-    sendTimeoutRef.current = setTimeout(() => {
-      sendDraftRef.current?.();
-    }, duration);
-  }, [clearCountdown, countdownProgress, autoSendDuration]);
-
   // Use refs to avoid stale closures — handlers reference *current* state
   const inputRef2 = useRef(input);
   inputRef2.current = input;
-  const sendDraftRef = useRef<() => void>(() => {});
-  const discardDraftRef = useRef<() => void>(() => {});
-  const editDraftRef = useRef<() => void>(() => {});
 
   const stopAllVoice = useCallback(() => {
     try { ExpoSpeechRecognitionModule.abort(); } catch { /* not running */ }
   }, []);
 
   const sendDraft = useCallback(() => {
-    clearCountdown();
     stopAllVoice();
     const text = inputRef2.current.trim();
     setMode("idle");
     if (text) onSend(text);
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [clearCountdown, stopAllVoice, onSend]);
+  }, [stopAllVoice, onSend]);
 
   const discardDraft = useCallback(() => {
-    clearCountdown();
     stopAllVoice();
     setInput("");
     setMode("idle");
     AsyncStorage.removeItem(DRAFT_KEY);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [clearCountdown, stopAllVoice]);
+  }, [stopAllVoice]);
 
   const editDraft = useCallback(() => {
-    clearCountdown();
     stopAllVoice();
     setMode("idle");
     // input stays — user can edit / type freely
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [clearCountdown, stopAllVoice]);
-
-  sendDraftRef.current = sendDraft;
-  discardDraftRef.current = discardDraft;
-  editDraftRef.current = editDraft;
-
-  const startCommandPhase = useCallback(() => {
-    listeningPhaseRef.current = "commands";
-    try {
-      const locale = Localization.getLocales()[0]?.languageTag ?? "en-US";
-      ExpoSpeechRecognitionModule.start({
-        lang: locale,
-        interimResults: false,
-        continuous: false,
-        contextualStrings: [...COMMAND_VOCAB, ...buildContextualStrings(sessionLabel)],
-      });
-    } catch { /* recognizer busy — will retry on next end */ }
-  }, [sessionLabel]);
-
-  const enterReviewMode = useCallback(() => {
-    setMode("reviewing");
-    startCountdown();
-    Haptics.selectionAsync();
-    // Briefly delay so the previous recognition session has time to release
-    setTimeout(() => startCommandPhase(), 350);
-  }, [startCountdown, startCommandPhase]);
+  }, [stopAllVoice]);
 
   const prefixSlash = useCallback((cmd: string) => {
     setInput((cur) => {
@@ -517,87 +405,46 @@ export function ChatScreen({
       }
       return trimmed ? `${cmd} ${trimmed}` : `${cmd} `;
     });
-    startCountdown(); // user took an action — reset the timer
     Haptics.selectionAsync();
-  }, [startCountdown]);
+  }, []);
+
+  const enterReviewMode = useCallback(() => {
+    setMode("reviewing");
+    Haptics.selectionAsync();
+  }, []);
 
   // ─── Voice event handlers ────────────────────────────────────────────────
+  // Dictation only: interim results stream into the draft; on final, map an
+  // initial slash phrase (e.g. "plan mode" → /plan).
   useSpeechRecognitionEvent("result", (e) => {
     const text = e.results[0]?.transcript ?? "";
     if (!text) return;
-
-    if (listeningPhaseRef.current === "initial") {
-      if (!e.isFinal) {
-        setInput(text);
-      } else {
-        setInput(detectSlashCommand(text));
-      }
-      return;
+    if (!e.isFinal) {
+      setInput(text);
+    } else {
+      setInput(detectSlashCommand(text));
     }
-
-    // Command phase — only act on final results
-    if (!e.isFinal) return;
-    const cmd = matchVoiceCommand(text);
-    if (cmd === "send") { sendDraftRef.current(); return; }
-    if (cmd === "cancel") { discardDraftRef.current(); return; }
-    if (cmd === "edit") { editDraftRef.current(); return; }
-    if (cmd === "plan") { prefixSlash("/plan"); return; }
-    // Not a command — append to the draft as additional dictation
-    setInput((cur) => `${cur} ${text}`.trim());
-    startCountdown();
   });
 
   useSpeechRecognitionEvent("end", () => {
-    if (listeningPhaseRef.current === "initial") {
-      // First dictation done — enter review if we have content
-      if (inputRef2.current.trim()) {
-        enterReviewMode();
-      } else {
-        setMode("idle");
-      }
+    // Dictation done — enter the review card if we captured anything.
+    if (inputRef2.current.trim()) {
+      enterReviewMode();
     } else {
-      // Command phase ended without a match — restart so we keep listening
-      if (mode === "reviewing") {
-        setTimeout(() => {
-          if (mode === "reviewing") startCommandPhase();
-        }, 150);
-      }
+      setMode("idle");
     }
   });
 
   useSpeechRecognitionEvent("error", () => {
-    if (listeningPhaseRef.current === "initial") {
-      setMode("idle");
-      clearCountdown();
-    }
-    // Errors in command phase are non-fatal — review card stays up
+    setMode("idle");
   });
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopAllVoice();
-      clearCountdown();
-      Speech.stop();
     };
-  }, [stopAllVoice, clearCountdown]);
-
-  const toggleSpeak = useCallback((idx: number, text: string) => {
-    if (speakingIdx === idx) {
-      Speech.stop();
-      setSpeakingIdx(null);
-      return;
-    }
-    Speech.stop();
-    const cleaned = stripMarkdown(text);
-    if (!cleaned) return;
-    setSpeakingIdx(idx);
-    Speech.speak(cleaned, {
-      onDone: () => setSpeakingIdx((cur) => (cur === idx ? null : cur)),
-      onStopped: () => setSpeakingIdx((cur) => (cur === idx ? null : cur)),
-      onError: () => setSpeakingIdx((cur) => (cur === idx ? null : cur)),
-    });
-  }, [speakingIdx]);
+  }, [stopAllVoice]);
 
   // Reset scroll state when a session ends/changes.
   useEffect(() => {
@@ -634,15 +481,11 @@ export function ChatScreen({
   // Reset all ephemeral UI state when we switch to a new session (or leave one).
   // Without this, state from session A bleeds into session B.
   useEffect(() => {
-    clearCountdown();
     stopAllVoice();
-    Speech.stop();
     setInput("");
     setMode("idle");
     setExpandedToolIdx(null);
     setPeekPath(null);
-    setShowIdle(false);
-    setSpeakingIdx(null);
     historyIdx.current = -1;
     userScrolledAwayRef.current = false;
     isAtBottomRef.current = true;
@@ -653,7 +496,6 @@ export function ChatScreen({
 
   const startInitialListening = useCallback(() => {
     setInput("");
-    listeningPhaseRef.current = "initial";
     setMode("listening");
     const locale = Localization.getLocales()[0]?.languageTag ?? "en-US";
     try {
@@ -698,7 +540,6 @@ export function ChatScreen({
   };
 
   const handleSend = useCallback(() => {
-    clearCountdown();
     const text = input.trim();
     if (!text || streaming) return;
     // Save to history
@@ -709,10 +550,9 @@ export function ChatScreen({
     onSend(text);
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [input, streaming, clearCountdown, onSend]);
+  }, [input, streaming, onSend]);
 
   const handleInputChange = (text: string) => {
-    clearCountdown();
     historyIdx.current = -1;
     setInput(text);
     saveDraft(text);
@@ -756,6 +596,19 @@ export function ChatScreen({
 
   const [peekPath, setPeekPath] = useState<string | null>(null);
   const [expandedToolIdx, setExpandedToolIdx] = useState<number | null>(null);
+
+  // Tapping a tool chip that carries a file path injects that path into the
+  // draft (surrounded by spaces) without sending, and keeps the input focused.
+  // Copying the path is still available via long-press (opens the peek modal).
+  const injectPath = useCallback((path: string) => {
+    Haptics.selectionAsync();
+    setInput((cur) => {
+      if (!cur) return `${path} `;
+      const sep = cur.endsWith(" ") ? "" : " ";
+      return `${cur}${sep}${path} `;
+    });
+    inputRef.current?.focus();
+  }, []);
 
   // Copy-confirmation toast: shown briefly after any copy action.
   const copyToastOpacity = useRef(new Animated.Value(0)).current;
@@ -909,8 +762,10 @@ export function ChatScreen({
                     style={styles.toolBubble}
                     onPress={() => {
                       if (hasPreview) { Haptics.selectionAsync(); setExpandedToolIdx(expanded ? null : index); }
-                      else if (fullPath) { Haptics.selectionAsync(); setPeekPath(fullPath); }
+                      else if (fullPath) { injectPath(fullPath); }
                     }}
+                    onLongPress={fullPath ? () => { Haptics.selectionAsync(); setPeekPath(fullPath); } : undefined}
+                    delayLongPress={400}
                     activeOpacity={hasPreview || fullPath ? 0.6 : 1}
                   >
                     <Text style={styles.toolIcon}>{icon}</Text>
@@ -925,12 +780,7 @@ export function ChatScreen({
             const msg = item as DiktatMessage;
             return (
               <View key={`msg-${index}`}>
-                <MessageBubble
-                  message={msg}
-                  ttsEnabled={settings.ttsEnabled && msg.role === "assistant"}
-                  isSpeaking={speakingIdx === index}
-                  onSpeak={() => toggleSpeak(index, msg.text)}
-                />
+                <MessageBubble message={msg} />
               </View>
             );
           })}
@@ -957,19 +807,6 @@ export function ChatScreen({
       {/* Review card — replaces rail + input row when reviewing */}
       {reviewing ? (
         <View style={styles.reviewCard}>
-          {/* Countdown progress bar at the top edge */}
-          <Animated.View
-            style={[
-              styles.reviewProgress,
-              {
-                width: countdownProgress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0%", "100%"],
-                }),
-              },
-            ]}
-          />
-
           {/* Transcript — scrollable for long dictations; hint below is tap-to-edit */}
           <ScrollView
             style={styles.reviewTranscriptScroll}
@@ -980,9 +817,7 @@ export function ChatScreen({
           </ScrollView>
           <TouchableOpacity activeOpacity={0.7} onPress={editDraft}>
             <Text style={styles.reviewEditHint}>
-              {autoSendDuration === 0
-                ? "Manual mode · tap Send when ready"
-                : "tap to edit · say \"send\" or \"cancel\""}
+              tap to edit · then Send or Cancel
             </Text>
           </TouchableOpacity>
 
@@ -1046,29 +881,6 @@ export function ChatScreen({
         </View>
       ) : (
         <>
-          {/* Idle suggestions — fade in after 30s of no activity */}
-          {showIdle && (
-            <Animated.View style={[styles.idleRow, { opacity: idleOpacity }]} testID="idle-suggestions">
-              {buildIdleSuggestions(
-                [...messages].reverse().find((m) => m.role === "assistant")?.text,
-              ).map((suggestion, i) => (
-                <TouchableOpacity
-                  key={i}
-                  testID={`idle-chip-${i}`}
-                  style={styles.idleChip}
-                  onPress={() => {
-                    idleOpacity.setValue(0);
-                    setShowIdle(false);
-                    onSend(suggestion);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.idleChipText}>{suggestion}</Text>
-                </TouchableOpacity>
-              ))}
-            </Animated.View>
-          )}
-
           {/* Command rail — horizontal scrollable chips */}
           {showRail && (
             <View style={styles.rail}>
@@ -1333,27 +1145,6 @@ const styles = StyleSheet.create({
     height: 30,
     justifyContent: "center",
   },
-  idleRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  idleChip: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  idleChipText: {
-    fontFamily: fonts.body,
-    color: colors.textSub,
-    fontSize: 13,
-  },
   chipCmd: {
     fontFamily: fonts.bodyMedium,
     color: colors.accent,
@@ -1405,12 +1196,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 32,
     position: "relative",
-  },
-  reviewProgress: {
-    position: "absolute",
-    top: 0, left: 0,
-    height: 3,
-    backgroundColor: colors.accent,
   },
   reviewTranscriptScroll: {
     maxHeight: 180,
@@ -1522,18 +1307,6 @@ const bubbleStyles = StyleSheet.create({
   },
   assistantText: { fontFamily: fonts.body, color: colors.text, fontSize: 15, lineHeight: 22 },
   userText: { fontFamily: fonts.body, color: "#fff", fontSize: 15, lineHeight: 22 },
-  speakerBtn: {
-    marginTop: 4,
-    marginLeft: 14,
-    alignSelf: "flex-start",
-    paddingVertical: 2,
-    paddingHorizontal: 0,
-  },
-  speakerIcon: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
 });
 
 const markdownStyles: any = {

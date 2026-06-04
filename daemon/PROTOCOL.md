@@ -520,6 +520,15 @@ Not sent if the result text is empty or matches the "file has been updated/creat
 
 `code: -1` means the session was cancelled. If the WebSocket is already closed at exit time and a push token is registered, a push notification is also sent.
 
+The completion push summarizes what the agent actually did during the run (derived from the parsed tool stream — see `run-summary.ts`), not the user's prompt.
+
+- **title**: `✓ {project}` on success, `✗ {project} — exited {code}` on non-zero exit (`{project}` is the path basename).
+- **body**: compact, worst-news-first. Examples:
+  - `3 files · +84/−12 · tests ✓ 41 passed · 1m20s`
+  - `tests ✗ 2 failed · 3 files · +84/−12 · 1m20s`
+  - `No file changes · 45s`
+- **data**: `{ sessionId, exitCode, filesChanged: string[], editCount, linesAdded, linesRemoved, commandsRun, lastCommand?, testStatus: "pass"|"fail"|"none", testDetail?, durationMs }`. The deep-link `sessionId` is always present; `lastCommand`/`testDetail` are omitted when absent.
+
 #### `error` — error from the daemon
 
 ```json

@@ -3,6 +3,15 @@ import { existsSync } from "fs";
 import { saveSession, loadSession, type SessionData } from "./session-store";
 import { sendPushNotification } from "./push";
 import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
+import {
+  newRunAccumulator,
+  accumulateToolEvent,
+  finalizeRunSummary,
+  formatPushTitle,
+  formatPushBody,
+  summaryToPushData,
+  type RunAccumulator,
+} from "./run-summary";
 
 function pickToolPath(input: any): string | undefined {
   if (!input) return undefined;
@@ -37,6 +46,9 @@ export class Session {
   private ws: ServerWebSocket<unknown>;
   private data: SessionData;
   private activeProc: ReturnType<typeof Bun.spawn> | null = null;
+  // Per-run accumulator of what the agent actually did (files/lines/tests/etc.).
+  // Reset at the top of each runCLI; consumed when building the completion push.
+  private run: RunAccumulator = newRunAccumulator();
 
   constructor(ws: ServerWebSocket<unknown>, data: SessionData) {
     this.ws = ws;
@@ -119,6 +131,9 @@ export class Session {
   }
 
   private async runCLI(cliPath: string, cwd: string, text: string, pushToken?: string, retry = false): Promise<void> {
+    // Reset the per-run accumulator at the start of a fresh run. On the retry
+    // path we keep the original start time but clear any partial state.
+    this.run = newRunAccumulator(retry ? this.run.startedAt : Date.now());
     const sessionId = retry ? undefined : this.data.cliSessionId;
     const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.mode);
     const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -165,8 +180,11 @@ export class Session {
     const wsStillOpen = (this.ws as any).readyState === 1;
     if (pushToken && exitCode === 0 && !wsStillOpen) {
       const project = this.data.project.split("/").pop() ?? this.data.project;
-      const taskPreview = text.length > 80 ? text.slice(0, 77) + "…" : text;
-      await sendPushNotification(pushToken, `✓ ${project}`, taskPreview, { sessionId: this.data.id });
+      const summary = finalizeRunSummary(this.run, exitCode);
+      const title = formatPushTitle(project, exitCode);
+      const body = formatPushBody(summary);
+      const data = summaryToPushData(this.data.id, summary);
+      await sendPushNotification(pushToken, title, body, data);
     }
   }
 
@@ -184,6 +202,15 @@ export class Session {
             } else if (block.type === "tool_use") {
               const preview = buildToolUsePreview(block.name, block.input);
               const path = pickToolPath(block.input);
+              accumulateToolEvent(this.run, {
+                kind: "tool_use",
+                name: block.name,
+                id: block.id,
+                path,
+                diff: preview.diff,
+                content: typeof block.input?.content === "string" ? block.input.content : undefined,
+                command: preview.command,
+              });
               this.ws.send(JSON.stringify({
                 type: "tool_use",
                 id: block.id,
@@ -203,6 +230,11 @@ export class Session {
             if (block?.type !== "tool_result") continue;
             const result = buildToolResultPreview(block.content);
             if (!result) continue;
+            accumulateToolEvent(this.run, {
+              kind: "tool_result",
+              id: block.tool_use_id,
+              preview: result.preview,
+            });
             this.ws.send(JSON.stringify({
               type: "tool_result",
               toolUseId: block.tool_use_id,
@@ -334,6 +366,15 @@ export class Session {
 
     if (json.subtype === "started") {
       const preview = buildToolUsePreview(name, anthropicInput);
+      accumulateToolEvent(this.run, {
+        kind: "tool_use",
+        name,
+        ...(callId ? { id: callId } : {}),
+        ...(path ? { path } : {}),
+        diff: preview.diff,
+        content: typeof anthropicInput?.content === "string" ? anthropicInput.content : undefined,
+        command: preview.command,
+      });
       this.ws.send(JSON.stringify({
         type: "tool_use",
         ...(callId ? { id: callId } : {}),
@@ -355,6 +396,11 @@ export class Session {
       if (!text) return;
       const result = buildToolResultPreview(text);
       if (!result) return;
+      accumulateToolEvent(this.run, {
+        kind: "tool_result",
+        id: callId,
+        preview: result.preview,
+      });
       this.ws.send(JSON.stringify({
         type: "tool_result",
         toolUseId: callId,

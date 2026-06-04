@@ -1,7 +1,7 @@
-import { Modal, Pressable, TouchableOpacity, View, Text, StyleSheet, Switch } from "react-native";
+import { Modal, Pressable, TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import * as Haptics from "expo-haptics";
 import { colors, fonts } from "../theme";
-import { AutoSendMode, AUTO_SEND_LABELS, MicMode, MIC_LABELS, Settings } from "../utils/settings";
+import { MicMode, MIC_LABELS, Settings } from "../utils/settings";
 import { APP_VERSION, UPDATE_LABEL } from "../../App";
 
 type Props = {
@@ -11,7 +11,6 @@ type Props = {
   onClose: () => void;
 };
 
-const MODES: AutoSendMode[] = ["aggressive", "normal", "relaxed", "manual"];
 const MIC_MODES: MicMode[] = ["toggle", "hold"];
 
 export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
@@ -36,39 +35,6 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
         >
           <View style={styles.handle} />
           <Text style={styles.title}>Settings</Text>
-
-          <Text style={styles.sectionLabel}>Auto-send after dictation</Text>
-          <Text style={styles.sectionHint}>
-            How long to wait on the review card before sending automatically.
-          </Text>
-
-          <View style={styles.options}>
-            {MODES.map((m) => {
-              const active = settings.autoSendMode === m;
-              return (
-                <TouchableOpacity
-                  key={m}
-                  testID={`autosend-${m}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={AUTO_SEND_LABELS[m]}
-                  style={[styles.option, active && styles.optionActive]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    onUpdate({ autoSendMode: m });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.radio, active && styles.radioActive]}>
-                    {active ? <View style={styles.radioInner} /> : null}
-                  </View>
-                  <Text style={[styles.optionText, active && styles.optionTextActive]}>
-                    {AUTO_SEND_LABELS[m]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
 
           <Text style={styles.sectionLabel}>Microphone</Text>
           <Text style={styles.sectionHint}>How the mic button works during dictation.</Text>
@@ -98,24 +64,6 @@ export function SettingsSheet({ visible, settings, onUpdate, onClose }: Props) {
                 </TouchableOpacity>
               );
             })}
-          </View>
-
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleTextWrap}>
-              <Text style={styles.sectionLabel}>Voice playback</Text>
-              <Text style={styles.sectionHintInline}>Read assistant replies aloud.</Text>
-            </View>
-            <Switch
-              testID="tts-toggle"
-              value={settings.ttsEnabled}
-              onValueChange={(val) => {
-                Haptics.selectionAsync();
-                onUpdate({ ttsEnabled: val });
-              }}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor="#fff"
-              ios_backgroundColor={colors.border}
-            />
           </View>
 
           <TouchableOpacity testID="settings-done-button" accessibilityRole="button" style={styles.done} onPress={onClose} activeOpacity={0.85}>
@@ -218,21 +166,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     color: "#fff",
     fontSize: 15,
-  },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    marginBottom: 22,
-  },
-  toggleTextWrap: { flex: 1 },
-  sectionHintInline: {
-    fontFamily: fonts.body,
-    color: colors.textSub,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
   },
   versionFooter: {
     fontFamily: fonts.body,

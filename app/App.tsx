@@ -89,19 +89,17 @@ function AppWithRealDiktat() {
 function AppWithMockDiktat() {
   const diktat = useMockDiktat();
   // host must be non-empty so the !host guard in AppInner doesn't force ConnectScreen.
-  // idleDelayMs is shortened so the idle-suggestions UI is testable without a 30s wait.
-  return <AppInner diktat={diktat} host="mock" port={9000} setHost={() => {}} setPort={() => {}} idleDelayMs={1500} />;
+  return <AppInner diktat={diktat} host="mock" port={9000} setHost={() => {}} setPort={() => {}} />;
 }
 
 function App() {
   return MOCK_MODE ? <AppWithMockDiktat /> : <AppWithRealDiktat />;
 }
 
-function AppInner({ diktat, host, port, setHost, setPort, idleDelayMs }: {
+function AppInner({ diktat, host, port, setHost, setPort }: {
   diktat: ReturnType<typeof useDiktat>;
   host: string; port: number;
   setHost: (h: string) => void; setPort: (p: number) => void;
-  idleDelayMs?: number;
 }) {
   const [fontsLoaded] = useFonts({
     Syne_700Bold, Syne_800ExtraBold,
@@ -270,7 +268,6 @@ function AppInner({ diktat, host, port, setHost, setPort, idleDelayMs }: {
           onRetryConnect={diktat.connect}
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
           sessionCli={activeSession?.cli ?? undefined}
-          idleDelayMs={idleDelayMs}
         />
       )}
     </View>

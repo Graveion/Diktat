@@ -20,21 +20,3 @@ export function suggestCommands(text: string, availableCmds: string[]): string[]
   }
   return Array.from(matched);
 }
-
-// ─── Idle suggestions ────────────────────────────────────────────────────────
-// Short follow-up prompts shown after a session has been idle for IDLE_DELAY_MS.
-// Light context-awareness based on the last assistant message.
-export const IDLE_DELAY_MS = 30000;
-
-export function buildIdleSuggestions(lastAssistantText?: string): string[] {
-  const base = ["Continue", "Explain what you did"];
-  if (!lastAssistantText) return [...base, "What's next?"];
-  const lower = lastAssistantText.toLowerCase();
-  const extra: string[] = [];
-  if (/\btest|spec\b/.test(lower)) extra.push("Run the tests");
-  if (/\bcommit|stage|git\b/.test(lower)) extra.push("Commit this");
-  if (/\berror|fail|broken|issue\b/.test(lower)) extra.push("Try a different approach");
-  if (/\bplan|todo|next step\b/.test(lower)) extra.push("Start on step one");
-  if (extra.length === 0) extra.push("What's next?");
-  return [...extra.slice(0, 2), base[0]].slice(0, 3);
-}

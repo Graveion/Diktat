@@ -43,22 +43,35 @@ appId: com.graveion.diktat
 # accessibility node ("✏️, Editing OnlineStorage.swift, ▸"), so selectors use a
 # .*-wrapped regex (Maestro text matching is a full match). scrollUntilVisible
 # doesn't drive this ScrollView, and a fixed swipe count is fragile (message
-# heights vary), so swipe up until the tool card is visible (capped).
+# heights vary), so swipe up in small increments until the tool card is visible.
 - repeat:
-    times: 8
+    times: 12
     while:
       notVisible:
         text: ".*Editing OnlineStorage.*"
     commands:
       - swipe:
-          start: "50%, 30%"
-          end: "50%, 80%"
+          start: "50%, 35%"
+          end: "50%, 70%"
       - waitForAnimationToEnd
 - assertVisible:
     text: ".*Editing OnlineStorage.*"
+# Tap to expand. The drawer renders below the chip; if the chip sat near the
+# bottom edge the diff/output may be below the fold, so reveal them with a
+# bounded small-swipe loop before asserting.
 - tapOn:
     text: ".*Editing OnlineStorage.*"
 - waitForAnimationToEnd
+- repeat:
+    times: 6
+    while:
+      notVisible:
+        text: ".*diff.*"
+    commands:
+      - swipe:
+          start: "50%, 70%"
+          end: "50%, 40%"
+      - waitForAnimationToEnd
 - assertVisible:
     text: ".*diff.*"
 - assertVisible:
