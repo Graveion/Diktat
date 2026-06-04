@@ -3,6 +3,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "diktat": "./diktat.ts"
+  },
   "scripts": {
     "start": "bun run index.ts",
     "setup": "bun run setup.ts",
