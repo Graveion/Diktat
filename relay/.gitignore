@@ -2,3 +2,5 @@ node_modules/
 relay-config.json
 sessions/
 *.log
+.env
+.env.*
