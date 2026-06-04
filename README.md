@@ -40,3 +40,9 @@ Landing page + installer: **https://graveion.github.io/Diktat**
   machine to your account and mint a per-machine token.
 - **Transport:** the daemon dials out to the relay — no inbound ports.
 - **Billing:** one free hour, then a `pro` subscription (RevenueCat) or a comp code.
+
+## License
+
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE) — you
+may read, run, and modify it for **noncommercial** purposes, but not sell or ship
+it commercially. © Diktat.
