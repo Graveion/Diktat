@@ -3,7 +3,6 @@ import { existsSync, writeFileSync, readFileSync, readdirSync, statSync } from "
 import { join } from "path";
 import { homedir } from "os";
 import { detectCLIs } from "./cli-detector";
-import { getTailscaleIP } from "./tailscale";
 import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -126,21 +125,6 @@ async function selectProjects(): Promise<string[]> {
   return selected;
 }
 
-async function waitForTailscale(): Promise<string | null> {
-  const proc = Bun.spawn(["tailscale", "up"], { stdout: "pipe", stderr: "pipe" });
-  proc.exited.then(() => {});
-  let attempts = 0;
-  while (attempts < 30) {
-    const ip = getTailscaleIP();
-    if (ip) return ip;
-    await Bun.sleep(2000);
-    process.stdout.write(".");
-    attempts++;
-  }
-  print("");
-  return null;
-}
-
 async function main() {
   print("╔════════════════════════════╗");
   print("║      Diktat Setup          ║");
@@ -194,25 +178,6 @@ async function main() {
     }
   }
 
-  // --- Tailscale ---
-  section("Checking Tailscale...");
-  let tsIP = getTailscaleIP();
-  if (tsIP) {
-    ok(`Connected: ${tsIP}`);
-  } else {
-    fail("Not connected");
-    const doConnect = (await ask("  Connect now? (y/n): ")).trim().toLowerCase();
-    if (doConnect === "y") {
-      process.stdout.write("  Connecting");
-      tsIP = await waitForTailscale();
-      if (tsIP) {
-        ok(`Connected: ${tsIP}`);
-      } else {
-        fail("Could not connect. Run 'tailscale up' manually before starting the daemon.");
-      }
-    }
-  }
-
   // --- Projects ---
   section("Project directories:");
   const projects = await selectProjects();
@@ -227,7 +192,9 @@ async function main() {
     ? JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
     : {};
 
+  // Preserve relay credentials (relayUrl/machineId/daemonToken) written by `diktat pair`.
   const config = {
+    ...existing,
     port: existing.port ?? 9000,
     projects: projects.length > 0 ? projects : (existing.projects ?? []),
   };
@@ -239,7 +206,13 @@ async function main() {
   print("\n╔════════════════════════════╗");
   print("║      Setup complete!       ║");
   print("╚════════════════════════════╝");
-  print("\n  Run: diktat start\n");
+  const paired = Boolean(existing.machineId && existing.daemonToken);
+  if (paired) {
+    print("\n  Run: diktat start\n");
+  } else {
+    print("\n  Next: open the Diktat app, tap “Pair a machine”, then run:");
+    print("        diktat pair <code>\n");
+  }
 
   rl.close();
 }

@@ -8,7 +8,6 @@
  *   diktat stop            stop the background daemon
  *   diktat status          is the daemon running?
  *   diktat setup           interactive setup
- *   diktat qr              show the local connection QR (Tailscale mode)
  *
  * Install once:  cd daemon && bun link    (then `diktat` is on your PATH)
  */
@@ -33,7 +32,6 @@ function usage(): never {
       "  stop            Stop the background daemon",
       "  status          Show whether the daemon is running",
       "  setup           Interactive setup",
-      "  qr              Show the local connection QR code",
     ].join("\n"),
   );
   process.exit(cmd ? 1 : 0);
@@ -134,9 +132,6 @@ switch (cmd) {
     break;
   case "setup":
     await runAttached("setup.ts", rest);
-    break;
-  case "qr":
-    await runAttached("qr.ts", rest);
     break;
   default:
     usage();

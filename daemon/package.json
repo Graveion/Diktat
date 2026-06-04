@@ -10,7 +10,7 @@
     "start": "bun run index.ts",
     "setup": "bun run setup.ts",
     "pair": "bun run pair.ts",
-    "test": "bun run test-connection.ts"
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",

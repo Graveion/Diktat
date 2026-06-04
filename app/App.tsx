@@ -84,7 +84,7 @@ export const UPDATE_LABEL: string = (() => {
 
 function AppWithRealDiktat({ auth }: { auth: AuthApi }) {
   const [relay, setRelay] = useState<RelayDescriptor | undefined>(undefined);
-  const diktat = useDiktat("", 9000, relay);
+  const diktat = useDiktat(relay);
 
   // Connect once a relay descriptor is set (relayRef updates this render, so
   // connect() then dials the relay leg). Disconnect when it clears.

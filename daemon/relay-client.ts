@@ -6,9 +6,6 @@ import { buildConnectedPayload, handleClientMessage, type MessageContext } from 
  * The daemon dials *out* to the relay's /agent endpoint and holds the socket
  * open. The relay forwards phone->daemon app frames to us, and forwards
  * anything we send that is NOT a `_relay` control frame verbatim to the phone.
- *
- * Local/Tailscale mode never imports or runs this file, so its behavior is
- * untouched.
  */
 
 // ---------------------------------------------------------------------------

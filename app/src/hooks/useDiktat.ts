@@ -42,7 +42,7 @@ export type RelayDescriptor = {
 const RECONNECT_DELAY_MS = 5000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
-export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
+export function useDiktat(relay?: RelayDescriptor) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -54,8 +54,6 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
   // so it only appears when an established connection drops — not during the
   // first connect attempt or a machine that was never online.
   const hasConnected = useRef(false);
-  const lastHost = useRef(host);
-  const lastPort = useRef(port);
   const relayRef = useRef<RelayDescriptor | undefined>(relay);
   relayRef.current = relay;
   const pushTokenRef = useRef<string | null>(null);
@@ -76,14 +74,9 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const connect = useCallback((overrideHost?: string, overridePort?: number) => {
-    const h = overrideHost ?? lastHost.current;
-    const p = overridePort ?? lastPort.current;
-    // Relay mode needs no host (the relay descriptor carries the target);
-    // direct mode requires one.
-    if (!h && !relayRef.current) { warn("WS", "connect() called with no host — skipping"); return; }
-    if (overrideHost) lastHost.current = overrideHost;
-    if (overridePort) lastPort.current = overridePort;
+  const connect = useCallback(() => {
+    const relayCfg = relayRef.current;
+    if (!relayCfg) { warn("WS", "connect() called with no relay descriptor — skipping"); return; }
 
     intentionalDisconnect.current = false;
     if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
@@ -93,9 +86,8 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
     setState("connecting");
     setErrorMessage(null);
 
-    const relayCfg = relayRef.current;
     let socket: WebSocket;
-    if (relayCfg) {
+    {
       const url = `${relayCfg.relayUrl}/client?machineId=${encodeURIComponent(relayCfg.machineId)}`;
       info("WS", `Connecting via relay to ${url}`);
       // RN-specific: React Native's WebSocket accepts an options object as the
@@ -111,9 +103,6 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
       socket = new RNWebSocket(url, undefined, {
         headers: { Authorization: `Bearer ${relayCfg.accountToken}` },
       });
-    } else {
-      info("WS", `Connecting to ws://${h}:${p}`);
-      socket = new WebSocket(`ws://${h}:${p}`);
     }
     ws.current = socket;
 
@@ -123,7 +112,7 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
       hasConnected.current = true;
       setReconnecting(false);
       setState("connected");
-      info("WS", `Connected to ws://${h}:${p}`);
+      info("WS", `Connected via relay to machine ${relayCfg.machineId}`);
       if (pushTokenRef.current) {
         socket.send(JSON.stringify({ type: "register_push", token: pushTokenRef.current }));
         info("PUSH", "Registered push token with daemon");

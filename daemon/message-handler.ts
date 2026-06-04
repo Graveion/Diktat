@@ -5,7 +5,7 @@ import { listSessions } from "./session-store";
 
 /**
  * Everything the message router needs, injected so it can be tested in
- * isolation from the Bun.serve bootstrap (config/CLI detection/tailscale).
+ * isolation from the bootstrap (config / CLI detection / relay client).
  */
 export interface MessageContext {
   /** name → resolved CLI path (e.g. { claude: "/usr/bin/claude" }) */
