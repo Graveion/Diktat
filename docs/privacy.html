@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Diktat — Privacy Policy</title>
+  <meta name="description" content="How Diktat handles your data." />
+  <style>
+    :root {
+      --bg:#07060a; --card:#171420; --border:#252130;
+      --accent:#a78bfa; --accent-bright:#c4b5fd; --text:#f0eef8; --sub:#8b85a1; --muted:#3d3850;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body {
+      background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      line-height:1.6; -webkit-font-smoothing:antialiased;
+      background-image:radial-gradient(ellipse 80% 50% at 50% -10%, #1a1033 0%, var(--bg) 60%);
+    }
+    .wrap { max-width:720px; margin:0 auto; padding:64px 24px 96px; }
+    a { color:var(--accent-bright); }
+    h1 { font-size:36px; font-weight:800; letter-spacing:-1px; }
+    .meta { color:var(--muted); font-size:13px; margin-top:8px; }
+    h2 { font-size:20px; margin:40px 0 10px; }
+    p, li { color:var(--sub); font-size:15px; }
+    ul { margin:8px 0 8px 22px; }
+    li { margin:6px 0; }
+    strong { color:var(--text); }
+    .back { display:inline-block; margin-bottom:32px; color:var(--sub); font-size:14px; text-decoration:none; }
+    code { font-family:"SF Mono",Menlo,monospace; color:var(--accent-bright); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="./">← Diktat</a>
+    <h1>Privacy Policy</h1>
+    <div class="meta">Last updated: 5 June 2026</div>
+
+    <p style="margin-top:24px">Diktat lets you drive coding sessions running on your own Mac from your phone. We
+    collect as little as possible, and we don't sell your data or use it for advertising. This
+    policy explains what we handle and why.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Account identity.</strong> When you sign in with Apple or Google, we receive a
+        user identifier and your email address (Apple may relay a private address). This is used
+        only to create and authenticate your account.</li>
+      <li><strong>Machine registry.</strong> When you pair a Mac, we store a machine name you
+        choose, a hashed per-machine access token, and a "last seen" timestamp so the app can show
+        which machines are online.</li>
+      <li><strong>Subscription status.</strong> Purchases are processed by Apple. We store only your
+        entitlement state (trial, complimentary access, or active subscription) so we know whether
+        to unlock the app. Subscription processing uses RevenueCat.</li>
+      <li><strong>Voice input.</strong> If you use voice, speech is transcribed to text on your
+        device using Apple's speech-recognition services. We store the resulting instructions only
+        as part of your coding session; we do not store raw audio.</li>
+    </ul>
+
+    <h2>Your coding sessions</h2>
+    <p>Instructions you send and the output from your coding tools pass through our relay <strong>in
+    transit</strong> between your phone and your Mac. The relay is a pass-through broker — it does
+    not persist the contents of your sessions. The actual code, files, and tool activity stay on
+    your own machine.</p>
+
+    <h2>Service providers</h2>
+    <p>We use a small number of processors to run the service:</p>
+    <ul>
+      <li><strong>Supabase</strong> — authentication and account/machine database.</li>
+      <li><strong>Fly.io</strong> — hosting for the relay that connects your phone to your Mac.</li>
+      <li><strong>RevenueCat</strong> and <strong>Apple</strong> — subscription processing.</li>
+      <li><strong>Apple / Google</strong> — sign-in.</li>
+      <li><strong>Expo</strong> — delivery of push notifications (e.g. when a run finishes).</li>
+    </ul>
+
+    <h2>Data retention &amp; deletion</h2>
+    <p>You can permanently delete your account at any time from the app (Your machines → <strong>Delete
+    account</strong>). This erases your account, paired machines, pairing codes, and stored
+    entitlement state. Deletion is immediate and cannot be undone.</p>
+
+    <h2>Children</h2>
+    <p>Diktat is a developer tool and is not directed to children under 13.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes materially, we'll update the date above and, where appropriate, notify
+    you in the app.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy? Email <a href="mailto:support@diktat.app">support@diktat.app</a>.</p>
+  </div>
+</body>
+</html>

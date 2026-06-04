@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Diktat — Support</title>
+  <meta name="description" content="Help and support for Diktat." />
+  <style>
+    :root {
+      --bg:#07060a; --card:#171420; --border:#252130;
+      --accent:#a78bfa; --accent-bright:#c4b5fd; --text:#f0eef8; --sub:#8b85a1; --muted:#3d3850;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body {
+      background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      line-height:1.6; -webkit-font-smoothing:antialiased;
+      background-image:radial-gradient(ellipse 80% 50% at 50% -10%, #1a1033 0%, var(--bg) 60%);
+    }
+    .wrap { max-width:720px; margin:0 auto; padding:64px 24px 96px; }
+    a { color:var(--accent-bright); }
+    h1 { font-size:36px; font-weight:800; letter-spacing:-1px; }
+    .lede { color:var(--sub); font-size:16px; margin-top:12px; }
+    h2 { font-size:20px; margin:40px 0 10px; }
+    p, li { color:var(--sub); font-size:15px; }
+    ul { margin:8px 0 8px 22px; }
+    li { margin:8px 0; }
+    strong { color:var(--text); }
+    code { font-family:"SF Mono",Menlo,monospace; color:var(--accent-bright); background:#0b0a0f; padding:2px 6px; border-radius:5px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px 22px; margin-top:24px; }
+    .back { display:inline-block; margin-bottom:32px; color:var(--sub); font-size:14px; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="./">← Diktat</a>
+    <h1>Support</h1>
+    <p class="lede">Need a hand? Most things are quick to sort out — and you can always email us.</p>
+
+    <div class="card">
+      Email <a href="mailto:support@diktat.app">support@diktat.app</a> and we'll get back to you.
+      Including your device model and iOS version helps us help you faster.
+    </div>
+
+    <h2>Getting started</h2>
+    <ul>
+      <li><strong>Install on your Mac.</strong> Run the one-line installer from the
+        <a href="./">Diktat home page</a>, then <code>diktat setup</code> to detect your coding tools.</li>
+      <li><strong>Pair your phone.</strong> Run <code>diktat pair</code> on your Mac — it shows a QR
+        code. In the app, tap <strong>Pair a machine</strong> and scan it.</li>
+      <li><strong>Start working.</strong> Run <code>diktat start</code>, open the app, pick your Mac,
+        and start a session.</li>
+    </ul>
+
+    <h2>Troubleshooting</h2>
+    <ul>
+      <li><strong>My Mac shows as offline.</strong> Make sure the daemon is running with
+        <code>diktat status</code>; start it with <code>diktat start</code>. Check
+        <code>~/.diktat/daemon.log</code> for errors.</li>
+      <li><strong>Pairing didn't work.</strong> QR codes expire after a few minutes — run
+        <code>diktat pair</code> again for a fresh one.</li>
+      <li><strong>No coding tools detected.</strong> Make sure Claude Code or the Cursor CLI is
+        installed, on your <code>PATH</code>, and logged in, then re-run <code>diktat setup</code>.</li>
+      <li><strong>Voice isn't transcribing.</strong> Grant microphone and speech-recognition
+        permission to Diktat in iOS Settings.</li>
+    </ul>
+
+    <h2>Subscriptions</h2>
+    <ul>
+      <li>Diktat starts with one free hour of use; after that it's a subscription.</li>
+      <li>Manage or cancel anytime in <strong>Settings → your name → Subscriptions</strong> on your
+        iPhone. Subscriptions are billed through your Apple ID.</li>
+      <li>Have a complimentary code? Enter it on the paywall under <strong>Redeem code</strong>.</li>
+    </ul>
+
+    <h2>Account &amp; privacy</h2>
+    <ul>
+      <li>Delete your account anytime from <strong>Your machines → Delete account</strong>.</li>
+      <li>See our <a href="./privacy.html">Privacy Policy</a> for how your data is handled.</li>
+    </ul>
+  </div>
+</body>
+</html>
