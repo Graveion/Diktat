@@ -25,8 +25,10 @@ import { useMockDiktat } from "./src/hooks/useMockDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
 import { useAuth, type AuthApi } from "./src/hooks/useAuth";
 import { useMachines, type Machine } from "./src/hooks/useMachines";
+import { useEntitlements } from "./src/hooks/useEntitlements";
 import { SignInScreen } from "./src/screens/SignInScreen";
 import { MachinesScreen } from "./src/screens/MachinesScreen";
+import { PaywallScreen } from "./src/screens/PaywallScreen";
 import { RELAY_URL } from "./src/store/supabase";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
@@ -162,8 +164,10 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
   const [screen, setScreen] = useState<Screen>("machines");
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
+  const [paywallVisible, setPaywallVisible] = useState(false);
 
   const machines = useMachines();
+  const ent = useEntitlements();
   const pushToken = usePushToken();
   const prevScreen = useRef<Screen>("machines");
 
@@ -228,13 +232,15 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
     return () => sub.remove();
   }, [diktat.sessions, screen]);
 
-  const handleResume = (session: DiktatSession) => {
+  const handleResume = async (session: DiktatSession) => {
+    if (!(await ent.gateAccess())) { setPaywallVisible(true); return; }
     info("NAV", `sessions → chat (resume session ${session.id} source=${session.source})`);
     setActiveSession(session);
     diktat.resumeSession(session);
   };
 
-  const handleNew = (cli: string, project: string, mode?: string) => {
+  const handleNew = async (cli: string, project: string, mode?: string) => {
+    if (!(await ent.gateAccess())) { setPaywallVisible(true); return; }
     info("NAV", `sessions → chat (new session cli=${cli} project=${project}${mode ? ` mode=${mode}` : ""})`);
     setActiveSession(null);
     diktat.spawnSession(cli, project, mode);
@@ -262,6 +268,14 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
             <Text style={styles.errorDismiss}>✕</Text>
           </TouchableOpacity>
         </View>
+      ) : null}
+
+      {ent.ready && !ent.isPro && !ent.compActive && ent.freeSecondsRemaining > 0 && ent.freeSecondsRemaining < 3600 ? (
+        <TouchableOpacity style={styles.trialBanner} onPress={() => setPaywallVisible(true)}>
+          <Text style={styles.trialText}>
+            Free trial · {Math.ceil(ent.freeSecondsRemaining / 60)} min left — tap to upgrade
+          </Text>
+        </TouchableOpacity>
       ) : null}
 
       {screen === "debug" ? (
@@ -305,6 +319,19 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
           sessionCli={activeSession?.cli ?? undefined}
         />
       )}
+
+      {paywallVisible ? (
+        <View style={styles.paywallOverlay}>
+          <PaywallScreen
+            packages={ent.packages}
+            onPurchase={ent.purchase}
+            onRestore={ent.restore}
+            onRedeem={ent.redeemCode}
+            onClose={() => setPaywallVisible(false)}
+            onUnlocked={() => setPaywallVisible(false)}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -325,4 +352,7 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, color: "#ffaaaa", fontSize: 14, lineHeight: 20 },
   errorDismiss: { color: "#ff8888", fontSize: 18, paddingLeft: 12 },
+  trialBanner: { backgroundColor: "#241a3a", paddingVertical: 6, alignItems: "center" },
+  trialText: { color: "#c4b5fd", fontSize: 12, fontWeight: "600" },
+  paywallOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
 });
