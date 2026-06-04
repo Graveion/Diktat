@@ -6,7 +6,7 @@ import {
   type Leg,
   type RelaySocket,
 } from "./broker.ts";
-import { createSupabaseDeps, makeSupabaseAuthenticator } from "./supabase-auth.ts";
+import { createSupabaseDeps, makeMachineToucher, makeSupabaseAuthenticator } from "./supabase-auth.ts";
 import { completePairing, createPairingDeps, type PairingDeps } from "./pairing.ts";
 
 /** Per-connection data attached at upgrade time. */
@@ -37,6 +37,12 @@ if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
 const pairingDeps: PairingDeps | null =
   SUPABASE_URL && SUPABASE_SECRET_KEY
     ? createPairingDeps({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY })
+    : null;
+
+// Presence stamp for the app's online indicator (Supabase mode only).
+const touchMachine: ((machineId: string) => void) | null =
+  SUPABASE_URL && SUPABASE_SECRET_KEY
+    ? makeMachineToucher({ url: SUPABASE_URL, serviceKey: SUPABASE_SECRET_KEY })
     : null;
 
 const broker = new Broker();
@@ -118,12 +124,21 @@ const server = Bun.serve<ConnData, never>({
       const sock = asRelaySocket(ws);
       // Stash the adapter on the ws so close/message route to the same identity.
       (ws as unknown as { _sock: RelaySocket })._sock = sock;
-      if (leg === "agent") broker.registerAgent(machineId, accountId, sock);
-      else broker.registerClient(machineId, accountId, sock);
+      if (leg === "agent") {
+        broker.registerAgent(machineId, accountId, sock);
+        touchMachine?.(machineId); // mark online on connect
+      } else {
+        broker.registerClient(machineId, accountId, sock);
+      }
     },
     message(ws, message) {
       const { leg, machineId } = ws.data;
       const raw = typeof message === "string" ? message : new TextDecoder().decode(message);
+      // Refresh presence on the daemon's keep-alive ping (small control frame,
+      // ~every 30s) so the online indicator stays fresh during long sessions.
+      if (leg === "agent" && touchMachine && raw.length < 64 && raw.includes('"_relay"') && raw.includes('"ping"')) {
+        touchMachine(machineId);
+      }
       broker.route(machineId, leg, raw);
     },
     close(ws) {

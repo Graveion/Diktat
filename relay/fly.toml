@@ -1,31 +1,20 @@
-# Diktat relay on Fly.io.
+# fly.toml app configuration file generated for diktat-relay on 2026-06-04T14:13:43+01:00
 #
-# The relay holds long-lived agent-leg WebSockets (one per online daemon), so it
-# must stay running — auto_stop is off and we keep one machine warm. Single
-# instance for the MVP; affinity/scale-out (Durable Objects) is a later phase.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Deploy:
-#   cd relay
-#   fly launch --no-deploy           # first time only (or `fly apps create diktat-relay`)
-#   fly secrets set \
-#     SUPABASE_URL=https://sxikqegkvbeahtcnoozx.supabase.co \
-#     SUPABASE_SECRET_KEY=sb_secret_xxx
-#   fly deploy
-#
-# The phone/daemon then use:  wss://diktat-relay.fly.dev
-app = "diktat-relay"
-primary_region = "lhr"
+
+app = 'diktat-relay'
+primary_region = 'lhr'
 
 [build]
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Keep the single instance always-on; daemons rely on a persistent agent leg.
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+  size = 'shared-cpu-1x'
+  memory = '256mb'

@@ -67,6 +67,29 @@ export interface SupabaseEnv {
 }
 
 /**
+ * Fire-and-forget `machines.last_seen_at = now` stamp. Called when a daemon's
+ * agent leg authenticates (and on its keep-alive pings) so the app's online
+ * indicator reflects recently-connected machines. Never throws.
+ */
+export function makeMachineToucher(env: SupabaseEnv): (machineId: string) => void {
+  const base = env.url.replace(/\/$/, "");
+  const headers = {
+    apikey: env.serviceKey,
+    Authorization: `Bearer ${env.serviceKey}`,
+    "Content-Type": "application/json",
+  };
+  return (machineId) => {
+    fetch(`${base}/rest/v1/machines?id=eq.${encodeURIComponent(machineId)}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ last_seen_at: new Date().toISOString() }),
+    }).catch(() => {
+      /* best-effort presence stamp */
+    });
+  };
+}
+
+/**
  * Production deps: ES256 JWT verification via the project JWKS, and a
  * service-role PostgREST read of the machines table.
  */
