@@ -20,16 +20,17 @@ import {
 } from "@expo-google-fonts/outfit";
 import * as Notifications from "expo-notifications";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
+import { useDiktat, type DiktatSession, type RelayDescriptor } from "./src/hooks/useDiktat";
 import { useMockDiktat } from "./src/hooks/useMockDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
-import { useAuth } from "./src/hooks/useAuth";
+import { useAuth, type AuthApi } from "./src/hooks/useAuth";
+import { useMachines, type Machine } from "./src/hooks/useMachines";
 import { SignInScreen } from "./src/screens/SignInScreen";
-import { ConnectScreen } from "./src/screens/ConnectScreen";
+import { MachinesScreen } from "./src/screens/MachinesScreen";
+import { RELAY_URL } from "./src/store/supabase";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
 import { DebugScreen } from "./src/screens/DebugScreen";
-import { loadConfig } from "./src/store/config";
 import { info } from "./src/utils/logger";
 
 // ─── Mock mode ────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ import { info } from "./src/utils/logger";
 // can be exercised without a running daemon.
 const MOCK_MODE = __DEV__;
 
-type Screen = "connect" | "sessions" | "chat" | "debug";
+type Screen = "machines" | "sessions" | "chat" | "debug";
 
 // ─── Crash boundary ──────────────────────────────────────────────────────────
 const CRASH_KEY = "@diktat/last_crash";
@@ -81,17 +82,38 @@ export const UPDATE_LABEL: string = (() => {
   return `${short}${time ? " · " + time : ""}`;
 })();
 
-function AppWithRealDiktat() {
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState(9000);
-  const diktat = useDiktat(host, port);
-  return <AppInner diktat={diktat} host={host} port={port} setHost={setHost} setPort={setPort} />;
+function AppWithRealDiktat({ auth }: { auth: AuthApi }) {
+  const [relay, setRelay] = useState<RelayDescriptor | undefined>(undefined);
+  const diktat = useDiktat("", 9000, relay);
+
+  // Connect once a relay descriptor is set (relayRef updates this render, so
+  // connect() then dials the relay leg). Disconnect when it clears.
+  useEffect(() => {
+    if (relay) diktat.connect();
+  }, [relay]);
+
+  const connectToMachine = useCallback(
+    (m: Machine) => {
+      const token = auth.session?.access_token ?? "";
+      setRelay({ relayUrl: RELAY_URL, machineId: m.id, accountToken: token });
+    },
+    [auth.session],
+  );
+
+  const leaveMachine = useCallback(() => {
+    diktat.disconnect();
+    setRelay(undefined);
+  }, [diktat]);
+
+  return (
+    <AppInner diktat={diktat} auth={auth} connectToMachine={connectToMachine} leaveMachine={leaveMachine} />
+  );
 }
 
-function AppWithMockDiktat() {
+function AppWithMockDiktat({ auth }: { auth: AuthApi }) {
   const diktat = useMockDiktat();
-  // host must be non-empty so the !host guard in AppInner doesn't force ConnectScreen.
-  return <AppInner diktat={diktat} host="mock" port={9000} setHost={() => {}} setPort={() => {}} />;
+  // Mock is already "connected"; selecting a machine just advances the screen.
+  return <AppInner diktat={diktat} auth={auth} connectToMachine={() => {}} leaveMachine={() => {}} />;
 }
 
 function Splash() {
@@ -128,30 +150,32 @@ function App() {
     );
   }
 
-  return MOCK_MODE ? <AppWithMockDiktat /> : <AppWithRealDiktat />;
+  return MOCK_MODE ? <AppWithMockDiktat auth={auth} /> : <AppWithRealDiktat auth={auth} />;
 }
 
-function AppInner({ diktat, host, port, setHost, setPort }: {
-  diktat: ReturnType<typeof useDiktat>;
-  host: string; port: number;
-  setHost: (h: string) => void; setPort: (p: number) => void;
+function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
+  diktat: ReturnType<typeof useDiktat> | ReturnType<typeof useMockDiktat>;
+  auth: AuthApi;
+  connectToMachine: (m: Machine) => void;
+  leaveMachine: () => void;
 }) {
-  const [screen, setScreen] = useState<Screen>("connect");
+  const [screen, setScreen] = useState<Screen>("machines");
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
+  const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
 
-  void port;
+  const machines = useMachines();
   const pushToken = usePushToken();
-  const prevScreen = useRef<Screen>("connect");
+  const prevScreen = useRef<Screen>("machines");
 
   useEffect(() => {
     if (pushToken) diktat.registerPushToken(pushToken);
   }, [pushToken]);
 
-  useEffect(() => {
-    loadConfig().then((c) => {
-      if (c.host) { setHost(c.host); setPort(c.port); }
-    });
-  }, []);
+  const handleSelectMachine = useCallback((m: Machine) => {
+    info("NAV", `machines → connecting (machine ${m.id})`);
+    setSelectedMachine(m);
+    connectToMachine(m);
+  }, [connectToMachine]);
 
   // Eager OTA pull: check for a newer bundle on every cold launch and apply
   // it immediately. Default expo-updates behaviour downloads in the background
@@ -173,34 +197,18 @@ function AppInner({ diktat, host, port, setHost, setPort }: {
   }, []);
 
   useEffect(() => {
-    // Only advance to sessions from the connect screen — never override chat
-    if (diktat.state === "connected" && screen === "connect") {
-      info("NAV", "connect → sessions (daemon connected)");
+    // Advance to sessions once the selected machine's relay leg is connected.
+    if (diktat.state === "connected" && selectedMachine && screen === "machines") {
+      info("NAV", "machines → sessions (machine connected)");
       setScreen("sessions");
     }
-    if (diktat.state === "disconnected" || diktat.state === "error") {
-      if (screen !== "chat" && screen !== "sessions" && screen !== "debug") {
-        info("NAV", `${screen} → connect (state=${diktat.state})`);
-        setScreen("connect");
-      }
-    }
-  }, [diktat.state, screen]);
+  }, [diktat.state, screen, selectedMachine]);
 
   useEffect(() => {
     if (diktat.activeSessionId) setScreen("chat");
     // If session was invalidated (e.g. daemon restarted) while in chat, go back to sessions
     if (!diktat.activeSessionId && screen === "chat") setScreen("sessions");
   }, [diktat.activeSessionId]);
-
-  const handleConnect = (h: string, p: number) => {
-    setHost(h);
-    setPort(p);
-    diktat.connect(h, p);
-  };
-
-  useEffect(() => {
-    if (host) diktat.connect(host, port);
-  }, []);
 
   // Deep-link from push notification tap
   useEffect(() => {
@@ -257,23 +265,29 @@ function AppInner({ diktat, host, port, setHost, setPort }: {
       ) : null}
 
       {screen === "debug" ? (
-        <DebugScreen onBack={() => setScreen(prevScreen.current === "debug" ? (host ? "sessions" : "connect") : prevScreen.current)} />
-      ) : screen === "connect" || !host ? (
-        <ConnectScreen
-          onConnect={handleConnect}
-          connectionState={diktat.state}
+        <DebugScreen onBack={() => setScreen(prevScreen.current === "debug" ? (selectedMachine ? "sessions" : "machines") : prevScreen.current)} />
+      ) : screen === "machines" ? (
+        <MachinesScreen
+          machines={machines.machines}
+          loading={machines.loading}
+          error={machines.error}
+          onRefresh={machines.refresh}
+          onSelect={handleSelectMachine}
+          onCreateCode={machines.createPairingCode}
+          onUnpair={machines.unpair}
+          onSignOut={auth.signOut}
         />
       ) : screen === "sessions" ? (
         <SessionsScreen
           sessions={diktat.sessions}
           clis={diktat.clis}
           projects={diktat.projects}
-          connectedHost={host}
+          connectedHost={selectedMachine?.name ?? ""}
           connectionState={diktat.state}
           loading={diktat.state === "connecting"}
           onResume={handleResume}
           onNew={handleNew}
-          onDisconnect={() => { diktat.disconnect(); setScreen("connect"); }}
+          onDisconnect={() => { leaveMachine(); setSelectedMachine(null); setScreen("machines"); }}
         />
       ) : (
         <ChatScreen

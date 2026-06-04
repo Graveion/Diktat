@@ -75,7 +75,9 @@ export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
   const connect = useCallback((overrideHost?: string, overridePort?: number) => {
     const h = overrideHost ?? lastHost.current;
     const p = overridePort ?? lastPort.current;
-    if (!h) { warn("WS", "connect() called with no host — skipping"); return; }
+    // Relay mode needs no host (the relay descriptor carries the target);
+    // direct mode requires one.
+    if (!h && !relayRef.current) { warn("WS", "connect() called with no host — skipping"); return; }
     if (overrideHost) lastHost.current = overrideHost;
     if (overridePort) lastPort.current = overridePort;
 
