@@ -60,3 +60,21 @@ supabase db push                       # apply migrations to the linked project
 | JWT secret / JWKS URL | the relay (verify phone JWTs) | **secret** |
 
 Secrets go in the relay's env / a gitignored `.env`, never in the repo.
+
+## OAuth provider client IDs (public — safe to commit)
+
+Native ID-token flow. The Google SDK uses the **Web** client ID on every
+platform; the ID token's `aud` is always the Web client ID (that's what Supabase
+validates). iOS/Android clients only authorize the app binary and are NOT pasted
+into Supabase as the provider client — only added to "Authorized Client IDs".
+
+| Provider | Use | Value |
+|---|---|---|
+| Apple | Authorized Client ID (Supabase) | `com.graveion.diktat` |
+| Apple | Signing team | `Timothy Green` / `2XKY3VHD62` (plenary7) |
+| Google Web | Supabase provider client ID + `aud` | `194173396831-pa3jme56di96crfpojllhb38he832deh.apps.googleusercontent.com` |
+| Google iOS | Native iOS SDK + Supabase Authorized Client ID | `194173396831-4toso43fmm94ej5vivv116oodes336fo.apps.googleusercontent.com` |
+| Google Android | Native Android SDK (create AFTER first Android build, needs keystore SHA-1) | _TODO_ |
+
+The Google **Web client secret** lives only in Supabase — never in the repo.
+
