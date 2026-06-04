@@ -10,5 +10,7 @@
 # Maestro screenshots wherever they land (incl. repo root if run from here)
 **/maestro/screenshots/
 
-# Store working files (listing copy, screenshots) — local only
-store/
+# Store working files (listing copy, screenshots) — local only.
+# Anchored to repo root so it does NOT match app/src/store/ (which EAS would
+# then drop from the build, breaking module resolution).
+/store/
