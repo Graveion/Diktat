@@ -12,11 +12,20 @@ connects out to the Diktat relay so the phone app can drive them from anywhere.
 
 ## Install
 
+One line (installs Bun if needed, fetches Diktat, adds the `diktat` command):
+
+```bash
+curl -fsSL https://graveion.github.io/Diktat/install.sh | bash
+```
+
+<details><summary>Or from a clone</summary>
+
 ```bash
 git clone <repo> diktat && cd diktat/daemon
 bun install
-bun link            # puts the `diktat` command on your PATH (one time)
+bun link            # puts the `diktat` command on your PATH
 ```
+</details>
 
 `diktat` now works from any directory.
 

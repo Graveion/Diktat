@@ -18,11 +18,13 @@ with push notifications when a run finishes.
 ## Quick start (your Mac)
 
 ```bash
-cd daemon && bun install && bun link
+curl -fsSL https://graveion.github.io/Diktat/install.sh | bash
 diktat setup        # detect CLIs + pick projects
 diktat pair         # show a QR; scan it in the app
 diktat start        # run in the background
 ```
+
+Landing page + installer: **https://graveion.github.io/Diktat**
 
 ## How it fits together
 

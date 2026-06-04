@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Diktat — say it. ship it.</title>
+  <meta name="description" content="Drive your Claude Code / Cursor coding sessions from your phone — from anywhere." />
+  <style>
+    :root {
+      --bg:#07060a; --surface:#0f0d13; --card:#171420; --border:#252130;
+      --accent:#a78bfa; --accent-bright:#c4b5fd; --text:#f0eef8; --sub:#8b85a1; --muted:#3d3850;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body {
+      background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      line-height:1.55; -webkit-font-smoothing:antialiased;
+      background-image:radial-gradient(ellipse 80% 50% at 50% -10%, #1a1033 0%, var(--bg) 60%);
+    }
+    .wrap { max-width:720px; margin:0 auto; padding:0 24px; }
+    header { text-align:center; padding:96px 0 56px; }
+    .wordmark { font-size:64px; font-weight:800; letter-spacing:-2px; }
+    .tagline { color:var(--sub); text-transform:uppercase; letter-spacing:3px; font-size:13px; margin-top:8px; }
+    .lede { color:var(--sub); font-size:18px; max-width:520px; margin:24px auto 0; }
+
+    .install { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; margin:40px 0; }
+    .install h2 { font-size:14px; color:var(--sub); font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
+    code, pre { font-family:"SF Mono",Menlo,Consolas,monospace; }
+    .cmd {
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      background:#0b0a0f; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+    }
+    .cmd code { color:var(--accent-bright); font-size:14px; overflow-x:auto; white-space:nowrap; }
+    .copy { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; flex:none; }
+    .copy:active { transform:scale(0.96); }
+
+    .steps { display:grid; gap:18px; margin:40px 0; }
+    .step { display:flex; gap:16px; }
+    .num { flex:none; width:28px; height:28px; border-radius:50%; background:#120d1f; border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+    .step h3 { font-size:16px; margin-bottom:2px; }
+    .step p { color:var(--sub); font-size:14px; }
+    .step code { color:var(--accent-bright); background:#0b0a0f; padding:2px 6px; border-radius:5px; font-size:13px; }
+
+    .reqs { color:var(--muted); font-size:13px; border-top:1px solid var(--border); padding:28px 0; margin-top:24px; }
+    .reqs a { color:var(--sub); }
+    footer { text-align:center; color:var(--muted); font-size:12px; padding:40px 0 64px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="wordmark">diktat</div>
+      <div class="tagline">say it. ship it.</div>
+      <p class="lede">Drive your Claude Code &amp; Cursor coding sessions from your phone — from anywhere.</p>
+    </header>
+
+    <section class="install">
+      <h2>Install the daemon on your Mac</h2>
+      <div class="cmd">
+        <code id="cmd">curl -fsSL https://graveion.github.io/Diktat/install.sh | bash</code>
+        <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent);this.textContent='Copied'">Copy</button>
+      </div>
+    </section>
+
+    <section class="steps">
+      <div class="step"><div class="num">1</div><div><h3>Install</h3><p>Run the command above. It sets up Bun, the daemon, and the <code>diktat</code> command.</p></div></div>
+      <div class="step"><div class="num">2</div><div><h3>Set up</h3><p>Run <code>diktat setup</code> to detect your CLIs and choose which projects to expose.</p></div></div>
+      <div class="step"><div class="num">3</div><div><h3>Pair</h3><p>Run <code>diktat pair</code> — it shows a QR. In the app, tap <strong>Pair a machine</strong> and scan it.</p></div></div>
+      <div class="step"><div class="num">4</div><div><h3>Go</h3><p>Run <code>diktat start</code>. Open the app, pick your Mac, and start a session from your phone.</p></div></div>
+    </section>
+
+    <div class="reqs">
+      Requires macOS, <a href="https://bun.sh">Bun</a>, and <a href="https://claude.com/claude-code">Claude Code</a> and/or the Cursor CLI installed and logged in.
+    </div>
+
+    <footer>Diktat · pair only machines you control</footer>
+  </div>
+</body>
+</html>
