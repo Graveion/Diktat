@@ -30,10 +30,19 @@ export type DiktatMessage = {
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
+// Relay-transport descriptor. When provided, the hook connects via the relay
+// broker (wss) instead of dialing the daemon directly (ws://host:port). See
+// relay/RELAY.md for the wire contract.
+export type RelayDescriptor = {
+  relayUrl: string; // wss:// base, e.g. wss://host:9090
+  machineId: string;
+  accountToken: string;
+};
+
 const RECONNECT_DELAY_MS = 5000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
-export function useDiktat(host: string, port: number) {
+export function useDiktat(host: string, port: number, relay?: RelayDescriptor) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,6 +52,8 @@ export function useDiktat(host: string, port: number) {
   const hasReceivedOutput = useRef(false);
   const lastHost = useRef(host);
   const lastPort = useRef(port);
+  const relayRef = useRef<RelayDescriptor | undefined>(relay);
+  relayRef.current = relay;
   const pushTokenRef = useRef<string | null>(null);
   const pendingResumeRef = useRef<{ session: any } | null>(null);
   const isAutoResumingRef = useRef(false);
@@ -75,8 +86,29 @@ export function useDiktat(host: string, port: number) {
     ws.current = null;
     setState("connecting");
     setErrorMessage(null);
-    info("WS", `Connecting to ws://${h}:${p}`);
-    const socket = new WebSocket(`ws://${h}:${p}`);
+
+    const relayCfg = relayRef.current;
+    let socket: WebSocket;
+    if (relayCfg) {
+      const url = `${relayCfg.relayUrl}/client?machineId=${encodeURIComponent(relayCfg.machineId)}`;
+      info("WS", `Connecting via relay to ${url}`);
+      // RN-specific: React Native's WebSocket accepts an options object as the
+      // 3rd constructor arg to set request headers pre-upgrade. Browsers cannot
+      // set WS headers, but this is a native app so it's fine. The broker reads
+      // the account token from `Authorization: Bearer <token>` before upgrading.
+      // The lib.dom WebSocket type only declares 2 args; RN's runtime accepts a
+      // 3rd options object (protocols=undefined, then { headers }). Cast the
+      // constructor to reach it without pulling in @types/react-native here.
+      const RNWebSocket = WebSocket as unknown as {
+        new (url: string, protocols: undefined, options: { headers: Record<string, string> }): WebSocket;
+      };
+      socket = new RNWebSocket(url, undefined, {
+        headers: { Authorization: `Bearer ${relayCfg.accountToken}` },
+      });
+    } else {
+      info("WS", `Connecting to ws://${h}:${p}`);
+      socket = new WebSocket(`ws://${h}:${p}`);
+    }
     ws.current = socket;
 
     socket.onopen = () => {
@@ -102,6 +134,46 @@ export function useDiktat(host: string, port: number) {
       let msg: any;
       try { msg = JSON.parse(e.data); } catch (err) {
         logError("MSG", `Failed to parse message: ${e.data?.slice?.(0, 100)}`);
+        return;
+      }
+
+      // Relay control frames are handled at the transport layer and never reach
+      // app-message dispatch. They only appear in relay mode (direct ws never
+      // emits them). See relay/RELAY.md §3/§4.
+      if (msg._relay === true) {
+        switch (msg.type) {
+          case "machine_online":
+            // Daemon is connected; relay brokering is live. Clear the soft
+            // offline ("reconnecting") banner. Do NOT treat as a fresh connect —
+            // the daemon will send its own `connected` app frame, which the
+            // existing handler processes and auto-resumes from.
+            info("RELAY", "machine_online: daemon connected");
+            setReconnecting(false);
+            break;
+          case "machine_offline":
+            // SOFT state: the relay socket is healthy, only the daemon is away.
+            // Show the reconnecting banner but do NOT close/tear down/back off —
+            // keep the relay socket and wait for machine_online.
+            info("RELAY", "machine_offline: daemon away (soft) — keeping relay socket");
+            setReconnecting(true);
+            break;
+          case "relay_error": {
+            const code = msg.code as string | undefined;
+            logError("RELAY", `relay_error: code=${code} message=${msg.message ?? ""}`);
+            // For auth/ownership failures the socket will also close. Avoid
+            // hammering the relay with backoff retries on a non-transient
+            // rejection — let onclose see the intentional flag and stay down.
+            if (code === "forbidden" || code === "unauthorized") {
+              intentionalDisconnect.current = true;
+            }
+            // "replaced" (and any close that follows) goes through the normal
+            // onclose backoff path.
+            break;
+          }
+          default:
+            // Other relay frames (e.g. ping) are informational; ignore.
+            break;
+        }
         return;
       }
 

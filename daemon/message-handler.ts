@@ -1,6 +1,7 @@
 import { Session } from "./session";
-import { readHistory } from "./claude-sessions";
-import { readCursorHistory } from "./cursor-sessions";
+import { readHistory, listClaudeSessions, claudeSessionExists } from "./claude-sessions";
+import { readCursorHistory, listCursorSessions } from "./cursor-sessions";
+import { listSessions } from "./session-store";
 
 /**
  * Everything the message router needs, injected so it can be tested in
@@ -20,6 +21,31 @@ export interface MessageContext {
   /** History readers — injectable for tests. Default to the real readers. */
   readClaudeHistory?: typeof readHistory;
   readCursorHistory?: typeof readCursorHistory;
+}
+
+/**
+ * Build the `connected` handshake payload sent to a freshly attached client.
+ * Shared by both transports: local Bun.serve open() and relay client_attached.
+ * Mirrors the original index.ts open() body (including its error fallback) so
+ * local-mode output is byte-for-byte identical.
+ */
+export function buildConnectedPayload(ctx: MessageContext): Record<string, unknown> {
+  const base = {
+    type: "connected" as const,
+    clis: Object.keys(ctx.availableCLIs),
+    projects: ctx.projects,
+  };
+  try {
+    return {
+      ...base,
+      sessions: listSessions().filter((s) => !s.cliSessionId || claudeSessionExists(s.cliSessionId)),
+      claudeSessions: listClaudeSessions(),
+      cursorSessions: listCursorSessions(),
+    };
+  } catch (e) {
+    console.error("Error building connected message:", e);
+    return { ...base, sessions: [], claudeSessions: [], cursorSessions: [] };
+  }
 }
 
 export interface SessionFactory {
