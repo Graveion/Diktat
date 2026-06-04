@@ -1,0 +1,9 @@
+node_modules
+.env
+.env.*
+*.log
+relay-config.json
+# Test + local-only scripts (import ../daemon, not present in the image).
+*.test.ts
+smoke.ts
+tunnel-check.ts
