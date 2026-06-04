@@ -55,7 +55,7 @@
     </header>
 
     <section class="install">
-      <h2>Install the daemon on your Mac</h2>
+      <h2>Get started — on your Mac</h2>
       <div class="cmd">
         <code id="cmd">curl -fsSL https://graveion.github.io/Diktat/install.sh | bash</code>
         <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent);this.textContent='Copied'">Copy</button>
@@ -63,14 +63,14 @@
     </section>
 
     <section class="steps">
-      <div class="step"><div class="num">1</div><div><h3>Install</h3><p>Run the command above. It sets up Bun, the daemon, and the <code>diktat</code> command.</p></div></div>
+      <div class="step"><div class="num">1</div><div><h3>Install</h3><p>Run the command above. Everything Diktat needs is set up for you, including the <code>diktat</code> command.</p></div></div>
       <div class="step"><div class="num">2</div><div><h3>Set up</h3><p>Run <code>diktat setup</code> to detect your CLIs and choose which projects to expose.</p></div></div>
       <div class="step"><div class="num">3</div><div><h3>Pair</h3><p>Run <code>diktat pair</code> — it shows a QR. In the app, tap <strong>Pair a machine</strong> and scan it.</p></div></div>
       <div class="step"><div class="num">4</div><div><h3>Go</h3><p>Run <code>diktat start</code>. Open the app, pick your Mac, and start a session from your phone.</p></div></div>
     </section>
 
     <div class="reqs">
-      Requires macOS, <a href="https://bun.sh">Bun</a>, and <a href="https://claude.com/claude-code">Claude Code</a> and/or the Cursor CLI installed and logged in.
+      For macOS. Bring your <a href="https://claude.com/claude-code">Claude Code</a> or Cursor login — Diktat drives the sessions you already have.
     </div>
 
     <footer>Diktat · pair only machines you control</footer>

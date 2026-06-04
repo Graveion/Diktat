@@ -3,22 +3,25 @@
 The daemon runs on your Mac, holds your Claude Code / Cursor CLI sessions, and
 connects out to the Diktat relay so the phone app can drive them from anywhere.
 
-## Prerequisites
+## What you'll need
 
-- **[Bun](https://bun.com)** (`curl -fsSL https://bun.sh/install | bash`)
-- At least one coding CLI installed and logged in:
-  - **Claude Code** — `claude` on your PATH, logged in (`claude login`)
-  - and/or **Cursor CLI** — `cursor` on your PATH (auth is managed by the IDE)
+macOS, and at least one coding CLI you're already logged into:
+
+- **Claude Code** — `claude` on your PATH (`claude login`)
+- and/or **Cursor CLI** — `cursor` on your PATH (auth managed by the IDE)
+
+Everything else (the runtime, the daemon, the `diktat` command) is set up by the
+installer.
 
 ## Install
-
-One line (installs Bun if needed, fetches Diktat, adds the `diktat` command):
 
 ```bash
 curl -fsSL https://graveion.github.io/Diktat/install.sh | bash
 ```
 
-<details><summary>Or from a clone</summary>
+`diktat` now works from any directory.
+
+<details><summary>Or from a clone (for development)</summary>
 
 ```bash
 git clone <repo> diktat && cd diktat/daemon
@@ -26,8 +29,6 @@ bun install
 bun link            # puts the `diktat` command on your PATH
 ```
 </details>
-
-`diktat` now works from any directory.
 
 ## Set up
 
