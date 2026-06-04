@@ -23,6 +23,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useDiktat, type DiktatSession } from "./src/hooks/useDiktat";
 import { useMockDiktat } from "./src/hooks/useMockDiktat";
 import { usePushToken } from "./src/hooks/usePushToken";
+import { useAuth } from "./src/hooks/useAuth";
+import { SignInScreen } from "./src/screens/SignInScreen";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
@@ -92,7 +94,40 @@ function AppWithMockDiktat() {
   return <AppInner diktat={diktat} host="mock" port={9000} setHost={() => {}} setPort={() => {}} />;
 }
 
+function Splash() {
+  return (
+    <View style={{ flex: 1, backgroundColor: "#07060a", justifyContent: "center", alignItems: "center" }}>
+      <ActivityIndicator color="#a78bfa" />
+    </View>
+  );
+}
+
 function App() {
+  // Fonts + auth are resolved here so the sign-in gate and the app both render
+  // with the loaded fonts. Login is required for the whole app (local + relay).
+  const [fontsLoaded] = useFonts({
+    Syne_700Bold, Syne_800ExtraBold,
+    Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
+    SpaceGrotesk_700Bold,
+  });
+  const auth = useAuth();
+
+  if (!fontsLoaded || auth.loading) return <Splash />;
+
+  if (!auth.session) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <SignInScreen
+          appleAvailable={auth.appleAvailable}
+          error={auth.error}
+          onApple={auth.signInWithApple}
+          onGoogle={auth.signInWithGoogle}
+        />
+      </>
+    );
+  }
+
   return MOCK_MODE ? <AppWithMockDiktat /> : <AppWithRealDiktat />;
 }
 
@@ -101,12 +136,6 @@ function AppInner({ diktat, host, port, setHost, setPort }: {
   host: string; port: number;
   setHost: (h: string) => void; setPort: (p: number) => void;
 }) {
-  const [fontsLoaded] = useFonts({
-    Syne_700Bold, Syne_800ExtraBold,
-    Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
-    SpaceGrotesk_700Bold,
-  });
-
   const [screen, setScreen] = useState<Screen>("connect");
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
 
@@ -208,14 +237,6 @@ function AppInner({ diktat, host, port, setHost, setPort }: {
     prevScreen.current = screen;
     setScreen("debug");
   }, [screen]);
-
-  if (!fontsLoaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: "#07060a", justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator color="#a78bfa" />
-      </View>
-    );
-  }
 
   return (
     // onStartShouldSetResponderCapture runs top-down (capture phase) before any

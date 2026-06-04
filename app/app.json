@@ -21,6 +21,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.graveion.diktat",
+      "usesAppleSignIn": true,
       "backgroundModes": [
         "remote-notification"
       ],
@@ -44,7 +45,11 @@
     "extra": {
       "eas": {
         "projectId": "b7b6c69b-e870-4470-9944-daef2f579bf6"
-      }
+      },
+      "supabaseUrl": "https://sxikqegkvbeahtcnoozx.supabase.co",
+      "supabasePublishableKey": "sb_publishable_ZiQTn9qGtfJLUyeFwD-F4A_27RpLh4P",
+      "googleWebClientId": "194173396831-pa3jme56di96crfpojllhb38he832deh.apps.googleusercontent.com",
+      "googleIosClientId": "194173396831-4toso43fmm94ej5vivv116oodes336fo.apps.googleusercontent.com"
     },
     "plugins": [
       "expo-localization",
@@ -53,6 +58,13 @@
         {
           "microphonePermission": "Diktat needs microphone access to record your voice instructions.",
           "speechRecognitionPermission": "Diktat uses speech recognition to transcribe your voice into coding instructions."
+        }
+      ],
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.194173396831-4toso43fmm94ej5vivv116oodes336fo"
         }
       ]
     ]
