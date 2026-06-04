@@ -15,6 +15,9 @@ import { hostname } from "os";
 
 const CONFIG_PATH = "./config.json";
 
+// Hosted relay. Overridable via --relay or $DIKTAT_RELAY_URL (e.g. a dev tunnel).
+const DEFAULT_RELAY_URL = "wss://diktat-relay.fly.dev";
+
 export interface PairArgs {
   code: string;
   relayUrl?: string;
@@ -79,11 +82,10 @@ async function main() {
     : {};
 
   const relayUrl =
-    args.relayUrl ?? (existing.relayUrl as string | undefined) ?? process.env.DIKTAT_RELAY_URL;
-  if (!relayUrl) {
-    console.error("No relay URL. Pass --relay <wss-url> or set DIKTAT_RELAY_URL.");
-    process.exit(1);
-  }
+    args.relayUrl ??
+    (existing.relayUrl as string | undefined) ??
+    process.env.DIKTAT_RELAY_URL ??
+    DEFAULT_RELAY_URL;
 
   const machineId = (existing.machineId as string | undefined) ?? crypto.randomUUID();
   const name = args.name ?? hostname();

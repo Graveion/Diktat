@@ -10,6 +10,7 @@ export const SUPABASE_URL = extra.supabaseUrl ?? "";
 export const SUPABASE_PUBLISHABLE_KEY = extra.supabasePublishableKey ?? "";
 export const GOOGLE_WEB_CLIENT_ID = extra.googleWebClientId ?? "";
 export const GOOGLE_IOS_CLIENT_ID = extra.googleIosClientId ?? "";
+export const RELAY_URL = extra.relayUrl ?? "";
 
 /**
  * Supabase client (accounts/identity). Sessions persist in AsyncStorage and are
