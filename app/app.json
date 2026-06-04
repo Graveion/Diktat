@@ -64,6 +64,12 @@
       ],
       "expo-apple-authentication",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Diktat uses the camera to scan the pairing QR code shown on your Mac."
+        }
+      ],
+      [
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.194173396831-4toso43fmm94ej5vivv116oodes336fo"
