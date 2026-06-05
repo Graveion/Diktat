@@ -10,7 +10,7 @@ import type { DiktatSession, DiktatMessage } from "./useDiktat";
 import { MOCK_MESSAGES } from "../utils/mockMessages";
 
 const MOCK_SESSION: DiktatSession = {
-  id: "mock-session-001",
+  id: "9f3c1a7042e8",
   cli: "cursor",
   project: "/Users/you/code/storefront",
   projectLabel: "storefront",
@@ -21,13 +21,13 @@ const MOCK_SESSION: DiktatSession = {
 
 // Dedicated fixture session for exercising the reconnecting banner in UI tests.
 // Resuming it leaves the hook in a reconnecting state instead of loading history.
-export const MOCK_RECONNECTING_SESSION_ID = "mock-session-reconnecting";
+export const MOCK_RECONNECTING_SESSION_ID = "c4b2e85130a9";
 const MOCK_RECONNECTING_SESSION: DiktatSession = {
   id: MOCK_RECONNECTING_SESSION_ID,
   cli: "cursor",
   project: "/Users/you/code/landing-page",
   projectLabel: "landing-page",
-  firstMessage: "This session stays in the reconnecting state",
+  firstMessage: "Fix the mobile nav overflow on small screens",
   lastActiveAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(), // 3 min ago
   source: "cursor",
 };

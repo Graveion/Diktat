@@ -10,7 +10,7 @@ appId: com.graveion.diktat
 - assertVisible: "storefront"
 
 - tapOn:
-    id: "session-card-mock-session-001"
+    id: "session-card-9f3c1a7042e8"
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - waitForAnimationToEnd

@@ -12,7 +12,7 @@ appId: com.graveion.diktat
 
 # Resume the reconnecting fixture session
 - tapOn:
-    id: "session-card-mock-session-reconnecting"
+    id: "session-card-c4b2e85130a9"
 - waitForAnimationToEnd
 - assertVisible:
     id: "reconnecting-banner"

@@ -16,7 +16,7 @@ appId: com.graveion.diktat
 
 # Resume session so the chat header (with the settings gear) is visible
 - tapOn:
-    id: "session-card-mock-session-001"
+    id: "session-card-9f3c1a7042e8"
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 

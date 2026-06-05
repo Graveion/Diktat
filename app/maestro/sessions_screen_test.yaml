@@ -15,7 +15,7 @@ appId: com.graveion.diktat
 - assertVisible:
     id: "new-session-button"
 - assertVisible:
-    id: "session-card-mock-session-001"
+    id: "session-card-9f3c1a7042e8"
 - takeScreenshot: "maestro/screenshots/sessions_01_list"
 
 # Search: matching query keeps the card
@@ -24,7 +24,7 @@ appId: com.graveion.diktat
 - inputText: "pac"
 - waitForAnimationToEnd
 - assertVisible:
-    id: "session-card-mock-session-001"
+    id: "session-card-9f3c1a7042e8"
 - takeScreenshot: "maestro/screenshots/sessions_02_search_match"
 
 # Search: non-matching query shows empty state

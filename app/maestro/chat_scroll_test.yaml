@@ -16,7 +16,7 @@ appId: com.graveion.diktat
 
 # Tap the storefront session row via testID
 - tapOn:
-    id: "session-card-mock-session-001"
+    id: "session-card-9f3c1a7042e8"
 - waitForAnimationToEnd
 - takeScreenshot: "maestro/screenshots/02_chat_immediately_after_tap"
 

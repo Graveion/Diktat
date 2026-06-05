@@ -33,7 +33,7 @@ function generateCode(): string {
 const PAIRING_TTL_MS = 10 * 60 * 1000;
 
 const MOCK_MACHINES: Machine[] = [
-  { id: "mock-mac", name: "Mock Studio", lastSeenAt: new Date().toISOString() },
+  { id: "mock-mac", name: "MacBook Pro", lastSeenAt: new Date().toISOString() },
 ];
 
 export interface MachinesApi {
