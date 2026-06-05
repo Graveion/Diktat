@@ -28,7 +28,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSpeechRecognitionUsageDescription": "Diktat uses speech recognition to transcribe your voice into coding instructions.",
-        "NSMicrophoneUsageDescription": "Diktat needs microphone access to record your voice instructions."
+        "NSMicrophoneUsageDescription": "Diktat needs microphone access to record your voice instructions.",
+        "NSPhotoLibraryUsageDescription": "Diktat only uses the camera to scan pairing QR codes; it does not access your photo library.",
+        "NSPhotoLibraryAddUsageDescription": "Diktat only uses the camera to scan pairing QR codes; it does not save anything to your photo library."
       }
     },
     "android": {
