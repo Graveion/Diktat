@@ -14,3 +14,6 @@
 # Anchored to repo root so it does NOT match app/src/store/ (which EAS would
 # then drop from the build, breaking module resolution).
 /store/
+
+# macOS
+.DS_Store

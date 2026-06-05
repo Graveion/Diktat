@@ -31,6 +31,7 @@ function usage(): never {
       "  start [-f]      Start the daemon (background; -f for foreground)",
       "  stop            Stop the background daemon",
       "  status          Show whether the daemon is running",
+      "  logs            Follow the daemon logs",
       "  setup           Interactive setup",
     ].join("\n"),
   );
@@ -87,9 +88,15 @@ async function start(): Promise<never> {
   });
   proc.unref();
   writeFileSync(PID_FILE, String(proc.pid));
+  const displayLog = LOG_FILE.replace(homedir(), "~");
   console.log(`Diktat daemon started (pid ${proc.pid}).`);
-  console.log(`  Logs:  ${LOG_FILE}`);
-  console.log(`  Stop:  diktat stop`);
+  console.log("");
+  console.log("  Commands:");
+  console.log("    diktat status   Check whether it's running");
+  console.log("    diktat logs     Follow the daemon logs");
+  console.log("    diktat stop     Stop the daemon");
+  console.log("");
+  console.log(`  Logs: ${displayLog}`);
   process.exit(0);
 }
 
@@ -117,6 +124,21 @@ function status(): never {
   process.exit(0);
 }
 
+/** Tail the daemon log (follow), like `diktat logs`. */
+async function logs(): Promise<never> {
+  if (!existsSync(LOG_FILE)) {
+    console.log("No logs yet. Start the daemon first:  diktat start");
+    process.exit(0);
+  }
+  const proc = Bun.spawn(["tail", "-f", LOG_FILE], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  await proc.exited;
+  process.exit(proc.exitCode ?? 0);
+}
+
 switch (cmd) {
   case "pair":
     await runAttached("pair.ts", rest);
@@ -129,6 +151,9 @@ switch (cmd) {
     break;
   case "status":
     status();
+    break;
+  case "logs":
+    await logs();
     break;
   case "setup":
     await runAttached("setup.ts", rest);
