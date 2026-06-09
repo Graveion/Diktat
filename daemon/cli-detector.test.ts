@@ -69,16 +69,20 @@ test("detectCLIs: only includes CLIs found on PATH", async () => {
   expect(result.cursor).toBeUndefined();
 });
 
-test("detectCLIs: includes both when both resolve", async () => {
+test("detectCLIs: includes all when they resolve", async () => {
+  const paths: Record<string, string> = {
+    claude: "/bin/claude\n",
+    agent: "/bin/agent\n",
+    copilot: "/bin/copilot\n",
+  };
   const spawn: SpawnFn = (cmd) => {
     if (cmd[0] === "which") {
-      const out = cmd[1] === "claude" ? "/bin/claude\n" : "/bin/agent\n";
-      return stubProc(out, 0);
+      return stubProc(paths[cmd[1]!] ?? "/bin/unknown\n", 0);
     }
     return stubProc(cmd[2] ?? "", 0); // readlink echoes input
   };
   const result = await detectCLIs(spawn);
-  expect(result).toEqual({ claude: "/bin/claude", cursor: "/bin/agent" });
+  expect(result).toEqual({ claude: "/bin/claude", cursor: "/bin/agent", copilot: "/bin/copilot" });
 });
 
 test("detectCLIs: empty when nothing on PATH", async () => {

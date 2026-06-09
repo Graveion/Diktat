@@ -38,7 +38,10 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
   try {
     return {
       ...base,
-      sessions: listSessions().filter((s) => !s.cliSessionId || claudeSessionExists(s.cliSessionId)),
+      // The stale-resume check only applies to Claude sessions (their id maps to
+      // a Claude session file). Cursor/Copilot daemon sessions own their id, so
+      // never drop them here.
+      sessions: listSessions().filter((s) => s.cli !== "claude" || !s.cliSessionId || claudeSessionExists(s.cliSessionId)),
       claudeSessions: listClaudeSessions(),
       cursorSessions: listCursorSessions(),
     };

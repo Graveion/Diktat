@@ -30,6 +30,20 @@ async function checkClaudeLogin(): Promise<boolean> {
   }
 }
 
+async function checkCopilotLogin(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(
+      ["copilot", "-p", "hi", "--silent", "--allow-all-tools", "--no-color"],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stderr).text();
+    await proc.exited;
+    return !/No authentication information found/i.test(text);
+  } catch {
+    return false;
+  }
+}
+
 async function runLogin(cli: string): Promise<void> {
   print(`  Running: ${cli} login`);
   const proc = Bun.spawn([cli, "login"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
@@ -173,6 +187,19 @@ async function main() {
           ok("Shell(*) added to ~/.cursor/cli-config.json");
         } else {
           info("Skipped — cursor sessions may have limited shell access.");
+        }
+      }
+    } else if (cli === "copilot") {
+      const loggedIn = await checkCopilotLogin();
+      if (loggedIn) {
+        ok("GitHub Copilot is authenticated");
+      } else {
+        fail("GitHub Copilot is not authenticated");
+        const doLogin = (await ask("  Log in to Copilot now? (y/n): ")).trim().toLowerCase();
+        if (doLogin === "y") {
+          await runLogin("copilot");
+        } else {
+          info("Skipping — run `copilot` then `/login` (or set GITHUB_TOKEN) before starting the daemon.");
         }
       }
     }

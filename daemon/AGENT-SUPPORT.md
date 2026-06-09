@@ -1,7 +1,20 @@
 # Expanding agent support — plan
 
-**Status:** planned · post-release task. Today Diktat supports **Claude Code** and
-**Cursor**. This documents how to add more agentic coding CLIs cleanly.
+**Status:** planned · post-release task. Today Diktat supports **Claude Code**,
+**Cursor**, and **GitHub Copilot** (text-mode v1 — see note below). This
+documents how to add more agentic coding CLIs cleanly.
+
+> **GitHub Copilot (added, text-mode v1):** wired via the same two seams
+> (`KNOWN_CLIS` + `buildArgs`). It runs `copilot -p "<prompt>" --allow-all-tools
+> --silent --no-color --session-id <uuid>` and forwards the plain response text
+> verbatim (the existing `{type:"output"}` passthrough). We **own the session
+> UUID** (`--session-id` both creates and resumes), so no session-id scraping.
+> What's missing vs Claude/Cursor: **rich tool previews** (diffs/results) and
+> **history import**, because those need Copilot's `--output-format json` JSONL
+> event schema, which isn't documented here and couldn't be captured offline
+> (the CLI is a compiled binary and needs auth to run). **Follow-up:** capture one
+> authed `--output-format json` sample, then add `parseCopilotChunk` to emit
+> `tool_use`/`tool_result` events.
 
 ## The landscape (major agentic CLIs)
 
@@ -9,6 +22,7 @@
 |---|---|---|---|---|---|
 | Claude Code | `claude` | `-p "<prompt>"` | structured `stream-json` | `--resume <id>` | **supported** |
 | Cursor | `agent`/`cursor` | `-p "<prompt>"` | structured `stream-json` | `--resume=<id>` | **supported**, `--mode`, `--trust` |
+| GitHub Copilot | `copilot` | `-p "<prompt>"` | text (`--silent`); JSONL via `--output-format json` | `--session-id <uuid>` (we own it) | **supported** (text v1; JSON parser TODO), `--allow-all-tools` |
 | OpenAI Codex CLI | `codex` | `codex exec "<prompt>"` | experimental JSON event stream | session files | open source (Rust) |
 | Gemini CLI | `gemini` | `-p "<prompt>"` | streaming text; JSON option | partial | open source (Google) |
 | Aider | `aider` | `-m "<msg>" --yes` | **plain text + diffs** (no structured JSON) | chat history | huge install base |

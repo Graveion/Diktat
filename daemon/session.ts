@@ -37,6 +37,18 @@ function buildArgs(cli: string, cliPath: string, text: string, cliSessionId?: st
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
         ...(mode ? ["--mode", mode] : []),
       ];
+    case "copilot":
+      // GitHub Copilot CLI. v1 streams the plain response text (--silent), which
+      // the daemon forwards verbatim — no JSONL schema to parse yet. We own the
+      // session UUID: --session-id sets it for a new session and resumes it
+      // thereafter, so follow-ups continue the same conversation.
+      return [
+        cliPath, "-p", text,
+        "--allow-all-tools",
+        "--silent",
+        "--no-color",
+        ...(cliSessionId ? ["--session-id", cliSessionId] : []),
+      ];
     default:
       throw new Error(`Unknown CLI: ${cli}`);
   }
@@ -124,7 +136,7 @@ export class Session {
   }
 
   async send(text: string, pushToken?: string): Promise<void> {
-    const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent" };
+    const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent", copilot: "copilot" };
     const cliPath = this.data.cliPath ?? CLI_FALLBACK[this.data.cli] ?? this.data.cli;
     const cwd = existsSync(this.data.project) ? this.data.project : process.env.HOME ?? process.cwd();
     await this.runCLI(cliPath, cwd, text, pushToken);
@@ -134,6 +146,12 @@ export class Session {
     // Reset the per-run accumulator at the start of a fresh run. On the retry
     // path we keep the original start time but clear any partial state.
     this.run = newRunAccumulator(retry ? this.run.startedAt : Date.now());
+    // Copilot lets us own the session UUID (--session-id both creates and
+    // resumes), so mint one up front the first time we run this session.
+    if (this.data.cli === "copilot" && !this.data.cliSessionId && !retry) {
+      this.data.cliSessionId = crypto.randomUUID();
+      saveSession(this.data);
+    }
     const sessionId = retry ? undefined : this.data.cliSessionId;
     const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.mode);
     const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
