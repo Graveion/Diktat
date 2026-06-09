@@ -43,16 +43,23 @@ v1 — see notes below). This documents how to add more agentic coding CLIs clea
 The `history` field in each `agents.ts` contract records *where* an agent keeps
 its transcripts and *whether we read them yet*. The ecosystem pattern:
 
-- **Content is almost always per-session JSONL.** Claude (`~/.claude/projects`)
-  and the Cursor CLI (`~/.cursor/projects/**/agent-transcripts`) we read directly.
-- **A SQLite `.db`, when present, is usually an *index* over those JSONL files,
-  not the content store.** Codex CLI's `state_*.sqlite` has a `threads` table
-  whose `rollout_path` column points at `~/.codex/sessions/**/rollout-*.jsonl`
-  (we'd read the JSONL for content; the DB only for fast listing/preview/cwd).
-- **Desktop apps are the exception** — they bury chat content *inside* the DB
-  (Cursor desktop `state.vscdb` → `ItemTable`; Codex desktop `orbit.db`). These
-  are a bigger lift and intentionally **not** covered; our integration is
-  CLI-driven.
+- **Content is often per-session JSONL.** Claude (`~/.claude/projects`), the
+  Cursor CLI (`~/.cursor/projects/**/agent-transcripts`), and Codex
+  (`~/.codex/sessions/**/rollout-*.jsonl`) we read directly. For Codex the
+  `state_*.sqlite` `threads.rollout_path` is just an index pointing at the JSONL.
+- **Some CLIs keep the transcript *in* a SQLite DB** (not JSONL):
+  - **GitHub Copilot** — `~/.copilot/session-store.db`: `sessions` + `turns`
+    (user_message/assistant_response) + `forge_trajectory_events` (tool calls).
+    Read via `bun:sqlite` (`copilot-sessions.ts`).
+  - **Kiro** (= Amazon Q CLI rebranded) — `~/Library/Application Support/kiro-cli/
+    data.sqlite3`: `conversations(key=cwd, value=serde_json(ConversationState))`.
+    Read via `bun:sqlite` (`kiro-sessions.ts`); tolerates the table being absent
+    until a chat persists one.
+- **Desktop apps** bury content in their own DBs (Cursor desktop `state.vscdb`,
+  Codex desktop `orbit.db`) — a separate, opt-in lift, intentionally not covered.
+
+All five supported CLIs now have history readers; the per-agent store + reader
+status lives in `agents.ts` (`history` field).
 
 **Bounded reads (hard limits):** `file-read.ts` ensures we never slurp a whole
 transcript. `readTail` reads at most `TAIL_BYTES` (1 MB) from the end for history

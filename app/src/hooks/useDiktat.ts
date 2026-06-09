@@ -9,7 +9,7 @@ export type DiktatSession = {
   projectLabel?: string;
   firstMessage?: string;
   lastActiveAt: string;
-  source: "daemon" | "claude" | "cursor" | "codex";
+  source: "daemon" | "claude" | "cursor" | "codex" | "copilot" | "kiro";
 };
 
 export type DiktatMessage = {
@@ -182,13 +182,12 @@ export function useDiktat(relay?: RelayDescriptor) {
           claudeSessions: msg.claudeSessions,
           cursorSessions: msg.cursorSessions,
           codexSessions: msg.codexSessions,
+          copilotSessions: msg.copilotSessions,
+          kiroSessions: msg.kiroSessions,
         });
         setSessions(all);
-        const claudeCount = all.filter((s) => s.source === "claude").length;
-        const cursorCount = all.filter((s) => s.source === "cursor").length;
-        const codexCount = all.filter((s) => s.source === "codex").length;
-        const daemonCount = all.filter((s) => s.source === "daemon").length;
-        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeCount} cursor=${cursorCount} codex=${codexCount} daemon=${daemonCount})`);
+        const countBy = (src: string) => all.filter((s) => s.source === src).length;
+        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${countBy("claude")} cursor=${countBy("cursor")} codex=${countBy("codex")} copilot=${countBy("copilot")} kiro=${countBy("kiro")} daemon=${countBy("daemon")})`);
         // Auto-resume session if we reconnected mid-session. Flag this case so
         // the subsequent "resumed" event preserves in-memory messages instead
         // of clearing them (otherwise the just-finished turn vanishes when
@@ -203,6 +202,8 @@ export function useDiktat(relay?: RelayDescriptor) {
             isClaudeSession: session.source === "claude",
             isCursorSession: session.source === "cursor",
             isCodexSession: session.source === "codex",
+            isCopilotSession: session.source === "copilot",
+            isKiroSession: session.source === "kiro",
             project: session.project,
           }));
         }
@@ -393,6 +394,8 @@ export function useDiktat(relay?: RelayDescriptor) {
       isClaudeSession: session.source === "claude",
       isCursorSession: session.source === "cursor",
       isCodexSession: session.source === "codex",
+      isCopilotSession: session.source === "copilot",
+      isKiroSession: session.source === "kiro",
       project: session.project,
     }));
   }, []);

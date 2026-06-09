@@ -160,6 +160,39 @@ export class Session {
     return new Session(ws, data);
   }
 
+  // Open a past Copilot conversation. Copilot resumes by session UUID
+  // (--session-id), so keeping cliSessionId means a follow-up continues it.
+  static fromCopilotSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, cliPath: string): Session {
+    const data: SessionData = {
+      id: crypto.randomUUID(),
+      cli: "copilot",
+      cliPath,
+      project,
+      cliSessionId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+    saveSession(data);
+    return new Session(ws, data);
+  }
+
+  // Open a past Kiro conversation. Kiro resumes the most-recent conversation in
+  // a directory (--resume), so we bind to its cwd and mark it started; a
+  // follow-up resumes it. (Kiro has no settable per-conversation id.)
+  static fromKiroSession(ws: ServerWebSocket<unknown>, project: string, cliPath: string): Session {
+    const data: SessionData = {
+      id: crypto.randomUUID(),
+      cli: "kiro",
+      cliPath,
+      project,
+      started: true,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+    saveSession(data);
+    return new Session(ws, data);
+  }
+
   get id(): string {
     return this.data.id;
   }

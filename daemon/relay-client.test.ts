@@ -51,6 +51,12 @@ const fakeSessionFactory: SessionFactory = {
   fromCodexSession: () => {
     throw new Error("not used");
   },
+  fromCopilotSession: () => {
+    throw new Error("not used");
+  },
+  fromKiroSession: () => {
+    throw new Error("not used");
+  },
 };
 
 function makeCtx(overrides: Partial<MessageContext> = {}): MessageContext {

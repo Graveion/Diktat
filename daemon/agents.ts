@@ -156,7 +156,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     resume: { kind: "owned-uuid", flag: "--session-id" },
     history: {
       kind: "sqlite-blob",
-      reader: false, // schema verified (below); reader TODO
+      reader: true, // copilot-sessions.ts (bun:sqlite)
       db: "~/.copilot/session-store.db",
       notes:
         "Content lives IN the DB (not JSONL). Verified schema: sessions(id,cwd,repository,branch,summary,created_at,updated_at); turns(session_id,turn_index,user_message,assistant_response,timestamp); forge_trajectory_events(session_id,tool_call_id,turn_index,event_type,command,output,exit_code,event_key,event_value) for tool calls; session_files(session_id,file_path,tool_name,turn_index); checkpoints(...) summaries; search_index* FTS. Reader = list from `sessions`, history from `turns` ORDER BY turn_index, tool cards from forge_trajectory_events. (Aux per-session dir at ~/.copilot/session-state/<id>/ holds workspace.yaml/checkpoints/files, not the transcript.)",
@@ -178,7 +178,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     resume: { kind: "resume-dir", flag: "--resume" },
     history: {
       kind: "sqlite-blob",
-      reader: false, // location verified; value JSON shape pending (see notes)
+      reader: true, // kiro-sessions.ts (bun:sqlite); tolerates missing table
       db: "~/Library/Application Support/kiro-cli/data.sqlite3",
       notes:
         "Kiro CLI == Amazon Q Developer CLI rebranded (open source: github.com/aws/amazon-q-developer-cli). Conversations live in a `conversations(key,value)` table (migration 007) keyed by the absolute cwd; value = serde_json of ConversationState. Full source-verified value schema in kiro-conversation.ts (externally-tagged enums: user content {Prompt|ToolUseResults}, assistant {Response|ToolUse}). NB the `conversations` table may be absent until a chat persists one (the build here had only state/history/auth_kv) — a reader must tolerate 'no such table'. Reader TODO.",

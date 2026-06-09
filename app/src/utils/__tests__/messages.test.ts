@@ -20,15 +20,29 @@ describe("mergeSessions", () => {
     ]);
   });
 
-  it("orders claude, then cursor, then codex, then filtered daemon", () => {
+  it("orders claude, cursor, codex, copilot, kiro, then filtered daemon", () => {
     const result = mergeSessions({
       sessions: [{ id: "d1" }],
       claudeSessions: [{ id: "c1" }],
       cursorSessions: [{ id: "u1" }],
       codexSessions: [{ id: "x1" }],
+      copilotSessions: [{ id: "p1" }],
+      kiroSessions: [{ id: "k1" }],
     });
-    expect(result.map((s) => s.id)).toEqual(["c1", "u1", "x1", "d1"]);
-    expect(result.map((s) => s.source)).toEqual(["claude", "cursor", "codex", "daemon"]);
+    expect(result.map((s) => s.id)).toEqual(["c1", "u1", "x1", "p1", "k1", "d1"]);
+    expect(result.map((s) => s.source)).toEqual(["claude", "cursor", "codex", "copilot", "kiro", "daemon"]);
+  });
+
+  it("tags copilot/kiro sessions and drops daemon sessions colliding with their ids", () => {
+    const result = mergeSessions({
+      sessions: [{ id: "d1", cliSessionId: "p1" }, { id: "d2", cliSessionId: "k1" }],
+      copilotSessions: [{ id: "p1", cli: "ignored" }],
+      kiroSessions: [{ id: "k1" }],
+    });
+    expect(result).toEqual([
+      { id: "p1", cli: "copilot", source: "copilot" },
+      { id: "k1", cli: "kiro", source: "kiro" },
+    ]);
   });
 
   it("tags codex sessions and forces cli=codex; drops daemon collisions with a codex id", () => {

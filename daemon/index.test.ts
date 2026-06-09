@@ -65,6 +65,16 @@ const recordingFactory = (created: any[]): SessionFactory => ({
     created.push({ kind: "fromCodex", id, project, cliPath });
     return s;
   },
+  fromCopilotSession: (ws, id, project, cliPath) => {
+    const s = fakeSession("copilot-new", id);
+    created.push({ kind: "fromCopilot", id, project, cliPath });
+    return s;
+  },
+  fromKiroSession: (ws, project, cliPath) => {
+    const s = fakeSession("kiro-new");
+    created.push({ kind: "fromKiro", project, cliPath });
+    return s;
+  },
 });
 
 // ---------------------------------------------------------------------------
