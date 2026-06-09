@@ -1,10 +1,11 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { HistoryMessage } from "./claude-sessions";
 import { toolDisplayName } from "./claude-sessions";
 import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
 import { decodeCursorPath } from "./path-utils";
+import { readHead, readTail } from "./file-read";
 
 function extractToolPath(input: any): string | undefined {
   if (!input) return undefined;
@@ -29,13 +30,7 @@ function projectLabel(projectPath: string): string {
 }
 
 export function readFirstUserMessage(filePath: string): string {
-  try {
-    const buf = Buffer.alloc(4096);
-    const fs = require("fs");
-    const fd = fs.openSync(filePath, "r");
-    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
-    fs.closeSync(fd);
-    const chunk = buf.subarray(0, bytesRead).toString("utf-8");
+    const chunk = readHead(filePath);
     for (const line of chunk.split("\n").filter(Boolean)) {
       try {
         const json = JSON.parse(line);
@@ -54,9 +49,6 @@ export function readFirstUserMessage(filePath: string): string {
       } catch { /* incomplete line at chunk boundary */ }
     }
     return "";
-  } catch {
-    return "";
-  }
 }
 
 export function listCursorSessions(projectsDir = CURSOR_PROJECTS_DIR): CursorSession[] {
@@ -102,7 +94,8 @@ export function readCursorHistory(sessionId: string, limit = 20, projectsDir = C
       const filePath = join(projectsDir, dir, "agent-transcripts", sessionId, `${sessionId}.jsonl`);
       if (!existsSync(filePath)) continue;
 
-      const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+      // Tail with a hard byte cap — we only render the last `limit` messages.
+      const lines = readTail(filePath).split("\n").filter(Boolean);
       const messages: HistoryMessage[] = [];
       const toolIndexById = new Map<string, number>();
 

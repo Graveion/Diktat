@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { readHead, readTail } from "./file-read";
 
 export const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
@@ -15,20 +16,13 @@ export interface ClaudeSession {
 // Read the cwd directly from the JSONL file — every entry has a "cwd" field
 // that is the exact project path Claude used. No encoding/decoding needed.
 export function readProjectCwd(filePath: string): string | null {
-  try {
-    const buf = Buffer.alloc(4096);
-    const fs = require("fs");
-    const fd = fs.openSync(filePath, "r");
-    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
-    fs.closeSync(fd);
-    const chunk = buf.subarray(0, bytesRead).toString("utf-8");
-    for (const line of chunk.split("\n").filter(Boolean)) {
-      try {
-        const json = JSON.parse(line);
-        if (json.cwd) return json.cwd as string;
-      } catch { /* incomplete line */ }
-    }
-  } catch { /* unreadable */ }
+  const chunk = readHead(filePath);
+  for (const line of chunk.split("\n").filter(Boolean)) {
+    try {
+      const json = JSON.parse(line);
+      if (json.cwd) return json.cwd as string;
+    } catch { /* incomplete line at chunk boundary */ }
+  }
   return null;
 }
 
@@ -38,25 +32,16 @@ function projectLabel(projectPath: string): string {
 }
 
 export function readFirstMessage(filePath: string): string {
-  try {
-    const buf = Buffer.alloc(4096);
-    const fs = require("fs");
-    const fd = fs.openSync(filePath, "r");
-    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
-    fs.closeSync(fd);
-    const chunk = buf.subarray(0, bytesRead).toString("utf-8");
-    for (const line of chunk.split("\n").filter(Boolean)) {
-      try {
-        const json = JSON.parse(line);
-        if (json.type === "user" && typeof json.message?.content === "string") {
-          return json.message.content.slice(0, 120);
-        }
-      } catch { /* incomplete line at chunk boundary */ }
-    }
-    return "";
-  } catch {
-    return "";
+  const chunk = readHead(filePath);
+  for (const line of chunk.split("\n").filter(Boolean)) {
+    try {
+      const json = JSON.parse(line);
+      if (json.type === "user" && typeof json.message?.content === "string") {
+        return json.message.content.slice(0, 120);
+      }
+    } catch { /* incomplete line at chunk boundary */ }
   }
+  return "";
 }
 
 import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
@@ -117,7 +102,9 @@ export function readHistory(sessionId: string, limit = 20, projectsDir = CLAUDE_
       const filePath = join(projectsDir, dir, `${sessionId}.jsonl`);
       if (!existsSync(filePath)) continue;
 
-      const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+      // Tail the file (hard byte cap) rather than slurping the whole thing —
+      // we only render the last `limit` messages anyway.
+      const lines = readTail(filePath).split("\n").filter(Boolean);
       const messages: HistoryMessage[] = [];
       // tool_use id → index in `messages` so tool_result can update it
       const toolIndexById = new Map<string, number>();

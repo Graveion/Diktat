@@ -38,6 +38,67 @@ v1 — see notes below). This documents how to add more agentic coding CLIs clea
 > (each turn is a fresh `exec`) and rich tool previews (Codex has `--json` JSONL
 > — parser TODO). Auth: `~/.codex/auth.json` or `OPENAI_API_KEY`; `codex login`.
 
+## History storage (how we replay past conversations)
+
+The `history` field in each `agents.ts` contract records *where* an agent keeps
+its transcripts and *whether we read them yet*. The ecosystem pattern:
+
+- **Content is almost always per-session JSONL.** Claude (`~/.claude/projects`)
+  and the Cursor CLI (`~/.cursor/projects/**/agent-transcripts`) we read directly.
+- **A SQLite `.db`, when present, is usually an *index* over those JSONL files,
+  not the content store.** Codex CLI's `state_*.sqlite` has a `threads` table
+  whose `rollout_path` column points at `~/.codex/sessions/**/rollout-*.jsonl`
+  (we'd read the JSONL for content; the DB only for fast listing/preview/cwd).
+- **Desktop apps are the exception** — they bury chat content *inside* the DB
+  (Cursor desktop `state.vscdb` → `ItemTable`; Codex desktop `orbit.db`). These
+  are a bigger lift and intentionally **not** covered; our integration is
+  CLI-driven.
+
+**Bounded reads (hard limits):** `file-read.ts` ensures we never slurp a whole
+transcript. `readTail` reads at most `TAIL_BYTES` (1 MB) from the end for history
+(we only render the last ~20 messages anyway); `readHead` reads at most
+`HEAD_BYTES` (64 KB) from the start for first-message/cwd peeks. Cost is O(cap),
+independent of file size. (Previously history did `readFileSync(wholeFile)` and
+the peeks used a fixed 4 KB read that could miss a first message pushed past 4 KB.)
+
+## Learnings from Codex's own remote control (for the eventual relay/adapter work)
+
+Codex ships almost exactly Diktat's "phone drives a Mac agent via a cloud relay"
+architecture, mostly open-source under `codex-rs/`. Worth borrowing later:
+
+1. **Target `codex app-server` (stdio JSON-RPC) instead of `codex exec` scraping.**
+   It exposes a typed Thread→Turn→Item protocol: `thread/start|resume|list|read`,
+   `turn/start|interrupt|steer`, and `item/*` streaming notifications
+   (`item/agentMessage/delta`, `item/commandExecution/outputDelta`,
+   `item/fileChange/patchUpdated`, `item/reasoning/textDelta`, …). These map
+   straight onto Diktat's normalized `output`/`tool_use`/`tool_result`/`exit`,
+   and give real `thread/resume` — no JSONL reverse-engineering. (This is the
+   first-class path for the adapter-registry refactor, #22.)
+2. **Copy the pairing-code model.** `remoteControl/pairing/start` → short-lived
+   `{ pairingCode, manualPairingCode?, expiresAt }`; phone redeems against the
+   relay; Mac polls `remoteControl/pairing/status → { claimed }`. The backend
+   `serverId` is **never exposed to clients**. (We already do device-auth pairing;
+   this validates the shape.)
+3. **Relay/account is the source of truth for paired devices; keep local state
+   minimal.** Codex stores only an enrollment tuple `(websocket_url, account_id,
+   client_name) → (server_id, environment_id, server_name)` on the Mac, and does
+   device list/revoke as account-level relay ops. Notably they **added local
+   per-device key bindings (migration 0028) then dropped them (0031)** — a signal
+   not to build a local device-key store on the daemon.
+4. **Split lifecycle supervision from the agent connection.** Their
+   `app-server-daemon` is a thin pidfile/lockfile supervisor (start/stop/enable
+   remote control/auto-update) that prints exactly one JSON object per command;
+   the long-lived agent process owns the outbound relay socket. Diktat's daemon
+   already keeps a clean machine-readable CLI surface — keep that discipline.
+5. **Per-connection notification opt-out + backpressure.** `initialize` accepts
+   `optOutNotificationMethods` so a bandwidth-constrained phone can suppress
+   high-volume deltas; overload is rejected with JSON-RPC `-32001` expecting
+   client backoff. Cheap to mirror in our relay protocol.
+
+> Caveat: the relay/broker itself is **not** open-source — the pairing-code claim
+> logic, phone auth, and relay framing are server-side. The repo only shows the
+> Mac-side client dialing `wss://.../backend-api/wham/remote/control/server`.
+
 ## The landscape (major agentic CLIs)
 
 | Agent | Binary | One-shot invocation | Output format | Resume | Notes |

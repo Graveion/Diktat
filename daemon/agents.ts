@@ -29,6 +29,50 @@ export type ResumeStyle =
 /** What the daemon currently parses from the CLI's stdout. */
 export type OutputFormat = "stream-json" | "text";
 
+/**
+ * Where/how an agent persists past conversations on disk, so we can list
+ * sessions and replay history. Across the ecosystem the *content* almost
+ * always lives in per-session JSONL; a SQLite DB, when present, is usually an
+ * index over those files (e.g. Codex `threads.rollout_path`) rather than the
+ * content store. Desktop apps are the exception — they bury content inside the
+ * DB itself. `reader` flags whether the daemon actually implements this yet.
+ */
+export type HistorySource =
+  | { kind: "none"; reader: false; notes?: string }
+  | {
+      // Content in per-session JSONL files we scan directly (Claude, Cursor CLI).
+      kind: "jsonl-dir";
+      reader: boolean;
+      location: string;     // human-readable glob of the content files
+      recordSchema: string; // shape of each JSONL line
+      notes?: string;
+    }
+  | {
+      // Content in JSONL, but listing/preview/cwd come from a SQLite index
+      // that points at each file (Codex CLI: state_*.sqlite → rollout-*.jsonl).
+      kind: "jsonl-indexed-by-sqlite";
+      reader: boolean;
+      location: string;
+      recordSchema: string;
+      index: {
+        db: string;            // glob of the SQLite index
+        table: string;
+        idCol: string;
+        pathCol: string;       // column holding the JSONL path
+        previewCol?: string;
+        cwdCol?: string;
+      };
+      notes?: string;
+    }
+  | {
+      // Content lives *inside* a SQLite DB (desktop apps: Cursor state.vscdb,
+      // Codex orbit.db). Bigger lift; opt-in, not wired.
+      kind: "sqlite-blob";
+      reader: false;
+      db: string;
+      notes?: string;
+    };
+
 export interface AgentContract {
   id: string;                 // internal key + value of session `cli`
   displayName: string;        // shown in the app
@@ -45,6 +89,8 @@ export interface AgentContract {
   /** Forward stdout through the ANSI stripper before sending to the app. */
   stripAnsi: boolean;
   resume: ResumeStyle;
+  /** Where past conversations live on disk + whether we read them yet. */
+  history: HistorySource;
   /** Optional ordered modes (e.g. Cursor: agent/plan/ask). */
   modes?: string[];
   /** Auth: how `diktat setup` checks it, and how the user logs in. */
@@ -65,6 +111,12 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     structuredEvents: true,
     stripAnsi: false,
     resume: { kind: "server-id", flag: "--resume" },
+    history: {
+      kind: "jsonl-dir",
+      reader: true, // claude-sessions.ts
+      location: "~/.claude/projects/<encoded-cwd>/<session-id>.jsonl",
+      recordSchema: "anthropic-messages (type:user|assistant, message.content blocks)",
+    },
     login: { check: "claude -p hi (stderr)", command: "claude login" },
   },
   cursor: {
@@ -79,6 +131,13 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     structuredEvents: true,
     stripAnsi: false,
     resume: { kind: "server-id", flag: "--resume=" }, // note: `=` form
+    history: {
+      kind: "jsonl-dir",
+      reader: true, // cursor-sessions.ts
+      location: "~/.cursor/projects/<encoded-cwd>/agent-transcripts/<id>/<id>.jsonl",
+      recordSchema: "role:user|assistant with content blocks (Anthropic-like; <user_query> wrappers)",
+      notes: "The Cursor *desktop* app stores chats in a separate sqlite-blob (~/Library/Application Support/Cursor/**/state.vscdb, ItemTable) — not read here.",
+    },
     modes: ["agent", "plan", "ask"],
     login: { check: "IDE-managed", command: "(sign in via the Cursor app)" },
   },
@@ -94,6 +153,11 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     structuredEvents: false, // JSONL via --output-format json — parser TODO
     stripAnsi: false,
     resume: { kind: "owned-uuid", flag: "--session-id" },
+    history: {
+      kind: "none",
+      reader: false,
+      notes: "Copilot persists sessions (resumable by UUID) but the on-disk format isn't captured yet. Follow-up: locate the session store + add a reader.",
+    },
     login: { check: "copilot -p hi (stderr)", command: "copilot login (or GITHUB_TOKEN)" },
     notes: "We own the session UUID via --session-id (sets new / resumes).",
   },
@@ -109,6 +173,11 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     structuredEvents: false, // chat has no JSON event stream (-f json is list-only)
     stripAnsi: true,
     resume: { kind: "resume-dir", flag: "--resume" },
+    history: {
+      kind: "none",
+      reader: false,
+      notes: "Kiro chat is plain text with no documented on-disk transcript format yet. Follow-up: inspect ~/.kiro (or equivalent) for a session store.",
+    },
     login: { check: "kiro-cli whoami", command: "kiro-cli login" },
   },
   codex: {
@@ -125,6 +194,21 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     structuredEvents: false, // `codex exec --json` JSONL — parser TODO
     stripAnsi: true,
     resume: { kind: "none" }, // v1 stateless; codex exec resume / --json TODO
+    history: {
+      kind: "jsonl-indexed-by-sqlite",
+      reader: false, // parseCodexRollout TODO (need one authed rollout sample)
+      location: "~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl",
+      recordSchema: "per-line {timestamp,type,payload}; type=session_meta|response_item|event_msg|turn_context. response_item payloads mirror the OpenAI Responses API (message/function_call/function_call_output/reasoning).",
+      index: {
+        db: "~/.codex/state_*.sqlite",
+        table: "threads",
+        idCol: "id",
+        pathCol: "rollout_path",
+        previewCol: "preview",
+        cwdCol: "cwd",
+      },
+      notes: "The SQLite DB is an index, not the content store — `rollout_path` points at the JSONL. Codex *desktop* (orbit.db) is a separate sqlite-blob store, not covered here. Verify recordSchema against a real authed rollout before building the reader.",
+    },
     login: { check: "~/.codex/auth.json or OPENAI_API_KEY", command: "codex login" },
     notes: "Non-interactive via `codex exec`. Multi-turn resume not wired yet.",
   },
