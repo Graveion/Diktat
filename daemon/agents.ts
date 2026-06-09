@@ -181,7 +181,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
       reader: false, // location verified; value JSON shape pending (see notes)
       db: "~/Library/Application Support/kiro-cli/data.sqlite3",
       notes:
-        "Kiro CLI == Amazon Q Developer CLI rebranded (open source: github.com/aws/amazon-q-developer-cli). DB tables: state(key,value), history, auth_kv, migrations. `--resume` reloads the conversation for the cwd; it's persisted as a serde_json blob in the `state` table keyed by directory (exact key format + value struct being confirmed from the Q source). Reader TODO once the conversation value shape is pinned.",
+        "Kiro CLI == Amazon Q Developer CLI rebranded (open source: github.com/aws/amazon-q-developer-cli). Conversations live in a `conversations(key,value)` table (migration 007) keyed by the absolute cwd; value = serde_json of ConversationState. Full source-verified value schema in kiro-conversation.ts (externally-tagged enums: user content {Prompt|ToolUseResults}, assistant {Response|ToolUse}). NB the `conversations` table may be absent until a chat persists one (the build here had only state/history/auth_kv) — a reader must tolerate 'no such table'. Reader TODO.",
     },
     login: { check: "kiro-cli whoami", command: "kiro-cli login" },
   },
