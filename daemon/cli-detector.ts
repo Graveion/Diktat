@@ -2,6 +2,7 @@ const KNOWN_CLIS: Record<string, string> = {
   claude: "claude",
   cursor: "agent",  // Cursor's agent CLI is the standalone 'agent' binary
   copilot: "copilot",  // GitHub Copilot CLI
+  kiro: "kiro-cli",  // Kiro CLI (AI assistant lives under `kiro-cli chat`)
 };
 
 /** Minimal shape of a spawned process we depend on — lets tests inject a stub. */

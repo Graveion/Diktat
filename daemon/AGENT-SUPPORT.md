@@ -1,8 +1,8 @@
 # Expanding agent support — plan
 
 **Status:** planned · post-release task. Today Diktat supports **Claude Code**,
-**Cursor**, and **GitHub Copilot** (text-mode v1 — see note below). This
-documents how to add more agentic coding CLIs cleanly.
+**Cursor**, **GitHub Copilot**, and **Kiro** (the last two text-mode v1 — see
+notes below). This documents how to add more agentic coding CLIs cleanly.
 
 > **GitHub Copilot (added, text-mode v1):** wired via the same two seams
 > (`KNOWN_CLIS` + `buildArgs`). It runs `copilot -p "<prompt>" --allow-all-tools
@@ -16,6 +16,16 @@ documents how to add more agentic coding CLIs cleanly.
 > authed `--output-format json` sample, then add `parseCopilotChunk` to emit
 > `tool_use`/`tool_result` events.
 
+> **Kiro (added, text-mode v1):** the assistant is `kiro-cli chat`. We run
+> `kiro-cli chat --no-interactive --trust-all-tools "<prompt>"` and forward the
+> response text (ANSI stripped). Kiro has **no settable session id**, so we
+> continue a conversation with `-r/--resume` (most recent in the project dir)
+> after the first turn — tracked by `SessionData.started`. Chat output is plain
+> text (the `-f json` flag is only for `--list-*`), so there are **no rich tool
+> previews** yet. Auth is checked via `kiro-cli whoami` in `diktat setup`.
+> **Follow-up:** if Kiro adds a structured chat event stream, add a parser; and
+> pin the exact session via `--resume-id` (parse it from `--list-sessions`).
+
 ## The landscape (major agentic CLIs)
 
 | Agent | Binary | One-shot invocation | Output format | Resume | Notes |
@@ -23,6 +33,7 @@ documents how to add more agentic coding CLIs cleanly.
 | Claude Code | `claude` | `-p "<prompt>"` | structured `stream-json` | `--resume <id>` | **supported** |
 | Cursor | `agent`/`cursor` | `-p "<prompt>"` | structured `stream-json` | `--resume=<id>` | **supported**, `--mode`, `--trust` |
 | GitHub Copilot | `copilot` | `-p "<prompt>"` | text (`--silent`); JSONL via `--output-format json` | `--session-id <uuid>` (we own it) | **supported** (text v1; JSON parser TODO), `--allow-all-tools` |
+| Kiro | `kiro-cli` | `chat --no-interactive "<prompt>"` | plain text (no chat JSON stream) | `--resume` (most recent in dir) / `--resume-id` | **supported** (text v1), `--trust-all-tools`, ANSI-stripped |
 | OpenAI Codex CLI | `codex` | `codex exec "<prompt>"` | experimental JSON event stream | session files | open source (Rust) |
 | Gemini CLI | `gemini` | `-p "<prompt>"` | streaming text; JSON option | partial | open source (Google) |
 | Aider | `aider` | `-m "<msg>" --yes` | **plain text + diffs** (no structured JSON) | chat history | huge install base |

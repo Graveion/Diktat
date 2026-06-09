@@ -44,6 +44,17 @@ async function checkCopilotLogin(): Promise<boolean> {
   }
 }
 
+async function checkKiroLogin(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["kiro-cli", "whoami"], { stdout: "pipe", stderr: "pipe" });
+    const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+    await proc.exited;
+    return proc.exitCode === 0 && !/not logged in/i.test(out);
+  } catch {
+    return false;
+  }
+}
+
 async function runLogin(cli: string): Promise<void> {
   print(`  Running: ${cli} login`);
   const proc = Bun.spawn([cli, "login"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
@@ -200,6 +211,19 @@ async function main() {
           await runLogin("copilot");
         } else {
           info("Skipping — run `copilot` then `/login` (or set GITHUB_TOKEN) before starting the daemon.");
+        }
+      }
+    } else if (cli === "kiro") {
+      const loggedIn = await checkKiroLogin();
+      if (loggedIn) {
+        ok("Kiro is logged in");
+      } else {
+        fail("Kiro is not logged in");
+        const doLogin = (await ask("  Log in to Kiro now? (y/n): ")).trim().toLowerCase();
+        if (doLogin === "y") {
+          await runLogin("kiro-cli");
+        } else {
+          info("Skipping — run `kiro-cli login` before starting the daemon.");
         }
       }
     }

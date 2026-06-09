@@ -27,12 +27,14 @@ const CLI_LABELS: Record<string, string> = {
   claude: "Claude Code",
   cursor: "Cursor",
   copilot: "GitHub Copilot",
+  kiro: "Kiro",
 };
 
 const CLI_COLOR: Record<string, string> = {
   claude: "#f59e0b",
   cursor: "#a78bfa",
   copilot: "#3fb950",
+  kiro: "#06b6d4",
 };
 
 function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {

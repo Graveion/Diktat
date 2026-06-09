@@ -74,6 +74,7 @@ test("detectCLIs: includes all when they resolve", async () => {
     claude: "/bin/claude\n",
     agent: "/bin/agent\n",
     copilot: "/bin/copilot\n",
+    "kiro-cli": "/bin/kiro-cli\n",
   };
   const spawn: SpawnFn = (cmd) => {
     if (cmd[0] === "which") {
@@ -82,7 +83,7 @@ test("detectCLIs: includes all when they resolve", async () => {
     return stubProc(cmd[2] ?? "", 0); // readlink echoes input
   };
   const result = await detectCLIs(spawn);
-  expect(result).toEqual({ claude: "/bin/claude", cursor: "/bin/agent", copilot: "/bin/copilot" });
+  expect(result).toEqual({ claude: "/bin/claude", cursor: "/bin/agent", copilot: "/bin/copilot", kiro: "/bin/kiro-cli" });
 });
 
 test("detectCLIs: empty when nothing on PATH", async () => {

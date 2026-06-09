@@ -12,6 +12,9 @@ export interface SessionData {
   createdAt: string;
   lastActiveAt: string;
   mode?: string;
+  /** Kiro has no settable session id; once it has run once we resume the most
+   *  recent conversation in the project dir via `--resume`. */
+  started?: boolean;
 }
 
 function ensureSessionsDir() {
