@@ -9,7 +9,7 @@ export type DiktatSession = {
   projectLabel?: string;
   firstMessage?: string;
   lastActiveAt: string;
-  source: "daemon" | "claude" | "cursor";
+  source: "daemon" | "claude" | "cursor" | "codex";
 };
 
 export type DiktatMessage = {
@@ -181,12 +181,14 @@ export function useDiktat(relay?: RelayDescriptor) {
           sessions: msg.sessions,
           claudeSessions: msg.claudeSessions,
           cursorSessions: msg.cursorSessions,
+          codexSessions: msg.codexSessions,
         });
         setSessions(all);
         const claudeCount = all.filter((s) => s.source === "claude").length;
         const cursorCount = all.filter((s) => s.source === "cursor").length;
+        const codexCount = all.filter((s) => s.source === "codex").length;
         const daemonCount = all.filter((s) => s.source === "daemon").length;
-        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeCount} cursor=${cursorCount} daemon=${daemonCount})`);
+        info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${claudeCount} cursor=${cursorCount} codex=${codexCount} daemon=${daemonCount})`);
         // Auto-resume session if we reconnected mid-session. Flag this case so
         // the subsequent "resumed" event preserves in-memory messages instead
         // of clearing them (otherwise the just-finished turn vanishes when
@@ -200,6 +202,7 @@ export function useDiktat(relay?: RelayDescriptor) {
             sessionId: session.id,
             isClaudeSession: session.source === "claude",
             isCursorSession: session.source === "cursor",
+            isCodexSession: session.source === "codex",
             project: session.project,
           }));
         }
@@ -389,6 +392,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       sessionId: session.id,
       isClaudeSession: session.source === "claude",
       isCursorSession: session.source === "cursor",
+      isCodexSession: session.source === "codex",
       project: session.project,
     }));
   }, []);

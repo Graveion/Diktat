@@ -48,6 +48,9 @@ const fakeSessionFactory: SessionFactory = {
   fromCursorSession: () => {
     throw new Error("not used");
   },
+  fromCodexSession: () => {
+    throw new Error("not used");
+  },
 };
 
 function makeCtx(overrides: Partial<MessageContext> = {}): MessageContext {

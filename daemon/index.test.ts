@@ -60,6 +60,11 @@ const recordingFactory = (created: any[]): SessionFactory => ({
     created.push({ kind: "fromCursor", id, project, cliPath });
     return s;
   },
+  fromCodexSession: (ws, id, project, cliPath) => {
+    const s = fakeSession("codex-new", id);
+    created.push({ kind: "fromCodex", id, project, cliPath });
+    return s;
+  },
 });
 
 // ---------------------------------------------------------------------------

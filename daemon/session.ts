@@ -143,6 +143,23 @@ export class Session {
     return new Session(ws, data);
   }
 
+  // Open a past Codex conversation for viewing. Codex has no live resume
+  // (each turn is a fresh `codex exec`), so cliSessionId is kept only for
+  // reference/display — sending a follow-up starts a new exec.
+  static fromCodexSession(ws: ServerWebSocket<unknown>, cliSessionId: string, project: string, cliPath: string): Session {
+    const data: SessionData = {
+      id: crypto.randomUUID(),
+      cli: "codex",
+      cliPath,
+      project,
+      cliSessionId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+    saveSession(data);
+    return new Session(ws, data);
+  }
+
   get id(): string {
     return this.data.id;
   }

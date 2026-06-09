@@ -20,14 +20,23 @@ describe("mergeSessions", () => {
     ]);
   });
 
-  it("orders claude, then cursor, then filtered daemon", () => {
+  it("orders claude, then cursor, then codex, then filtered daemon", () => {
     const result = mergeSessions({
       sessions: [{ id: "d1" }],
       claudeSessions: [{ id: "c1" }],
       cursorSessions: [{ id: "u1" }],
+      codexSessions: [{ id: "x1" }],
     });
-    expect(result.map((s) => s.id)).toEqual(["c1", "u1", "d1"]);
-    expect(result.map((s) => s.source)).toEqual(["claude", "cursor", "daemon"]);
+    expect(result.map((s) => s.id)).toEqual(["c1", "u1", "x1", "d1"]);
+    expect(result.map((s) => s.source)).toEqual(["claude", "cursor", "codex", "daemon"]);
+  });
+
+  it("tags codex sessions and forces cli=codex; drops daemon collisions with a codex id", () => {
+    const result = mergeSessions({
+      sessions: [{ id: "d1", cliSessionId: "x1" }],
+      codexSessions: [{ id: "x1", cli: "ignored" }],
+    });
+    expect(result).toEqual([{ id: "x1", cli: "codex", source: "codex" }]);
   });
 
   it("drops a daemon session whose cliSessionId collides with a claude id", () => {

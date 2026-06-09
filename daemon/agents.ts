@@ -196,7 +196,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     resume: { kind: "none" }, // v1 stateless; codex exec resume / --json TODO
     history: {
       kind: "jsonl-indexed-by-sqlite",
-      reader: false, // parseCodexRollout TODO (need one authed rollout sample)
+      reader: true, // codex-sessions.ts (parseCodexRollout / listCodexSessions)
       location: "~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl",
       recordSchema: "per-line {timestamp,type,payload}; type=session_meta|response_item|compacted|turn_context|event_msg. response_item payload carries its OWN nested type (message/function_call/function_call_output/reasoning/...). Full typed schema in codex-rollout.ts (derived from openai/codex Rust serde).",
       index: {
@@ -207,7 +207,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
         previewCol: "preview",
         cwdCol: "cwd",
       },
-      notes: "The SQLite DB is an index, not the content store — `rollout_path` points at the JSONL. Codex *desktop* (orbit.db) is a separate sqlite-blob store, not covered here. Schema is source-verified (codex-rollout.ts); parseCodexRollout is the remaining work.",
+      notes: "The SQLite DB is an index, not the content store — `rollout_path` points at the JSONL; we read the JSONL directly (no DB dependency). Codex *desktop* (orbit.db) is a separate sqlite-blob store, not covered here. Conversation text + tool calls/results are exact; tool-argument previews are best-effort (the `arguments` JSON shape isn't in the schema) until an authed sample lands.",
     },
     login: { check: "~/.codex/auth.json or OPENAI_API_KEY", command: "codex login" },
     notes: "Non-interactive via `codex exec`. Multi-turn resume not wired yet.",

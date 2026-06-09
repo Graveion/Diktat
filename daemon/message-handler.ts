@@ -1,6 +1,7 @@
 import { Session } from "./session";
 import { readHistory, listClaudeSessions, claudeSessionExists } from "./claude-sessions";
 import { readCursorHistory, listCursorSessions } from "./cursor-sessions";
+import { readCodexHistory, listCodexSessions } from "./codex-sessions";
 import { listSessions } from "./session-store";
 
 /**
@@ -21,6 +22,7 @@ export interface MessageContext {
   /** History readers — injectable for tests. Default to the real readers. */
   readClaudeHistory?: typeof readHistory;
   readCursorHistory?: typeof readCursorHistory;
+  readCodexHistory?: typeof readCodexHistory;
 }
 
 /**
@@ -44,10 +46,11 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
       sessions: listSessions().filter((s) => s.cli !== "claude" || !s.cliSessionId || claudeSessionExists(s.cliSessionId)),
       claudeSessions: listClaudeSessions(),
       cursorSessions: listCursorSessions(),
+      codexSessions: listCodexSessions(),
     };
   } catch (e) {
     console.error("Error building connected message:", e);
-    return { ...base, sessions: [], claudeSessions: [], cursorSessions: [] };
+    return { ...base, sessions: [], claudeSessions: [], cursorSessions: [], codexSessions: [] };
   }
 }
 
@@ -56,6 +59,7 @@ export interface SessionFactory {
   resume(ws: any, sessionId: string): Session | null;
   fromClaudeSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
   fromCursorSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
+  fromCodexSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
 }
 
 const defaultSessionFactory: SessionFactory = {
@@ -63,6 +67,7 @@ const defaultSessionFactory: SessionFactory = {
   resume: (ws, id) => Session.resume(ws, id),
   fromClaudeSession: (ws, id, project, cliPath) => Session.fromClaudeSession(ws, id, project, cliPath),
   fromCursorSession: (ws, id, project, cliPath) => Session.fromCursorSession(ws, id, project, cliPath),
+  fromCodexSession: (ws, id, project, cliPath) => Session.fromCodexSession(ws, id, project, cliPath),
 };
 
 /**
@@ -73,6 +78,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
   const factory = ctx.sessionFactory ?? defaultSessionFactory;
   const readClaude = ctx.readClaudeHistory ?? readHistory;
   const readCursor = ctx.readCursorHistory ?? readCursorHistory;
+  const readCodex = ctx.readCodexHistory ?? readCodexHistory;
 
   if (msg.type === "spawn") {
     if (!ctx.availableCLIs[msg.cli]) {
@@ -94,19 +100,27 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ? factory.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd(), ctx.availableCLIs["claude"] ?? "claude")
       : msg.isCursorSession
         ? factory.fromCursorSession(ws, msg.sessionId, msg.project ?? process.cwd(), ctx.availableCLIs["cursor"] ?? "agent")
-        : factory.resume(ws, msg.sessionId);
+        : msg.isCodexSession
+          ? factory.fromCodexSession(ws, msg.sessionId, msg.project ?? process.cwd(), ctx.availableCLIs["codex"] ?? "codex")
+          : factory.resume(ws, msg.sessionId);
     if (!session) {
       ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
       return;
     }
     ctx.activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
-    // Read history async — don't block the event loop on large JSONL files
-    const historyId = msg.isClaudeSession ? msg.sessionId : session.summary.cliSessionId;
+    // Read history async — don't block the event loop on large JSONL files.
+    // Claude/Codex history is keyed by the on-disk session id (msg.sessionId);
+    // Cursor/others by the daemon session's captured cliSessionId.
+    const historyId = msg.isClaudeSession || msg.isCodexSession ? msg.sessionId : session.summary.cliSessionId;
     if (historyId) {
       setImmediate(async () => {
         try {
-          const history = msg.isCursorSession ? readCursor(historyId) : readClaude(historyId);
+          const history = msg.isCursorSession
+            ? readCursor(historyId)
+            : msg.isCodexSession
+              ? readCodex(historyId)
+              : readClaude(historyId);
           if (history.length > 0) {
             ws.send(JSON.stringify({ type: "history", messages: history }));
           }

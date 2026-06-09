@@ -12,21 +12,22 @@ export type MergeSessionsInput = {
   sessions?: any[];
   claudeSessions?: any[];
   cursorSessions?: any[];
+  codexSessions?: any[];
 };
 
 /**
- * Combine daemon + claude + cursor sessions, tag each with `source`, and drop
- * daemon sessions whose `cliSessionId` collides with a native (claude/cursor)
- * session id. Mirrors useDiktat.ts lines 111-117 exactly, including ordering:
- * claude, then cursor, then the filtered daemon sessions.
+ * Combine daemon + claude + cursor + codex sessions, tag each with `source`, and
+ * drop daemon sessions whose `cliSessionId` collides with a native session id.
+ * Ordering: claude, cursor, codex, then the filtered daemon sessions.
  */
 export function mergeSessions(input: MergeSessionsInput): DiktatSession[] {
   const daemonSessions: any[] = (input.sessions ?? []).map((s: any) => ({ ...s, source: "daemon" }));
   const claudeSessions: any[] = (input.claudeSessions ?? []).map((s: any) => ({ ...s, source: "claude", cli: "claude" }));
   const cursorSessions: any[] = (input.cursorSessions ?? []).map((s: any) => ({ ...s, source: "cursor", cli: "cursor" }));
-  const nativeIds = new Set([...claudeSessions, ...cursorSessions].map((s) => s.id));
+  const codexSessions: any[] = (input.codexSessions ?? []).map((s: any) => ({ ...s, source: "codex", cli: "codex" }));
+  const nativeIds = new Set([...claudeSessions, ...cursorSessions, ...codexSessions].map((s) => s.id));
   const filteredDaemon = daemonSessions.filter((s) => !s.cliSessionId || !nativeIds.has(s.cliSessionId));
-  return [...claudeSessions, ...cursorSessions, ...filteredDaemon];
+  return [...claudeSessions, ...cursorSessions, ...codexSessions, ...filteredDaemon];
 }
 
 /**
