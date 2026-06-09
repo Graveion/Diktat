@@ -12,6 +12,7 @@ import {
   summaryToPushData,
   type RunAccumulator,
 } from "./run-summary";
+import { permissionFlags, modelFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
 
 function pickToolPath(input: any): string | undefined {
   if (!input) return undefined;
@@ -26,54 +27,62 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b[<-?]?[0-9;]*[a-zA-Z]/g, "");
 }
 
-function buildArgs(cli: string, cliPath: string, text: string, cliSessionId?: string, mode?: string, resume?: boolean): string[] {
+// Permission flags (per normalized tier) and the optional --model flag come
+// from the agents.ts contract, so this only owns prompt placement + resume.
+function buildArgs(
+  cli: string,
+  cliPath: string,
+  text: string,
+  cliSessionId?: string,
+  permissionMode: PermissionModeId = DEFAULT_PERMISSION_MODE,
+  model?: string,
+  resume?: boolean,
+): string[] {
+  const perm = permissionFlags(cli, permissionMode);
+  const mdl = modelFlags(model);
   switch (cli) {
     case "claude":
       return [
         cliPath, "-p", text,
         "--output-format", "stream-json",
         "--verbose",
+        ...perm, ...mdl,
         ...(cliSessionId ? ["--resume", cliSessionId] : []),
       ];
     case "cursor":
       return [
-        cliPath, "--trust", "-p", text,
+        cliPath, "-p", text,
         "--output-format", "stream-json",
         "--stream-partial-output",
+        ...perm, ...mdl,
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
-        ...(mode ? ["--mode", mode] : []),
       ];
     case "copilot":
       // GitHub Copilot CLI. v1 streams the plain response text (--silent), which
-      // the daemon forwards verbatim — no JSONL schema to parse yet. We own the
-      // session UUID: --session-id sets it for a new session and resumes it
-      // thereafter, so follow-ups continue the same conversation.
+      // the daemon forwards verbatim. We own the session UUID: --session-id sets
+      // it for a new session and resumes it thereafter.
       return [
         cliPath, "-p", text,
-        "--allow-all-tools",
-        "--silent",
-        "--no-color",
+        "--silent", "--no-color",
+        ...perm, ...mdl,
         ...(cliSessionId ? ["--session-id", cliSessionId] : []),
       ];
     case "kiro":
-      // Kiro CLI. The assistant is `kiro-cli chat`; --no-interactive runs it
-      // headless and prints the response text (no JSONL schema). Kiro has no
-      // settable session id, so we continue a session with --resume (most
-      // recent conversation in the project dir). INPUT is positional → last.
+      // Kiro CLI. `kiro-cli chat --no-interactive` runs headless. Kiro has no
+      // settable session id, so we continue with --resume (most recent in dir).
+      // INPUT is positional → last.
       return [
-        cliPath, "chat", "--no-interactive", "--trust-all-tools",
+        cliPath, "chat", "--no-interactive",
+        ...perm, ...mdl,
         ...(resume ? ["--resume"] : []),
         text,
       ];
     case "codex":
       // Codex CLI. `codex exec` is the non-interactive runner; PROMPT is
-      // positional. Autonomous but sandboxed (never-ask + workspace-write).
-      // Multi-turn resume is not wired yet — each turn is a fresh exec. Output
-      // is plain text (ANSI-stripped). See agents.ts.
+      // positional. Multi-turn resume not wired (each turn is a fresh exec).
       return [
         cliPath, "exec",
-        "--ask-for-approval", "never",
-        "--sandbox", "workspace-write",
+        ...perm, ...mdl,
         text,
       ];
     default:
@@ -94,7 +103,14 @@ export class Session {
     this.data = data;
   }
 
-  static create(ws: ServerWebSocket<unknown>, cli: string, cliPath: string, project: string, mode?: string): Session {
+  static create(
+    ws: ServerWebSocket<unknown>,
+    cli: string,
+    cliPath: string,
+    project: string,
+    model?: string,
+    permissionMode?: PermissionModeId,
+  ): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
       cli,
@@ -102,7 +118,8 @@ export class Session {
       project,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
-      ...(mode ? { mode } : {}),
+      ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
     };
     saveSession(data);
     return new Session(ws, data);
@@ -204,6 +221,8 @@ export class Session {
       project: this.data.project,
       cliSessionId: this.data.cliSessionId,
       lastActiveAt: this.data.lastActiveAt,
+      ...(this.data.model ? { model: this.data.model } : {}),
+      ...(this.data.permissionMode ? { permissionMode: this.data.permissionMode } : {}),
     };
   }
 
@@ -232,7 +251,7 @@ export class Session {
     const sessionId = retry ? undefined : this.data.cliSessionId;
     // Kiro: after the first turn, resume the most recent conversation in this dir.
     const kiroResume = this.data.cli === "kiro" && !!this.data.started && !retry;
-    const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.mode, kiroResume);
+    const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.permissionMode ?? DEFAULT_PERMISSION_MODE, this.data.model, kiroResume);
     const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
     this.activeProc = proc;
 

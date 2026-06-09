@@ -6,19 +6,20 @@ import {
 import { Swipeable } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
-import type { DiktatSession } from "../hooks/useDiktat";
+import type { DiktatSession, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
 import { loadHiddenSessions, hideSession } from "../store/config";
 import { colors, fonts } from "../theme";
 
 type Props = {
   sessions: DiktatSession[];
   clis: string[];
+  agents?: AgentSelectionMap;
   projects: string[];
   connectedHost?: string;
   connectionState?: string;
   loading: boolean;
   onResume: (session: DiktatSession) => void;
-  onNew: (cli: string, project: string, mode?: string) => void;
+  onNew: (cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => void;
   onDisconnect: () => void;
   onOpenDebug?: () => void;
 };
@@ -109,11 +110,12 @@ function bestProjectName(path: string) {
   return last;
 }
 
-export function SessionsScreen({ sessions, clis, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
+export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>(""); // "" = CLI default
+  const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [titleTaps, setTitleTaps] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -128,14 +130,22 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
   const openPicker = () => {
     setSelectedCli(clis[0] ?? null);
     setSelectedProject(projects[0] ?? null);
-    setSelectedMode(null);
+    setSelectedModel("");
+    setSelectedPermission("auto");
     setShowPicker(true);
+  };
+
+  // Reset model/permission to defaults whenever the chosen CLI changes.
+  const pickCli = (cli: string) => {
+    setSelectedCli(cli);
+    setSelectedModel("");
+    setSelectedPermission("auto");
   };
 
   const handleStart = () => {
     if (selectedCli && selectedProject) {
       setShowPicker(false);
-      onNew(selectedCli, selectedProject, selectedMode ?? undefined);
+      onNew(selectedCli, selectedProject, selectedModel || undefined, selectedPermission);
     }
   };
 
@@ -345,7 +355,7 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
                   key={cli}
                   testID={`cli-${cli}`}
                   style={[pickerStyles.chip, selectedCli === cli && pickerStyles.chipSelected]}
-                  onPress={() => { setSelectedCli(cli); if (cli !== "cursor") setSelectedMode(null); }}
+                  onPress={() => pickCli(cli)}
                 >
                   <Text style={[pickerStyles.chipText, selectedCli === cli && pickerStyles.chipTextSelected]}>
                     {CLI_LABELS[cli] ?? cli}
@@ -354,22 +364,43 @@ export function SessionsScreen({ sessions, clis, projects, connectedHost, connec
               ))}
             </ScrollView>
 
-            {selectedCli === "cursor" ? (
+            {selectedCli && (agents[selectedCli]?.models?.length ?? 0) > 1 ? (
               <>
-                <Text style={pickerStyles.sectionLabel}>Cursor Mode</Text>
+                <Text style={pickerStyles.sectionLabel}>Model</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
-                  {[
-                    { value: null, label: "Agent" },
-                    { value: "plan", label: "Plan" },
-                    { value: "ask", label: "Ask" },
-                  ].map(({ value, label }) => (
+                  {agents[selectedCli]!.models.map((m) => (
                     <TouchableOpacity
-                      key={label}
-                      style={[pickerStyles.chip, selectedMode === value && pickerStyles.chipSelected]}
-                      onPress={() => setSelectedMode(value)}
+                      key={m.id || "default"}
+                      testID={`model-${m.id || "default"}`}
+                      style={[pickerStyles.chip, selectedModel === m.id && pickerStyles.chipSelected]}
+                      onPress={() => setSelectedModel(m.id)}
                     >
-                      <Text style={[pickerStyles.chipText, selectedMode === value && pickerStyles.chipTextSelected]}>
-                        {label}
+                      <Text style={[pickerStyles.chipText, selectedModel === m.id && pickerStyles.chipTextSelected]}>
+                        {m.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
+
+            {selectedCli ? (
+              <>
+                <Text style={pickerStyles.sectionLabel}>Permissions</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                  {(agents[selectedCli]?.permissionModes ?? [
+                    { id: "plan" as PermissionModeId, label: "Plan · read-only" },
+                    { id: "auto" as PermissionModeId, label: "Auto-accept edits" },
+                    { id: "full" as PermissionModeId, label: "Full access" },
+                  ]).map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      testID={`perm-${p.id}`}
+                      style={[pickerStyles.chip, selectedPermission === p.id && pickerStyles.chipSelected]}
+                      onPress={() => setSelectedPermission(p.id)}
+                    >
+                      <Text style={[pickerStyles.chipText, selectedPermission === p.id && pickerStyles.chipTextSelected]}>
+                        {p.label}
                       </Text>
                     </TouchableOpacity>
                   ))}

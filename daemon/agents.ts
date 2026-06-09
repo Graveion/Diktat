@@ -223,3 +223,89 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
 export const KNOWN_CLIS: Record<string, string> = Object.fromEntries(
   Object.values(AGENT_CONTRACTS).map((a) => [a.id, a.binary]),
 );
+
+// ─── Model + permission selection (drives the app's dropdowns) ───────────────
+//
+// Every supported CLI takes a `--model` flag and exposes permissions as flags,
+// so we surface two dropdowns. Their options live here (single source of truth)
+// and ship to the app in the `connected` payload via agentSelectionData().
+
+export interface AgentModel {
+  id: string; // "" → use the CLI's own default (we omit --model)
+  label: string;
+}
+
+/** Normalized, CLI-agnostic permission tiers (mapped to real flags below). */
+export type PermissionModeId = "plan" | "auto" | "full";
+export interface PermissionMode {
+  id: PermissionModeId;
+  label: string;
+}
+export const PERMISSION_MODES: PermissionMode[] = [
+  { id: "plan", label: "Plan · read-only" },
+  { id: "auto", label: "Auto-accept edits" },
+  { id: "full", label: "Full access" },
+];
+export const DEFAULT_PERMISSION_MODE: PermissionModeId = "auto";
+
+// Curated model lists. ids drift per CLI version — edit here. "" = CLI default
+// (always safe). Claude aliases are stable; others kept minimal on purpose.
+export const AGENT_MODELS: Record<string, AgentModel[]> = {
+  claude: [
+    { id: "", label: "Default" },
+    { id: "sonnet", label: "Sonnet" },
+    { id: "opus", label: "Opus" },
+    { id: "haiku", label: "Haiku" },
+  ],
+  cursor: [
+    { id: "", label: "Default" },
+    { id: "auto", label: "Auto" },
+  ],
+  copilot: [
+    { id: "", label: "Default" },
+    { id: "auto", label: "Auto" },
+  ],
+  kiro: [{ id: "", label: "Default" }],
+  codex: [{ id: "", label: "Default" }],
+};
+
+/** `--model` flags for a chosen model id ("" / undefined → none). */
+export function modelFlags(modelId: string | undefined): string[] {
+  return modelId ? ["--model", modelId] : [];
+}
+
+/**
+ * Map a normalized permission tier → the chosen CLI's real flags. These are the
+ * verified per-CLI flags (see each CLI's --help). Tiers:
+ *   plan = read/plan only, no edits · auto = edits allowed · full = unrestricted.
+ */
+export function permissionFlags(cli: string, mode: PermissionModeId): string[] {
+  switch (cli) {
+    case "claude":
+      return ["--permission-mode", mode === "plan" ? "plan" : mode === "auto" ? "acceptEdits" : "bypassPermissions"];
+    case "cursor":
+      // --trust lets it run shell; plan stays read-only via --mode plan.
+      return mode === "plan" ? ["--mode", "plan"] : ["--trust", "--mode", "agent"];
+    case "copilot":
+      // Headless can't prompt; plan = no auto-grant (limited), else allow all.
+      return mode === "plan" ? [] : ["--allow-all-tools"];
+    case "kiro":
+      return mode === "plan" ? ["--trust-tools="] : ["--trust-all-tools"];
+    case "codex":
+      if (mode === "plan") return ["--ask-for-approval", "never", "--sandbox", "read-only"];
+      if (mode === "auto") return ["--ask-for-approval", "never", "--sandbox", "workspace-write"];
+      return ["--dangerously-bypass-approvals-and-sandbox"];
+    default:
+      return [];
+  }
+}
+
+/** Per-CLI selection options for the app's dropdowns (shipped in `connected`). */
+export function agentSelectionData(): Record<string, { displayName: string; models: AgentModel[]; permissionModes: PermissionMode[] }> {
+  return Object.fromEntries(
+    Object.values(AGENT_CONTRACTS).map((a) => [
+      a.id,
+      { displayName: a.displayName, models: AGENT_MODELS[a.id] ?? [{ id: "", label: "Default" }], permissionModes: PERMISSION_MODES },
+    ]),
+  );
+}

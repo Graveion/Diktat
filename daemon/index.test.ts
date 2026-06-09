@@ -44,9 +44,9 @@ function makeCtx(overrides: Partial<MessageContext> = {}): MessageContext {
 }
 
 const recordingFactory = (created: any[]): SessionFactory => ({
-  create: (ws, cli, cliPath, project, mode) => {
+  create: (ws, cli, cliPath, project, model, permissionMode) => {
     const s = fakeSession("new-session-id");
-    created.push({ kind: "create", cli, cliPath, project, mode });
+    created.push({ kind: "create", cli, cliPath, project, model, permissionMode });
     return s;
   },
   resume: (ws, id) => null,
@@ -101,12 +101,12 @@ test("spawn: valid → spawned + session registered", async () => {
   const { ws, sent } = mockWs();
   const created: any[] = [];
   const ctx = makeCtx({ sessionFactory: recordingFactory(created) });
-  await handleClientMessage(ctx, ws, { type: "spawn", cli: "claude", project: "/allowed/project", mode: "ask" });
+  await handleClientMessage(ctx, ws, { type: "spawn", cli: "claude", project: "/allowed/project", model: "opus", permissionMode: "plan" });
   expect(sent).toHaveLength(1);
   expect(sent[0].type).toBe("spawned");
   expect(sent[0].session.id).toBe("new-session-id");
   expect(ctx.activeSessions.get("new-session-id")).toBeDefined();
-  expect(created[0]).toMatchObject({ kind: "create", cli: "claude", cliPath: "/bin/claude", project: "/allowed/project", mode: "ask" });
+  expect(created[0]).toMatchObject({ kind: "create", cli: "claude", cliPath: "/bin/claude", project: "/allowed/project", model: "opus", permissionMode: "plan" });
 });
 
 // ---------------------------------------------------------------------------

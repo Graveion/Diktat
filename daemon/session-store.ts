@@ -11,7 +11,11 @@ export interface SessionData {
   cliSessionId?: string;
   createdAt: string;
   lastActiveAt: string;
-  mode?: string;
+  mode?: string; // legacy (cursor agent/plan/ask) — superseded by permissionMode
+  /** Chosen model id (passed as --model); "" / undefined → CLI default. */
+  model?: string;
+  /** Normalized permission tier ("plan" | "auto" | "full"); default "auto". */
+  permissionMode?: "plan" | "auto" | "full";
   /** Kiro has no settable session id; once it has run once we resume the most
    *  recent conversation in the project dir via `--resume`. */
   started?: boolean;

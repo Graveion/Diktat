@@ -12,6 +12,16 @@ export type DiktatSession = {
   source: "daemon" | "claude" | "cursor" | "codex" | "copilot" | "kiro";
 };
 
+export type PermissionModeId = "plan" | "auto" | "full";
+export type AgentModel = { id: string; label: string };
+export type AgentSelection = {
+  displayName: string;
+  models: AgentModel[];
+  permissionModes: { id: PermissionModeId; label: string }[];
+};
+/** Per-CLI model + permission options, from the daemon's `connected` payload. */
+export type AgentSelectionMap = Record<string, AgentSelection>;
+
 export type DiktatMessage = {
   role: "user" | "assistant" | "tool";
   text: string;
@@ -64,6 +74,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   const [reconnecting, setReconnecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clis, setClis] = useState<string[]>([]);
+  const [agents, setAgents] = useState<AgentSelectionMap>({});
   const [projects, setProjects] = useState<string[]>([]);
   const [sessions, setSessions] = useState<DiktatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -176,6 +187,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       if (msg.type === "connected") {
         setState("connected");
         setClis(msg.clis ?? []);
+        setAgents(msg.agents ?? {});
         setProjects(msg.projects ?? []);
         const all = mergeSessions({
           sessions: msg.sessions,
@@ -380,9 +392,15 @@ export function useDiktat(relay?: RelayDescriptor) {
     setStreaming(false);
   }, []);
 
-  const spawnSession = useCallback((cli: string, project: string, mode?: string) => {
-    info("SESSION", `spawn: cli=${cli} project=${project}${mode ? ` mode=${mode}` : ""}`);
-    ws.current?.send(JSON.stringify({ type: "spawn", cli, project, ...(mode ? { mode } : {}) }));
+  const spawnSession = useCallback((cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => {
+    info("SESSION", `spawn: cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""}`);
+    ws.current?.send(JSON.stringify({
+      type: "spawn",
+      cli,
+      project,
+      ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+    }));
   }, []);
 
   const resumeSession = useCallback((session: DiktatSession) => {
@@ -427,7 +445,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   return {
-    state, reconnecting, errorMessage, clis, projects, sessions, activeSessionId,
+    state, reconnecting, errorMessage, clis, agents, projects, sessions, activeSessionId,
     messages, streaming, currentTool, historyLoading, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,

@@ -66,6 +66,12 @@ const MOCK_REPLY: Array<{ at: number; message: DiktatMessage }> = [
   },
 ];
 
+const MOCK_PERMISSION_MODES = [
+  { id: "plan" as const, label: "Plan · read-only" },
+  { id: "auto" as const, label: "Auto-accept edits" },
+  { id: "full" as const, label: "Full access" },
+];
+
 const MOCK_SESSION: DiktatSession = {
   id: "9f3c1a7042e8",
   cli: "cursor",
@@ -123,7 +129,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     }, 400);
   }, [clearReplyTimers]);
 
-  const spawnSession = useCallback((_cli: string, _project: string, _mode?: string) => {
+  const spawnSession = useCallback((_cli: string, _project: string, _model?: string, _permissionMode?: "plan" | "auto" | "full") => {
     // Create a NEW empty session and make it active with no messages,
     // so the empty-state placeholder is reachable.
     setActiveSessionId(`mock-session-${Date.now()}`);
@@ -171,6 +177,10 @@ export function useMockDiktat(_host?: string, _port?: number) {
     reconnecting,
     errorMessage: null,
     clis: ["cursor", "claude"],
+    agents: {
+      cursor: { displayName: "Cursor", models: [{ id: "", label: "Default" }, { id: "auto", label: "Auto" }], permissionModes: MOCK_PERMISSION_MODES },
+      claude: { displayName: "Claude Code", models: [{ id: "", label: "Default" }, { id: "sonnet", label: "Sonnet" }, { id: "opus", label: "Opus" }, { id: "haiku", label: "Haiku" }], permissionModes: MOCK_PERMISSION_MODES },
+    },
     projects: ["/Users/you/code/storefront"],
     sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION],
     activeSessionId,

@@ -4,6 +4,7 @@ import { readCursorHistory, listCursorSessions } from "./cursor-sessions";
 import { readCodexHistory, listCodexSessions } from "./codex-sessions";
 import { readCopilotHistory, listCopilotSessions } from "./copilot-sessions";
 import { readKiroHistory, listKiroSessions } from "./kiro-sessions";
+import { agentSelectionData } from "./agents";
 import { listSessions } from "./session-store";
 
 /**
@@ -40,6 +41,8 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
     type: "connected" as const,
     clis: Object.keys(ctx.availableCLIs),
     projects: ctx.projects,
+    // Per-CLI model + permission options for the app's dropdowns.
+    agents: agentSelectionData(),
   };
   try {
     return {
@@ -61,7 +64,7 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
 }
 
 export interface SessionFactory {
-  create(ws: any, cli: string, cliPath: string, project: string, mode?: string): Session;
+  create(ws: any, cli: string, cliPath: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full"): Session;
   resume(ws: any, sessionId: string): Session | null;
   fromClaudeSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
   fromCursorSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
@@ -71,7 +74,7 @@ export interface SessionFactory {
 }
 
 const defaultSessionFactory: SessionFactory = {
-  create: (ws, cli, cliPath, project, mode) => Session.create(ws, cli, cliPath, project, mode),
+  create: (ws, cli, cliPath, project, model, permissionMode) => Session.create(ws, cli, cliPath, project, model, permissionMode),
   resume: (ws, id) => Session.resume(ws, id),
   fromClaudeSession: (ws, id, project, cliPath) => Session.fromClaudeSession(ws, id, project, cliPath),
   fromCursorSession: (ws, id, project, cliPath) => Session.fromCursorSession(ws, id, project, cliPath),
@@ -101,7 +104,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
-    const session = factory.create(ws, msg.cli, ctx.availableCLIs[msg.cli]!, msg.project, msg.mode);
+    const session = factory.create(ws, msg.cli, ctx.availableCLIs[msg.cli]!, msg.project, msg.model, msg.permissionMode);
     ctx.activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;
