@@ -65,10 +65,11 @@ export type HistorySource =
       notes?: string;
     }
   | {
-      // Content lives *inside* a SQLite DB (desktop apps: Cursor state.vscdb,
-      // Codex orbit.db). Bigger lift; opt-in, not wired.
+      // Content lives *inside* a SQLite DB rather than JSONL — GitHub Copilot
+      // (~/.copilot/session-store.db), Kiro (Amazon Q's data.sqlite3), and the
+      // desktop apps (Cursor state.vscdb, Codex orbit.db).
       kind: "sqlite-blob";
-      reader: false;
+      reader: boolean;
       db: string;
       notes?: string;
     };
@@ -154,9 +155,11 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     stripAnsi: false,
     resume: { kind: "owned-uuid", flag: "--session-id" },
     history: {
-      kind: "none",
-      reader: false,
-      notes: "Copilot persists sessions (resumable by UUID) but the on-disk format isn't captured yet. Follow-up: locate the session store + add a reader.",
+      kind: "sqlite-blob",
+      reader: false, // schema verified (below); reader TODO
+      db: "~/.copilot/session-store.db",
+      notes:
+        "Content lives IN the DB (not JSONL). Verified schema: sessions(id,cwd,repository,branch,summary,created_at,updated_at); turns(session_id,turn_index,user_message,assistant_response,timestamp); forge_trajectory_events(session_id,tool_call_id,turn_index,event_type,command,output,exit_code,event_key,event_value) for tool calls; session_files(session_id,file_path,tool_name,turn_index); checkpoints(...) summaries; search_index* FTS. Reader = list from `sessions`, history from `turns` ORDER BY turn_index, tool cards from forge_trajectory_events. (Aux per-session dir at ~/.copilot/session-state/<id>/ holds workspace.yaml/checkpoints/files, not the transcript.)",
     },
     login: { check: "copilot -p hi (stderr)", command: "copilot login (or GITHUB_TOKEN)" },
     notes: "We own the session UUID via --session-id (sets new / resumes).",
@@ -174,9 +177,11 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     stripAnsi: true,
     resume: { kind: "resume-dir", flag: "--resume" },
     history: {
-      kind: "none",
-      reader: false,
-      notes: "Kiro chat is plain text with no documented on-disk transcript format yet. Follow-up: inspect ~/.kiro (or equivalent) for a session store.",
+      kind: "sqlite-blob",
+      reader: false, // location verified; value JSON shape pending (see notes)
+      db: "~/Library/Application Support/kiro-cli/data.sqlite3",
+      notes:
+        "Kiro CLI == Amazon Q Developer CLI rebranded (open source: github.com/aws/amazon-q-developer-cli). DB tables: state(key,value), history, auth_kv, migrations. `--resume` reloads the conversation for the cwd; it's persisted as a serde_json blob in the `state` table keyed by directory (exact key format + value struct being confirmed from the Q source). Reader TODO once the conversation value shape is pinned.",
     },
     login: { check: "kiro-cli whoami", command: "kiro-cli login" },
   },
