@@ -1,0 +1,90 @@
+appId: com.graveion.diktat
+---
+# Marketing walkthrough (MOCK_MODE), recorded via `xcrun simctl io recordVideo`.
+# Run _demo_prep.yaml FIRST (settles on the Machines screen off-camera), then
+# this attaches without a restart so the recording opens clean.
+#
+# Story: machines → open the agent session → quick skim of its work → type a
+# follow-up → watch it respond (read, edit, run) → open a tool's output → pull
+# a referenced file straight into the composer.
+
+- launchApp:
+    clearState: false
+    stopApp: false
+- waitForAnimationToEnd
+
+# --- Machines → open the Mac ---
+- assertVisible:
+    text: ".*MacBook Pro.*"
+- tapOn:
+    text: ".*MacBook Pro.*"
+- waitForAnimationToEnd
+
+# --- Sessions → open the storefront agent session ---
+- assertVisible: "storefront"
+- tapOn:
+    id: "session-card-9f3c1a7042e8"
+- waitForAnimationToEnd
+
+# --- Quick skim: up to the original ask, then back to the bottom ---
+- scrollUntilVisible:
+    element:
+      text: ".*Add rate limiting to the checkout endpoint.*"
+    direction: UP
+    speed: 45
+    timeout: 8000
+- scrollUntilVisible:
+    element:
+      text: ".*make the limit configurable.*"
+    direction: DOWN
+    speed: 45
+    timeout: 8000
+
+# --- Type a natural follow-up and send it ---
+- tapOn:
+    id: "message-input"
+- inputText: "Now add a unit test for the burst limit"
+- waitForAnimationToEnd
+- tapOn:
+    id: "send-button"
+
+# --- Watch it respond: typing → read → edit → run → result.
+#     extendedWaitUntil paces the recording to the streamed reply. ---
+- extendedWaitUntil:
+    visible:
+      text: ".*On it.*read the limiter.*"
+    timeout: 6000
+- extendedWaitUntil:
+    visible:
+      text: ".*25/25 passing.*"
+    timeout: 9000
+- waitForAnimationToEnd
+
+# --- Open the test-run tool and hold so its output is readable ---
+- scrollUntilVisible:
+    element:
+      text: ".*Running npm test.*"
+    direction: UP
+    speed: 45
+    timeout: 6000
+- tapOn:
+    text: ".*Running npm test.*"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- tapOn:
+    text: ".*Running npm test.*"
+- waitForAnimationToEnd
+
+# --- Pull a referenced file straight into the composer (tap a Read chip) ---
+- scrollUntilVisible:
+    element:
+      text: ".*Reading rateLimiter.ts.*"
+    direction: UP
+    speed: 45
+    timeout: 6000
+- tapOn:
+    text: ".*Reading rateLimiter.ts.*"
+- waitForAnimationToEnd
+- waitForAnimationToEnd

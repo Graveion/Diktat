@@ -7,6 +7,14 @@ appId: com.graveion.diktat
     point: "27%,64%"
     optional: true
 - waitForAnimationToEnd
+- tapOn:
+    point: "93%,94%"
+    optional: true
+- assertVisible:
+    text: ".*MacBook Pro.*"
+- tapOn:
+    text: ".*MacBook Pro.*"
+- waitForAnimationToEnd
 - assertVisible: "storefront"
 
 # Open the picker

@@ -1,0 +1,17 @@
+appId: com.graveion.diktat
+---
+# Run BEFORE recording: cold-launch, dismiss any system/dev prompts, and
+# settle on the Machines screen. The recording then opens on a clean state.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+# Dismiss the dev LogBox warning banner if present (X, bottom-right).
+- tapOn:
+    point: "93%,94%"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible:
+    text: ".*MacBook Pro.*"

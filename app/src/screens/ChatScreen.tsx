@@ -38,10 +38,8 @@ const SLASH_COMMANDS: Record<string, Array<{ cmd: string; description: string }>
   cursor: [
     { cmd: "/plan",     description: "Switch to plan mode" },
     { cmd: "/ask",      description: "Read-only exploration" },
-    { cmd: "/compress", description: "Free context space" },
-    { cmd: "/new-chat", description: "Start fresh chat" },
     { cmd: "/auto-run", description: "Toggle auto-run" },
-    { cmd: "/max-mode", description: "Toggle max mode" },
+    { cmd: "/compact",  description: "Compact the context" },
     { cmd: "/model",    description: "Set model" },
   ],
   claude: [

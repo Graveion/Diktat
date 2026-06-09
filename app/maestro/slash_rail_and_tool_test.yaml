@@ -7,6 +7,14 @@ appId: com.graveion.diktat
     point: "27%,64%"
     optional: true
 - waitForAnimationToEnd
+- tapOn:
+    point: "93%,94%"
+    optional: true
+- assertVisible:
+    text: ".*MacBook Pro.*"
+- tapOn:
+    text: ".*MacBook Pro.*"
+- waitForAnimationToEnd
 - assertVisible: "storefront"
 
 - tapOn:
@@ -21,7 +29,7 @@ appId: com.graveion.diktat
 - assertVisible:
     id: "slash-/ask"
 - assertVisible:
-    id: "slash-/compress"
+    id: "slash-/compact"
 - takeScreenshot: "maestro/screenshots/rail_01_visible"
 
 # Tapping a slash chip prefixes the input

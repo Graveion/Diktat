@@ -11,6 +11,14 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 
 # App should navigate to sessions screen (mock mode is auto-connected)
+- tapOn:
+    point: "93%,94%"
+    optional: true
+- assertVisible:
+    text: ".*MacBook Pro.*"
+- tapOn:
+    text: ".*MacBook Pro.*"
+- waitForAnimationToEnd
 - assertVisible: "storefront"
 - takeScreenshot: "maestro/screenshots/01_sessions_screen"
 

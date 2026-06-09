@@ -5,9 +5,66 @@
  *
  * Swap in by setting MOCK_MODE = true in App.tsx.
  */
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { DiktatSession, DiktatMessage } from "./useDiktat";
 import { MOCK_MESSAGES } from "../utils/mockMessages";
+
+// Canned "agent reply" played after the user sends a message in MOCK_MODE, so
+// the demo shows the full type → wait → respond flow (typing indicator, a tool
+// action, then the result). Times are cumulative ms from send.
+const MOCK_REPLY: Array<{ at: number; message: DiktatMessage }> = [
+  {
+    at: 800,
+    message: { role: "assistant", text: "On it — I'll read the limiter, add a focused test, then run the suite." },
+  },
+  {
+    // A read: no diff/preview, so its chip injects the file path into the
+    // composer when tapped — the "pull a referenced file into your message" move.
+    at: 1700,
+    message: {
+      role: "tool",
+      text: "",
+      toolName: "Read:rateLimiter.ts",
+      toolPath: "/Users/you/code/storefront/src/middleware/rateLimiter.ts",
+    },
+  },
+  {
+    at: 2700,
+    message: {
+      role: "tool",
+      text: "",
+      toolName: "Edit:rateLimiter.test.ts",
+      toolPath: "/Users/you/code/storefront/src/middleware/rateLimiter.test.ts",
+      toolDiff:
+        "+ it(\"rejects the 61st request inside the window\", () => {\n+   const limit = rateLimiter({ perMinute: 60 });\n+   for (let i = 0; i < 60; i++) expect(call(limit).status).toBe(200);\n+   expect(call(limit).status).toBe(429);\n+ });",
+      toolResult: "The file has been edited successfully.",
+      toolTruncated: false,
+      toolResultTruncated: false,
+      toolFullSize: 420,
+    },
+  },
+  {
+    at: 3700,
+    message: {
+      role: "tool",
+      text: "",
+      toolName: "Bash:npm test",
+      toolCommand: "npm test -- checkout",
+      toolResult:
+        "  checkout\n    ✓ rejects the 61st request in a window (429)\n    ✓ sends a Retry-After header\n    ✓ refills the bucket after the window\n\n  Tests: 25 passed, 25 total",
+      toolTruncated: false,
+      toolResultTruncated: false,
+      toolFullSize: 610,
+    },
+  },
+  {
+    at: 4700,
+    message: {
+      role: "assistant",
+      text: "Done — **25/25 passing** ✅. The new test confirms the 61st request in a window gets a `429`.",
+    },
+  },
+];
 
 const MOCK_SESSION: DiktatSession = {
   id: "9f3c1a7042e8",
@@ -37,8 +94,17 @@ export function useMockDiktat(_host?: string, _port?: number) {
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const replyTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearReplyTimers = useCallback(() => {
+    replyTimers.current.forEach(clearTimeout);
+    replyTimers.current = [];
+  }, []);
+  useEffect(() => clearReplyTimers, [clearReplyTimers]);
 
   const resumeSession = useCallback((session: DiktatSession) => {
+    clearReplyTimers();
+    setStreaming(false);
     setActiveSessionId(session.id);
     // The dedicated reconnecting fixture parks in the reconnecting state
     // (banner + Retry) rather than loading history.
@@ -55,7 +121,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
       setMessages(MOCK_MESSAGES);
       setHistoryLoading(false);
     }, 400);
-  }, []);
+  }, [clearReplyTimers]);
 
   const spawnSession = useCallback((_cli: string, _project: string, _mode?: string) => {
     // Create a NEW empty session and make it active with no messages,
@@ -66,15 +132,29 @@ export function useMockDiktat(_host?: string, _port?: number) {
   }, []);
 
   const sendMessage = useCallback((text: string) => {
+    clearReplyTimers();
     setMessages((prev) => [...prev, { role: "user", text }]);
-  }, []);
+    // Play the canned agent reply: typing indicator first (streaming + last
+    // message is the user's), then each scripted part lands on its timer.
+    setStreaming(true);
+    for (const part of MOCK_REPLY) {
+      const t = setTimeout(() => {
+        setMessages((prev) => [...prev, part.message]);
+      }, part.at);
+      replyTimers.current.push(t);
+    }
+    const done = setTimeout(() => setStreaming(false), MOCK_REPLY[MOCK_REPLY.length - 1].at + 200);
+    replyTimers.current.push(done);
+  }, [clearReplyTimers]);
 
   const leaveSession = useCallback(() => {
+    clearReplyTimers();
+    setStreaming(false);
     setActiveSessionId(null);
     setMessages([]);
     setHistoryLoading(false);
     setReconnecting(false);
-  }, []);
+  }, [clearReplyTimers]);
 
   // Retry on the reconnecting banner clears the reconnecting state and loads history.
   const connect = useCallback(() => {
@@ -95,7 +175,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION],
     activeSessionId,
     messages,
-    streaming: false,
+    streaming,
     currentTool: null,
     historyLoading,
     connect,
@@ -104,7 +184,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     resumeSession,
     sendMessage,
     leaveSession,
-    cancelMessage: () => {},
+    cancelMessage: () => { clearReplyTimers(); setStreaming(false); },
     registerPushToken: () => {},
     clearError: () => {},
   };
