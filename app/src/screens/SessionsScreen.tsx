@@ -28,6 +28,7 @@ const CLI_LABELS: Record<string, string> = {
   cursor: "Cursor",
   copilot: "GitHub Copilot",
   kiro: "Kiro",
+  codex: "Codex",
 };
 
 const CLI_COLOR: Record<string, string> = {
@@ -35,6 +36,7 @@ const CLI_COLOR: Record<string, string> = {
   cursor: "#a78bfa",
   copilot: "#3fb950",
   kiro: "#06b6d4",
+  codex: "#ec4899",
 };
 
 function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {

@@ -55,6 +55,15 @@ async function checkKiroLogin(): Promise<boolean> {
   }
 }
 
+async function checkCodexLogin(): Promise<boolean> {
+  if (process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY) return true;
+  try {
+    return existsSync(join(homedir(), ".codex", "auth.json"));
+  } catch {
+    return false;
+  }
+}
+
 async function runLogin(cli: string): Promise<void> {
   print(`  Running: ${cli} login`);
   const proc = Bun.spawn([cli, "login"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
@@ -224,6 +233,19 @@ async function main() {
           await runLogin("kiro-cli");
         } else {
           info("Skipping — run `kiro-cli login` before starting the daemon.");
+        }
+      }
+    } else if (cli === "codex") {
+      const loggedIn = await checkCodexLogin();
+      if (loggedIn) {
+        ok("Codex is authenticated");
+      } else {
+        fail("Codex is not authenticated");
+        const doLogin = (await ask("  Log in to Codex now? (y/n): ")).trim().toLowerCase();
+        if (doLogin === "y") {
+          await runLogin("codex");
+        } else {
+          info("Skipping — run `codex login` (or set OPENAI_API_KEY) before starting the daemon.");
         }
       }
     }

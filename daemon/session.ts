@@ -65,6 +65,17 @@ function buildArgs(cli: string, cliPath: string, text: string, cliSessionId?: st
         ...(resume ? ["--resume"] : []),
         text,
       ];
+    case "codex":
+      // Codex CLI. `codex exec` is the non-interactive runner; PROMPT is
+      // positional. Autonomous but sandboxed (never-ask + workspace-write).
+      // Multi-turn resume is not wired yet — each turn is a fresh exec. Output
+      // is plain text (ANSI-stripped). See agents.ts.
+      return [
+        cliPath, "exec",
+        "--ask-for-approval", "never",
+        "--sandbox", "workspace-write",
+        text,
+      ];
     default:
       throw new Error(`Unknown CLI: ${cli}`);
   }
@@ -152,7 +163,7 @@ export class Session {
   }
 
   async send(text: string, pushToken?: string): Promise<void> {
-    const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent", copilot: "copilot", kiro: "kiro-cli" };
+    const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent", copilot: "copilot", kiro: "kiro-cli", codex: "codex" };
     const cliPath = this.data.cliPath ?? CLI_FALLBACK[this.data.cli] ?? this.data.cli;
     const cwd = existsSync(this.data.project) ? this.data.project : process.env.HOME ?? process.cwd();
     await this.runCLI(cliPath, cwd, text, pushToken);
@@ -187,8 +198,8 @@ export class Session {
           if (this.parseClaudeChunk(chunk)) needsRetry = true;
         } else if (!isStderr && this.data.cli === "cursor") {
           this.parseCursorChunk(chunk);
-        } else if (!isStderr && this.data.cli === "kiro") {
-          // Kiro prints styled text; strip ANSI before forwarding.
+        } else if (!isStderr && (this.data.cli === "kiro" || this.data.cli === "codex")) {
+          // Kiro/Codex print styled text; strip ANSI before forwarding.
           const clean = stripAnsi(chunk);
           if (clean) this.ws.send(JSON.stringify({ type: "output", text: clean }));
         } else {

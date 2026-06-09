@@ -1,8 +1,13 @@
 # Expanding agent support — plan
 
 **Status:** planned · post-release task. Today Diktat supports **Claude Code**,
-**Cursor**, **GitHub Copilot**, and **Kiro** (the last two text-mode v1 — see
-notes below). This documents how to add more agentic coding CLIs cleanly.
+**Cursor**, **GitHub Copilot**, **Kiro**, and **Codex** (the last three text-mode
+v1 — see notes below). This documents how to add more agentic coding CLIs cleanly.
+
+> **Contract file:** `daemon/agents.ts` is the machine-readable source of truth
+> for every supported CLI (binary, subcommand, prompt style, trust flags, output
+> format, resume style, auth). Detection (`cli-detector.ts`) derives `KNOWN_CLIS`
+> from it. Add a CLI there first, then implement its argv in `buildArgs`.
 
 > **GitHub Copilot (added, text-mode v1):** wired via the same two seams
 > (`KNOWN_CLIS` + `buildArgs`). It runs `copilot -p "<prompt>" --allow-all-tools
@@ -26,6 +31,13 @@ notes below). This documents how to add more agentic coding CLIs cleanly.
 > **Follow-up:** if Kiro adds a structured chat event stream, add a parser; and
 > pin the exact session via `--resume-id` (parse it from `--list-sessions`).
 
+> **Codex (added, text-mode v1):** non-interactive via `codex exec "<prompt>"`,
+> run autonomously-but-sandboxed with `--ask-for-approval never --sandbox
+> workspace-write` (the nuclear option is `--dangerously-bypass-approvals-and-
+> sandbox`). Output text is ANSI-stripped. **Not wired yet:** multi-turn resume
+> (each turn is a fresh `exec`) and rich tool previews (Codex has `--json` JSONL
+> — parser TODO). Auth: `~/.codex/auth.json` or `OPENAI_API_KEY`; `codex login`.
+
 ## The landscape (major agentic CLIs)
 
 | Agent | Binary | One-shot invocation | Output format | Resume | Notes |
@@ -34,7 +46,7 @@ notes below). This documents how to add more agentic coding CLIs cleanly.
 | Cursor | `agent`/`cursor` | `-p "<prompt>"` | structured `stream-json` | `--resume=<id>` | **supported**, `--mode`, `--trust` |
 | GitHub Copilot | `copilot` | `-p "<prompt>"` | text (`--silent`); JSONL via `--output-format json` | `--session-id <uuid>` (we own it) | **supported** (text v1; JSON parser TODO), `--allow-all-tools` |
 | Kiro | `kiro-cli` | `chat --no-interactive "<prompt>"` | plain text (no chat JSON stream) | `--resume` (most recent in dir) / `--resume-id` | **supported** (text v1), `--trust-all-tools`, ANSI-stripped |
-| OpenAI Codex CLI | `codex` | `codex exec "<prompt>"` | experimental JSON event stream | session files | open source (Rust) |
+| OpenAI Codex CLI | `codex` | `codex exec "<prompt>"` | plain text (`--json` JSONL TODO) | not wired (v1 stateless) | **supported** (text v1), `--ask-for-approval never --sandbox workspace-write`, ANSI-stripped |
 | Gemini CLI | `gemini` | `-p "<prompt>"` | streaming text; JSON option | partial | open source (Google) |
 | Aider | `aider` | `-m "<msg>" --yes` | **plain text + diffs** (no structured JSON) | chat history | huge install base |
 | opencode | `opencode` | headless / server mode | JSON over local API | yes | open source (SST) |
