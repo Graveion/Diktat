@@ -54,6 +54,23 @@ appId: com.graveion.diktat
 - waitForAnimationToEnd
 - takeScreenshot: "maestro/screenshots/settings_02_options"
 
+# Feedback & Support section
+- assertVisible:
+    id: "open-privacy"
+- assertVisible:
+    id: "rate-app"
+- tapOn:
+    id: "open-feedback"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "feedback-input"
+- assertVisible:
+    id: "feedback-kind-bug"
+- takeScreenshot: "maestro/screenshots/settings_03_feedback"
+- tapOn:
+    id: "feedback-back"
+- waitForAnimationToEnd
+
 # Close the sheet and confirm it dismissed
 - tapOn:
     id: "settings-done-button"

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { info, warn, error as logError } from "../utils/logger";
 import { mergeSessions, toolDisplayString, appendOutput } from "../utils/messages";
+import { track } from "../utils/analytics";
+import { recordSessionAndMaybePrompt } from "../utils/review";
 
 export type DiktatSession = {
   id: string;
@@ -200,6 +202,7 @@ export function useDiktat(relay?: RelayDescriptor) {
         setSessions(all);
         const countBy = (src: string) => all.filter((s) => s.source === src).length;
         info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${countBy("claude")} cursor=${countBy("cursor")} codex=${countBy("codex")} copilot=${countBy("copilot")} kiro=${countBy("kiro")} daemon=${countBy("daemon")})`);
+        track("app_connected", { clis: (msg.clis ?? []).length, sessions: all.length });
         // Auto-resume session if we reconnected mid-session. Flag this case so
         // the subsequent "resumed" event preserves in-memory messages instead
         // of clearing them (otherwise the just-finished turn vanishes when
@@ -319,6 +322,10 @@ export function useDiktat(relay?: RelayDescriptor) {
         setStreaming(false);
         setCurrentTool(null);
         info("SESSION", `exit: code=${msg.code}`);
+        if (msg.code === 0) {
+          track("session_completed", { code: 0 });
+          recordSessionAndMaybePrompt();
+        }
         return;
       }
 
@@ -394,6 +401,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
   const spawnSession = useCallback((cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => {
     info("SESSION", `spawn: cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""}`);
+    track("session_started", { cli, model: model ?? "", permissionMode: permissionMode ?? "auto" });
     ws.current?.send(JSON.stringify({
       type: "spawn",
       cli,
@@ -405,6 +413,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
   const resumeSession = useCallback((session: DiktatSession) => {
     info("SESSION", `resume: id=${session.id} source=${session.source} cli=${session.cli} project=${session.project}`);
+    track("session_resumed", { source: session.source, cli: session.cli ?? "" });
     pendingResumeRef.current = { session };
     ws.current?.send(JSON.stringify({
       type: "resume",
@@ -418,11 +427,19 @@ export function useDiktat(relay?: RelayDescriptor) {
     }));
   }, []);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => {
     if (!activeSessionId) { warn("SESSION", "sendMessage called with no activeSessionId"); return; }
     info("SESSION", `input: sessionId=${activeSessionId} text="${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
+    track("message_sent", { ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}) });
     setMessages((prev) => [...prev, { role: "user", text }]);
-    ws.current?.send(JSON.stringify({ type: "input", sessionId: activeSessionId, text }));
+    ws.current?.send(JSON.stringify({
+      type: "input",
+      sessionId: activeSessionId,
+      text,
+      // Per-turn overrides applied before the run (daemon persists them).
+      ...(opts?.model !== undefined ? { model: opts.model } : {}),
+      ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+    }));
     setStreaming(true);
   }, [activeSessionId]);
 

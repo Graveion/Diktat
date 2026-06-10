@@ -226,6 +226,20 @@ export class Session {
     };
   }
 
+  /** Apply per-turn model / permission overrides before the next run. */
+  applyOptions(opts: { model?: string; permissionMode?: PermissionModeId }): void {
+    let changed = false;
+    if (opts.model !== undefined && opts.model !== this.data.model) {
+      this.data.model = opts.model || undefined;
+      changed = true;
+    }
+    if (opts.permissionMode && opts.permissionMode !== this.data.permissionMode) {
+      this.data.permissionMode = opts.permissionMode;
+      changed = true;
+    }
+    if (changed) saveSession(this.data);
+  }
+
   cancel(): void {
     this.activeProc?.kill();
     this.activeProc = null;

@@ -34,6 +34,8 @@ import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { ChatScreen } from "./src/screens/ChatScreen";
 import { DebugScreen } from "./src/screens/DebugScreen";
 import { info } from "./src/utils/logger";
+import { saveCrash } from "./src/utils/crash";
+import { track } from "./src/utils/analytics";
 
 // ─── Mock mode ────────────────────────────────────────────────────────────────
 // Only active in local dev builds (`npx expo start`). Never ships in OTA.
@@ -44,16 +46,15 @@ const MOCK_MODE = __DEV__;
 type Screen = "machines" | "sessions" | "chat" | "debug";
 
 // ─── Crash boundary ──────────────────────────────────────────────────────────
-const CRASH_KEY = "@diktat/last_crash";
-
 class CrashBoundary extends Component<{ children: React.ReactNode }, { crashed: boolean; error: string }> {
   state = { crashed: false, error: "" };
   static getDerivedStateFromError(e: Error) {
     return { crashed: true, error: e?.message ?? String(e) };
   }
   componentDidCatch(e: Error) {
-    const entry = `[CRASH ${new Date().toISOString()}] ${e?.message}\n${e?.stack ?? ""}`;
-    AsyncStorage.setItem(CRASH_KEY, entry).catch(() => {});
+    // Persisted locally; surfaced to us when the user submits feedback (the
+    // "include diagnostics" toggle attaches this). No remote vendor needed.
+    saveCrash(`[CRASH ${new Date().toISOString()}] ${e?.message}\n${e?.stack ?? ""}`);
   }
   render() {
     if (this.state.crashed) {
@@ -165,6 +166,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [paywallVisible, setPaywallVisible] = useState(false);
+  useEffect(() => { if (paywallVisible) track("paywall_shown"); }, [paywallVisible]);
 
   const machines = useMachines();
   const ent = useEntitlements();
@@ -319,6 +321,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
           onRetryConnect={diktat.connect}
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
           sessionCli={activeSession?.cli ?? undefined}
+          agents={diktat.agents}
         />
       )}
 
@@ -330,7 +333,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
             onRestore={ent.restore}
             onRedeem={ent.redeemCode}
             onClose={() => setPaywallVisible(false)}
-            onUnlocked={() => setPaywallVisible(false)}
+            onUnlocked={() => { track("paywall_converted"); setPaywallVisible(false); }}
           />
         </View>
       ) : null}

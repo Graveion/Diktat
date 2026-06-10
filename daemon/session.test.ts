@@ -53,6 +53,27 @@ function feedClaudeLines(session: Session, ...lines: any[]) {
 }
 
 // ---------------------------------------------------------------------------
+// applyOptions (per-turn model / permission overrides)
+// ---------------------------------------------------------------------------
+
+test("applyOptions: persists model + permissionMode into session data", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+  session.applyOptions({ model: "opus", permissionMode: "full" });
+  const data = (session as any).data;
+  expect(data.model).toBe("opus");
+  expect(data.permissionMode).toBe("full");
+});
+
+test("applyOptions: empty model string clears the override (back to default)", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+  session.applyOptions({ model: "opus" });
+  session.applyOptions({ model: "" });
+  expect((session as any).data.model).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
 // parseCursorChunk tests
 // ---------------------------------------------------------------------------
 

@@ -11,7 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import type { DiktatMessage } from "../hooks/useDiktat";
+import type { DiktatMessage, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
 import { useSettings } from "../hooks/useSettings";
 import {
   buildContextualStrings, detectSlashCommand,
@@ -22,6 +22,14 @@ import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
 
 const DRAFT_KEY = "diktat:draft";
+
+// Composer permission labels (compact pill text) + fallback list.
+const PERMISSION_LABEL: Record<string, string> = { plan: "Plan", auto: "Auto", full: "Full access" };
+const PERMISSION_FALLBACK: { id: PermissionModeId; label: string }[] = [
+  { id: "plan", label: "Plan · read-only" },
+  { id: "auto", label: "Auto-accept edits" },
+  { id: "full", label: "Full access" },
+];
 
 const EXAMPLE_PROMPTS = [
   "What's in this codebase?",
@@ -302,7 +310,8 @@ type Props = {
   historyLoading: boolean;
   activeSessionId: string | null;
   sessionCli?: string;
-  onSend: (text: string) => void;
+  agents?: AgentSelectionMap;
+  onSend: (text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => void;
   onCancel: (sessionId: string) => void;
   onBack: () => void;
   onRetryConnect?: () => void;
@@ -313,10 +322,25 @@ type Props = {
 
 export function ChatScreen({
   messages, streaming, currentTool, reconnecting, historyLoading,
-  activeSessionId, sessionCli, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
+  activeSessionId, sessionCli, agents, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
 }: Props) {
   type Mode = "idle" | "listening" | "reviewing";
   const [input, setInput] = useState("");
+  // Composer model + permission selectors (desktop-style). Apply per-turn.
+  const agentOpts = (sessionCli && agents?.[sessionCli]) || undefined;
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
+  const [selectorOpen, setSelectorOpen] = useState<"model" | "perm" | null>(null);
+  // Reset selectors to defaults when the session/CLI changes.
+  useEffect(() => {
+    setSelectedModel("");
+    setSelectedPermission("auto");
+    setSelectorOpen(null);
+  }, [activeSessionId, sessionCli]);
+  const sendWithOpts = useCallback(
+    (text: string) => onSend(text, { model: selectedModel || undefined, permissionMode: selectedPermission }),
+    [onSend, selectedModel, selectedPermission],
+  );
   const [mode, setMode] = useState<Mode>("idle");
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
@@ -373,10 +397,10 @@ export function ChatScreen({
     stopAllVoice();
     const text = inputRef2.current.trim();
     setMode("idle");
-    if (text) onSend(text);
+    if (text) sendWithOpts(text);
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [stopAllVoice, onSend]);
+  }, [stopAllVoice, sendWithOpts]);
 
   const discardDraft = useCallback(() => {
     stopAllVoice();
@@ -545,10 +569,10 @@ export function ChatScreen({
       inputHistory.current = [text, ...inputHistory.current].slice(0, 50);
     }
     historyIdx.current = -1;
-    onSend(text);
+    sendWithOpts(text);
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [input, streaming, onSend]);
+  }, [input, streaming, sendWithOpts]);
 
   const handleInputChange = (text: string) => {
     historyIdx.current = -1;
@@ -727,7 +751,7 @@ export function ChatScreen({
                       <TouchableOpacity
                         key={p}
                         style={styles.emptyExampleChip}
-                        onPress={() => { Haptics.selectionAsync(); onSend(p); }}
+                        onPress={() => { Haptics.selectionAsync(); sendWithOpts(p); }}
                         activeOpacity={0.7}
                       >
                         <Text style={styles.emptyExampleText}>{p}</Text>
@@ -909,6 +933,57 @@ export function ChatScreen({
               />
             </View>
           )}
+
+          {/* Model / permission selector (expands above the composer) */}
+          {selectorOpen ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorRow} keyboardShouldPersistTaps="handled">
+              {selectorOpen === "model"
+                ? (agentOpts?.models ?? []).map((m) => (
+                    <TouchableOpacity
+                      key={m.id || "default"}
+                      testID={`composer-model-${m.id || "default"}`}
+                      style={[styles.selectorChip, selectedModel === m.id && styles.selectorChipActive]}
+                      onPress={() => { Haptics.selectionAsync(); setSelectedModel(m.id); setSelectorOpen(null); }}
+                    >
+                      <Text style={[styles.selectorChipText, selectedModel === m.id && styles.selectorChipTextActive]}>{m.label}</Text>
+                    </TouchableOpacity>
+                  ))
+                : (agentOpts?.permissionModes ?? PERMISSION_FALLBACK).map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      testID={`composer-perm-${p.id}`}
+                      style={[styles.selectorChip, selectedPermission === p.id && styles.selectorChipActive]}
+                      onPress={() => { Haptics.selectionAsync(); setSelectedPermission(p.id as PermissionModeId); setSelectorOpen(null); }}
+                    >
+                      <Text style={[styles.selectorChipText, selectedPermission === p.id && styles.selectorChipTextActive]}>{p.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+            </ScrollView>
+          ) : null}
+
+          {/* Compact selector pills (permission always; model when >1 option) */}
+          <View style={styles.optionsBar}>
+            <TouchableOpacity
+              testID="composer-perm-pill"
+              style={[styles.optionPill, selectorOpen === "perm" && styles.optionPillActive]}
+              onPress={() => { Haptics.selectionAsync(); setSelectorOpen(selectorOpen === "perm" ? null : "perm"); }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.optionPillText}>{PERMISSION_LABEL[selectedPermission]} ▾</Text>
+            </TouchableOpacity>
+            {agentOpts && agentOpts.models.length > 1 ? (
+              <TouchableOpacity
+                testID="composer-model-pill"
+                style={[styles.optionPill, selectorOpen === "model" && styles.optionPillActive]}
+                onPress={() => { Haptics.selectionAsync(); setSelectorOpen(selectorOpen === "model" ? null : "model"); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.optionPillText}>
+                  {(agentOpts.models.find((m) => m.id === selectedModel)?.label ?? "Default")} ▾
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
           {/* Input area */}
           <View style={styles.inputRow}>
@@ -1149,6 +1224,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
+  optionsBar: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  optionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  optionPillActive: { borderColor: colors.accentDim, backgroundColor: colors.accentFaint },
+  optionPillText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12 },
+  selectorRow: { paddingHorizontal: 12, paddingBottom: 6, maxHeight: 44 },
+  selectorChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: 8,
+  },
+  selectorChipActive: { backgroundColor: colors.accentFaint, borderColor: colors.accentDim },
+  selectorChipText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13 },
+  selectorChipTextActive: { fontFamily: fonts.bodyMedium, color: colors.text },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
     paddingHorizontal: 10, paddingTop: 8, paddingBottom: 32,

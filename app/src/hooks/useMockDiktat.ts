@@ -137,7 +137,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     setHistoryLoading(false);
   }, []);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, _opts?: { model?: string; permissionMode?: "plan" | "auto" | "full" }) => {
     clearReplyTimers();
     setMessages((prev) => [...prev, { role: "user", text }]);
     // Play the canned agent reply: typing indicator first (streaming + last

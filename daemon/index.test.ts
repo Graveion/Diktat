@@ -27,6 +27,7 @@ function fakeSession(id: string, cliSessionId?: string) {
     summary: { id, cli: "claude", project: "/p", cliSessionId, lastActiveAt: "t" },
     send: async () => {},
     cancel: () => {},
+    applyOptions: () => {},
   } as any;
 }
 
@@ -158,6 +159,20 @@ test("input: active session → session.send called with push token", async () =
   ctx.clientPushTokens.set(ws as object, "push-tok");
   await handleClientMessage(ctx, ws, { type: "input", sessionId: "s1", text: "do it" });
   expect(received).toEqual({ text: "do it", token: "push-tok" });
+});
+
+test("input: per-turn model/permission → applyOptions called before send", async () => {
+  const { ws } = mockWs();
+  let applied: any;
+  let sentText: string | undefined;
+  const session = fakeSession("s3");
+  session.applyOptions = (o: any) => { applied = o; };
+  session.send = async (text: string) => { sentText = text; };
+  const ctx = makeCtx();
+  ctx.activeSessions.set("s3", session);
+  await handleClientMessage(ctx, ws, { type: "input", sessionId: "s3", text: "go", model: "opus", permissionMode: "full" });
+  expect(applied).toEqual({ model: "opus", permissionMode: "full" });
+  expect(sentText).toBe("go");
 });
 
 // ---------------------------------------------------------------------------

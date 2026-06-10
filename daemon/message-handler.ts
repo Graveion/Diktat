@@ -164,6 +164,10 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
       return;
     }
+    // Per-turn model / permission overrides from the composer dropdowns.
+    if (msg.model !== undefined || msg.permissionMode) {
+      session.applyOptions({ model: msg.model, permissionMode: msg.permissionMode });
+    }
     const pushToken = ctx.clientPushTokens.get(ws as object);
     try {
       await session.send(msg.text, pushToken);
