@@ -201,7 +201,7 @@ export function MachinesScreen({
           )}
         </TouchableOpacity>
 
-        {onTryDemo ? (
+        {onTryDemo && machines.length === 0 ? (
           <TouchableOpacity onPress={onTryDemo} hitSlop={8} testID="try-demo-btn">
             <Text style={styles.tryDemo}>Try Demo  →</Text>
           </TouchableOpacity>

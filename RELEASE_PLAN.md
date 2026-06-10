@@ -63,9 +63,10 @@ Status legend: ✅ done · 🟡 in progress · ⬜ todo.
   `entitled_until` column (written by RC webhook).
 - ✅ **Rate limiting**: `/pair/init` — 20 req/60s per IP; client legs — max 5
   concurrent per account.
-- ⬜ **RevenueCat webhook** → write `entitled_until` on purchase/renew/expire.
-  (Relay gate is live; subscription column stays null until webhook is wired.
-  Trial + comp entitlement already enforced.)
+- ✅ **RevenueCat webhook** → `POST /rc/webhook` updates `entitled_until` on any
+  RC event. Upserts the row (handles users who subscribe before starting a trial).
+  Shared secret via `RC_WEBHOOK_SECRET` env var. Set the webhook URL in the RC
+  dashboard: `https://<relay-host>/rc/webhook`.
 
 ## Phase 5 — Submit & launch
 - ⬜ Submit for review; respond to any rejection (reviewer-access is the likely one).

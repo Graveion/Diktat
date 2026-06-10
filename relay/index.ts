@@ -184,6 +184,52 @@ const server = Bun.serve<ConnData, never>({
       return json({ ok: true });
     }
 
+    // RevenueCat webhook — receives purchase / renewal / expiry events and
+    // updates account_state.entitled_until so the relay entitlement gate
+    // reflects real subscription state server-side.
+    if (url.pathname === "/rc/webhook") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) return json({ error: "unavailable" }, 503);
+
+      // Verify shared secret RC sends in the Authorization header (set in RC dashboard).
+      const RC_WEBHOOK_SECRET = process.env.RC_WEBHOOK_SECRET;
+      if (RC_WEBHOOK_SECRET) {
+        const auth = req.headers.get("authorization");
+        if (auth !== RC_WEBHOOK_SECRET) return new Response("unauthorized", { status: 401 });
+      }
+
+      let body: { event?: { type?: string; app_user_id?: string; expiration_at_ms?: number | null } };
+      try { body = (await req.json()) as typeof body; } catch { return json({ error: "invalid JSON" }, 400); }
+
+      const event = body.event;
+      const accountId = event?.app_user_id;
+      if (!accountId) return json({ ok: true }); // anonymous / no user id — ignore
+
+      // Always write expiration_at_ms as entitled_until regardless of event type:
+      // active subscription → future date; expired → past date; the relay gate
+      // compares against now() so both cases resolve correctly.
+      const expiresMs = event?.expiration_at_ms ?? null;
+      const entitledUntil = expiresMs != null ? new Date(expiresMs).toISOString() : null;
+
+      const base = SUPABASE_URL.replace(/\/$/, "");
+      const headers = {
+        apikey: SUPABASE_SECRET_KEY,
+        Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      };
+      // Upsert — account_state row may not exist yet if user subscribed before
+      // starting a trial session (rare but possible via family sharing / promo).
+      await fetch(`${base}/rest/v1/account_state`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ account_id: accountId, entitled_until: entitledUntil }),
+      }).catch(() => {});
+
+      console.log(`[rc-webhook] ${event?.type} accountId=${accountId} entitled_until=${entitledUntil ?? "null"}`);
+      return json({ ok: true });
+    }
+
     // QR pairing — daemon polls until the phone claims (then gets the token once).
     if (url.pathname === "/pair/poll") {
       if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
