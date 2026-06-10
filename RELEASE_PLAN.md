@@ -34,12 +34,9 @@ Status legend: ✅ done · 🟡 in progress · ⬜ todo.
   actually changes the agent's behaviour for the next turn on a real CLI.
 - 🟡 **Crash reporting**: AsyncStorage→Supabase via feedback "attach diagnostics"
   is in. Decide if Sentry is worth adding before scale (free tier; optional).
-- ⬜ **Reviewer access problem (critical):** Apple's reviewer cannot pair a Mac
-  running the daemon. Mitigation options — pick one:
-  - a built-in **"Demo / guided tour" mode** (reuse `useMockDiktat`) reachable
-    without pairing, **or**
-  - a **demo video** + thorough reviewer notes explaining the Mac-companion model.
-  Without this, review will likely be rejected as "can't test core feature."
+- ✅ **Reviewer access:** "Try Demo" button on MachinesScreen activates demo mode
+  (`useMockDiktat`, starts on sessions screen, green "Demo Mode" banner). Reviewer
+  can exercise the full UI without a Mac. Still add reviewer notes in ASC (#20).
 
 ## Phase 2 — Build & TestFlight (task #19)
 - ⬜ EAS **production build** (`eas build -p ios --profile production`); confirm
@@ -60,11 +57,15 @@ Status legend: ✅ done · 🟡 in progress · ⬜ todo.
 - ⬜ Reviewer notes + (if chosen) demo creds/video from Phase 1.
 
 ## Phase 4 — Relay hardening before public (task #21, HIGH)
-- ⬜ **Server-side entitlement gate** (relay/HARDENING.md): move paywall from
-  client to relay; refuse to broker for non-entitled accounts. Wire RevenueCat
-  webhook → `account_state`. Fail closed.
-- ⬜ **Rate limiting / DoS guards** on both relay legs + `/pair/claim`.
-- ⬜ Tests mirroring existing auth tests (entitled / expired / comp / pro / error).
+- ✅ **Server-side entitlement gate**: relay checks `account_state` on client leg
+  upgrade; refuses connection with `4402` if trial expired + no comp + no
+  subscription. Pure `isEntitled()` logic with 11 tests. Migration `0005` adds
+  `entitled_until` column (written by RC webhook).
+- ✅ **Rate limiting**: `/pair/init` — 20 req/60s per IP; client legs — max 5
+  concurrent per account.
+- ⬜ **RevenueCat webhook** → write `entitled_until` on purchase/renew/expire.
+  (Relay gate is live; subscription column stays null until webhook is wired.
+  Trial + comp entitlement already enforced.)
 
 ## Phase 5 — Submit & launch
 - ⬜ Submit for review; respond to any rejection (reviewer-access is the likely one).

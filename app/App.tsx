@@ -85,7 +85,7 @@ export const UPDATE_LABEL: string = (() => {
   return `${short}${time ? " · " + time : ""}`;
 })();
 
-function AppWithRealDiktat({ auth }: { auth: AuthApi }) {
+function AppWithRealDiktat({ auth, onTryDemo }: { auth: AuthApi; onTryDemo: () => void }) {
   const [relay, setRelay] = useState<RelayDescriptor | undefined>(undefined);
   const diktat = useDiktat(relay);
 
@@ -109,14 +109,14 @@ function AppWithRealDiktat({ auth }: { auth: AuthApi }) {
   }, [diktat]);
 
   return (
-    <AppInner diktat={diktat} auth={auth} connectToMachine={connectToMachine} leaveMachine={leaveMachine} />
+    <AppInner diktat={diktat} auth={auth} connectToMachine={connectToMachine} leaveMachine={leaveMachine} onTryDemo={onTryDemo} />
   );
 }
 
 function AppWithMockDiktat({ auth }: { auth: AuthApi }) {
   const diktat = useMockDiktat();
-  // Mock is already "connected"; selecting a machine just advances the screen.
-  return <AppInner diktat={diktat} auth={auth} connectToMachine={() => {}} leaveMachine={() => {}} />;
+  // Demo / dev mock: already "connected", starts directly on sessions screen.
+  return <AppInner diktat={diktat} auth={auth} connectToMachine={() => {}} leaveMachine={() => {}} demoMode />;
 }
 
 function Splash() {
@@ -153,16 +153,20 @@ function App() {
     );
   }
 
-  return MOCK_MODE ? <AppWithMockDiktat auth={auth} /> : <AppWithRealDiktat auth={auth} />;
+  const [demoMode, setDemoMode] = useState(false);
+  if (MOCK_MODE || demoMode) return <AppWithMockDiktat auth={auth} />;
+  return <AppWithRealDiktat auth={auth} onTryDemo={() => setDemoMode(true)} />;
 }
 
-function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
+function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = false, onTryDemo }: {
   diktat: ReturnType<typeof useDiktat> | ReturnType<typeof useMockDiktat>;
   auth: AuthApi;
   connectToMachine: (m: Machine) => void;
   leaveMachine: () => void;
+  demoMode?: boolean;
+  onTryDemo?: () => void;
 }) {
-  const [screen, setScreen] = useState<Screen>("machines");
+  const [screen, setScreen] = useState<Screen>(demoMode ? "sessions" : "machines");
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -272,7 +276,13 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
         </View>
       ) : null}
 
-      {ent.ready && !ent.isPro && !ent.compActive && ent.freeSecondsRemaining > 0 && ent.freeSecondsRemaining < 3600 ? (
+      {demoMode ? (
+        <View style={styles.demoBanner}>
+          <Text style={styles.demoText}>Demo Mode — no Mac required</Text>
+        </View>
+      ) : null}
+
+      {!demoMode && ent.ready && !ent.isPro && !ent.compActive && ent.freeSecondsRemaining > 0 && ent.freeSecondsRemaining < 3600 ? (
         <TouchableOpacity style={styles.trialBanner} onPress={() => setPaywallVisible(true)}>
           <Text style={styles.trialText}>
             Free trial · {Math.ceil(ent.freeSecondsRemaining / 60)} min left — tap to upgrade
@@ -293,6 +303,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine }: {
           onUnpair={machines.unpair}
           onSignOut={auth.signOut}
           onDeleteAccount={auth.deleteAccount}
+          onTryDemo={onTryDemo}
         />
       ) : screen === "sessions" ? (
         <SessionsScreen
@@ -357,6 +368,8 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, color: "#ffaaaa", fontSize: 14, lineHeight: 20 },
   errorDismiss: { color: "#ff8888", fontSize: 18, paddingLeft: 12 },
+  demoBanner: { backgroundColor: "#0f2d1a", paddingVertical: 6, alignItems: "center" },
+  demoText: { color: "#4ade80", fontSize: 12, fontWeight: "600" as const },
   trialBanner: { backgroundColor: "#241a3a", paddingVertical: 6, alignItems: "center" },
   trialText: { color: "#c4b5fd", fontSize: 12, fontWeight: "600" },
   paywallOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10 },

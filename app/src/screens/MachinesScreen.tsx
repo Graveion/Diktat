@@ -26,6 +26,8 @@ type Props = {
   onUnpair: (id: string) => Promise<void>;
   onSignOut: () => void;
   onDeleteAccount: () => Promise<void>;
+  /** Enter demo mode without pairing a Mac (used for App Store review). */
+  onTryDemo?: () => void;
 };
 
 function relativeTime(iso: string | null): string {
@@ -47,6 +49,7 @@ export function MachinesScreen({
   onUnpair,
   onSignOut,
   onDeleteAccount,
+  onTryDemo,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -198,6 +201,12 @@ export function MachinesScreen({
           )}
         </TouchableOpacity>
 
+        {onTryDemo ? (
+          <TouchableOpacity onPress={onTryDemo} hitSlop={8} testID="try-demo-btn">
+            <Text style={styles.tryDemo}>Try Demo  →</Text>
+          </TouchableOpacity>
+        ) : null}
+
         <TouchableOpacity onPress={confirmDeleteAccount} disabled={deleting} hitSlop={8}>
           {deleting ? (
             <ActivityIndicator color={colors.error} size="small" style={{ marginTop: 4 }} />
@@ -248,6 +257,7 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: space.lg, paddingBottom: 40, gap: 8 },
   addBtn: { borderRadius: radii.md, padding: 17, alignItems: "center", overflow: "hidden" },
   addBtnText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 16 },
+  tryDemo: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.accent, textAlign: "center", paddingVertical: 8 },
   deleteAccount: { fontFamily: fonts.body, fontSize: 13, color: colors.textMuted, textAlign: "center", paddingVertical: 8 },
 
   errorText: { fontFamily: fonts.body, fontSize: 13, color: colors.error, textAlign: "center", marginTop: 8 },
