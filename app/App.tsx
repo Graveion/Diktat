@@ -136,6 +136,7 @@ function App() {
     SpaceGrotesk_700Bold,
   });
   const auth = useAuth();
+  const [demoMode, setDemoMode] = useState(false);
 
   if (!fontsLoaded || auth.loading) return <Splash />;
 
@@ -153,7 +154,6 @@ function App() {
     );
   }
 
-  const [demoMode, setDemoMode] = useState(false);
   if (MOCK_MODE || demoMode) return <AppWithMockDiktat auth={auth} />;
   return <AppWithRealDiktat auth={auth} onTryDemo={() => setDemoMode(true)} />;
 }
