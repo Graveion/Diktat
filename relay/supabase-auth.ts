@@ -30,12 +30,42 @@ export interface MachineRow {
   tokenHash: string;
 }
 
+export interface EntitlementRow {
+  trial_started_at: string | null;
+  comp_until: string | null;
+  entitled_until: string | null; // written by RC webhook
+}
+
+/** ok=false → lookup error (fail closed). ok=true, row=null → no account_state row yet (first-time user, let through). */
+export type EntitlementLookup =
+  | { ok: true; row: EntitlementRow | null }
+  | { ok: false };
+
+/**
+ * Pure entitlement decision.
+ * - lookup error (ok=false) → deny (fail closed)
+ * - no row yet (ok=true, row=null) → allow (user hasn't started trial; app gates first use)
+ * - has row → entitled if subscription active OR comp active OR within trial window
+ */
+export function isEntitled(lookup: EntitlementLookup): boolean {
+  if (!lookup.ok) return false;
+  if (!lookup.row) return true;
+  const now = Date.now();
+  const { entitled_until, comp_until, trial_started_at } = lookup.row;
+  if (entitled_until && (entitled_until.startsWith("infinity") || new Date(entitled_until).getTime() > now)) return true;
+  if (comp_until && (comp_until.startsWith("infinity") || new Date(comp_until).getTime() > now)) return true;
+  if (trial_started_at && new Date(trial_started_at).getTime() + 3_600_000 > now) return true;
+  return false;
+}
+
 /** Injectable IO so the auth logic is testable without network/jose. */
 export interface SupabaseAuthDeps {
   /** Verify a phone's Supabase access JWT; resolve accountId (`sub`) or null if invalid. */
   verifyAccountToken(token: string): Promise<string | null>;
   /** Fetch a machine row by id; null if not found. */
   getMachine(machineId: string): Promise<MachineRow | null>;
+  /** Fetch entitlement state for an account; fail closed on error. */
+  getEntitlement(accountId: string): Promise<EntitlementLookup>;
 }
 
 /** Build an Authenticator over the given IO deps (pure decision logic). */
@@ -55,6 +85,8 @@ export function makeSupabaseAuthenticator(deps: SupabaseAuthDeps): Authenticator
     const machine = await deps.getMachine(machineId);
     if (!machine) return { ok: false, code: CloseCode.unknownMachine };
     if (machine.accountId !== accountId) return { ok: false, code: CloseCode.forbidden };
+    const entResult = await deps.getEntitlement(accountId);
+    if (!isEntitled(entResult)) return { ok: false, code: CloseCode.notEntitled };
     return { ok: true, accountId };
   };
 }
@@ -130,6 +162,25 @@ export function createSupabaseDeps(env: SupabaseEnv): SupabaseAuthDeps {
       const rows = (await res.json()) as Array<{ account_id: string; token_hash: string }>;
       if (!Array.isArray(rows) || rows.length === 0) return null;
       return { accountId: rows[0].account_id, tokenHash: rows[0].token_hash };
+    },
+
+    async getEntitlement(accountId) {
+      const u = `${base}/rest/v1/account_state?account_id=eq.${encodeURIComponent(accountId)}&select=trial_started_at,comp_until,entitled_until`;
+      try {
+        const res = await fetch(u, {
+          headers: { apikey: env.serviceKey, Authorization: `Bearer ${env.serviceKey}` },
+        });
+        if (!res.ok) return { ok: false };
+        const rows = (await res.json()) as Array<{
+          trial_started_at: string | null;
+          comp_until: string | null;
+          entitled_until: string | null;
+        }>;
+        if (!Array.isArray(rows) || rows.length === 0) return { ok: true, row: null };
+        return { ok: true, row: { trial_started_at: rows[0].trial_started_at, comp_until: rows[0].comp_until, entitled_until: rows[0].entitled_until } };
+      } catch {
+        return { ok: false }; // network error → fail closed
+      }
     },
   };
 }

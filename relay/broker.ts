@@ -7,6 +7,7 @@ export type Leg = "agent" | "client";
 /** Close codes (RELAY.md §2/§4). */
 export const CloseCode = {
   unauthorized: 4401,
+  notEntitled: 4402,
   forbidden: 4403,
   unknownMachine: 4404,
 } as const;

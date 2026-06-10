@@ -1,7 +1,13 @@
 # Relay hardening — abuse & entitlement enforcement
 
-**Status:** planned · **Priority:** high · **Blocking TestFlight?** No.
+**Status:** 🟡 in progress · **Priority:** high · **Blocking TestFlight?** No.
 **Do before:** any public launch / App Store release with real users.
+
+## What's done
+
+- **Entitlement gate** (`relay/supabase-auth.ts`): `isEntitled()` pure function + `getEntitlement` dep seam. On the client leg, the relay queries `account_state` (trial_started_at, comp_until, entitled_until) after ownership check. Non-entitled accounts receive close code 4402. Fail-closed on lookup error. First-time users (no row yet) are allowed through.
+- **Rate limiting** (`relay/index.ts`): per-IP rate limit on `/pair/init` (20 req / 60s); per-account concurrent client connection cap (max 5).
+- **Schema** (`supabase/migrations/0005_entitled_until.sql`): `entitled_until timestamptz` column on `account_state`, to be written by the RevenueCat webhook.
 
 ## Why
 

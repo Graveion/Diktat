@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.ts";
 import {
   Broker,
+  CloseCode,
   staticAuthenticator,
   type Authenticator,
   type Leg,
@@ -61,6 +62,26 @@ const touchMachine: ((machineId: string) => void) | null =
 
 const broker = new Broker();
 
+// Per-IP rate limit on /pair/init (20 requests / 60s per IP).
+const PAIR_INIT_MAX = 20;
+const PAIR_INIT_WINDOW_MS = 60_000;
+const pairInitCounts = new Map<string, { count: number; resetAt: number }>();
+
+function checkPairInitRateLimit(ip: string): boolean {
+  const now = Date.now();
+  let entry = pairInitCounts.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    entry = { count: 0, resetAt: now + PAIR_INIT_WINDOW_MS };
+    pairInitCounts.set(ip, entry);
+  }
+  entry.count++;
+  return entry.count <= PAIR_INIT_MAX;
+}
+
+// Per-account concurrent client connection cap.
+const CLIENT_CONN_MAX = 5;
+const clientConnCounts = new Map<string, number>();
+
 const PORT = Number(process.env.PORT ?? 9090);
 
 function bearer(req: Request): string | undefined {
@@ -118,6 +139,8 @@ const server = Bun.serve<ConnData, never>({
     if (url.pathname === "/pair/init") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
+      const ip = req.headers.get("x-forwarded-for") ?? "unknown";
+      if (!checkPairInitRateLimit(ip)) return json({ error: "rate limited" }, 429);
       let b: { machineId?: string; name?: string };
       try { b = (await req.json()) as typeof b; } catch { return json({ error: "invalid JSON" }, 400); }
       if (!b.machineId) return json({ error: "missing machineId" }, 400);
@@ -202,6 +225,13 @@ const server = Bun.serve<ConnData, never>({
         broker.registerAgent(machineId, accountId, sock);
         touchMachine?.(machineId); // mark online on connect
       } else {
+        // Enforce per-account concurrent client connection cap.
+        const current = clientConnCounts.get(accountId) ?? 0;
+        if (current >= CLIENT_CONN_MAX) {
+          ws.close(CloseCode.notEntitled, "too many connections");
+          return;
+        }
+        clientConnCounts.set(accountId, current + 1);
         broker.registerClient(machineId, accountId, sock);
       }
     },
@@ -216,9 +246,17 @@ const server = Bun.serve<ConnData, never>({
       broker.route(machineId, leg, raw);
     },
     close(ws) {
-      const { leg, machineId } = ws.data;
+      const { leg, machineId, accountId } = ws.data;
       const sock = (ws as unknown as { _sock?: RelaySocket })._sock;
       if (sock) broker.handleClose(machineId, leg, sock);
+      if (leg === "client") {
+        const current = clientConnCounts.get(accountId) ?? 0;
+        if (current <= 1) {
+          clientConnCounts.delete(accountId);
+        } else {
+          clientConnCounts.set(accountId, current - 1);
+        }
+      }
     },
   },
 });
