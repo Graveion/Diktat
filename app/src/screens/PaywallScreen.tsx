@@ -90,7 +90,7 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
           Diktat Pro
         </Animated.Text>
         <Animated.Text entering={FadeIn.delay(120).duration(500)} style={styles.subtitle}>
-          Your free hour is up. Subscribe to keep driving your coding sessions from anywhere.
+          Code review on the sofa. Hotfix on the bus. Ship from anywhere.
         </Animated.Text>
 
         <View style={styles.packages}>
