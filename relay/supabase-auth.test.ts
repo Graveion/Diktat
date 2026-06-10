@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { CloseCode } from "./broker.ts";
 import {
+  isEntitled,
   makeSupabaseAuthenticator,
   sha256hex,
   type MachineRow,
@@ -17,6 +18,7 @@ function deps(over: Partial<SupabaseAuthDeps> = {}): SupabaseAuthDeps {
   return {
     verifyAccountToken: async (t) => (t === "good-jwt" ? ACCT : null),
     getMachine: async (id) => (id === MACHINE ? machine : null),
+    getEntitlement: async (_accountId) => ({ ok: true, row: null }),
     ...over,
   };
 }
@@ -67,5 +69,72 @@ describe("client leg", () => {
       deps({ verifyAccountToken: async () => OTHER_ACCT }),
     );
     expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: false, code: CloseCode.forbidden });
+  });
+});
+
+describe("entitlement", () => {
+  // isEntitled pure-function tests
+  it("isEntitled: lookup error → false", () => {
+    expect(isEntitled({ ok: false })).toBe(false);
+  });
+
+  it("isEntitled: no row → true (first-time user)", () => {
+    expect(isEntitled({ ok: true, row: null })).toBe(true);
+  });
+
+  it("isEntitled: has row with active trial → true", () => {
+    const trial_started_at = new Date(Date.now() - 1_000).toISOString(); // started 1s ago
+    expect(isEntitled({ ok: true, row: { trial_started_at, comp_until: null, entitled_until: null } })).toBe(true);
+  });
+
+  it("isEntitled: has row with expired trial → false", () => {
+    const trial_started_at = new Date(Date.now() - 4_000_000).toISOString(); // > 1h ago
+    expect(isEntitled({ ok: true, row: { trial_started_at, comp_until: null, entitled_until: null } })).toBe(false);
+  });
+
+  it("isEntitled: has row with comp_until = 'infinity' → true", () => {
+    expect(isEntitled({ ok: true, row: { trial_started_at: null, comp_until: "infinity", entitled_until: null } })).toBe(true);
+  });
+
+  it("isEntitled: has row with active comp → true", () => {
+    const comp_until = new Date(Date.now() + 86_400_000).toISOString(); // +1 day
+    expect(isEntitled({ ok: true, row: { trial_started_at: null, comp_until, entitled_until: null } })).toBe(true);
+  });
+
+  it("isEntitled: has row with expired comp + active subscription → true", () => {
+    const comp_until = new Date(Date.now() - 86_400_000).toISOString(); // expired
+    const entitled_until = new Date(Date.now() + 86_400_000).toISOString(); // active
+    expect(isEntitled({ ok: true, row: { trial_started_at: null, comp_until, entitled_until } })).toBe(true);
+  });
+
+  it("isEntitled: has row with all expired → false", () => {
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    expect(isEntitled({ ok: true, row: { trial_started_at: past, comp_until: past, entitled_until: past } })).toBe(false);
+  });
+
+  // Authenticator integration tests
+  it("authenticator client leg: entitled user accepted", async () => {
+    const auth = makeSupabaseAuthenticator(deps());
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: true, accountId: ACCT });
+  });
+
+  it("authenticator client leg: expired trial returns 4402", async () => {
+    const trial_started_at = new Date(Date.now() - 4_000_000).toISOString();
+    const auth = makeSupabaseAuthenticator(
+      deps({
+        getEntitlement: async () => ({
+          ok: true,
+          row: { trial_started_at, comp_until: null, entitled_until: null },
+        }),
+      }),
+    );
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: false, code: CloseCode.notEntitled });
+  });
+
+  it("authenticator client leg: entitlement lookup error returns 4402", async () => {
+    const auth = makeSupabaseAuthenticator(
+      deps({ getEntitlement: async () => ({ ok: false }) }),
+    );
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: false, code: CloseCode.notEntitled });
   });
 });
