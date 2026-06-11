@@ -74,11 +74,9 @@ interface PairResponse {
 }
 
 async function main() {
+  // `diktat pair`         → QR flow (default): show a QR, the app scans it.
+  // `diktat pair <code>`  → typed-code redemption (code shown in the app).
   const args = parsePairArgs(process.argv.slice(2));
-  if (!args.code) {
-    console.error("Usage: bun pair.ts <code> [--relay <wss-url>] [--name <machine name>]");
-    process.exit(1);
-  }
 
   const existing: Record<string, unknown> = existsSync(CONFIG_PATH)
     ? JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))

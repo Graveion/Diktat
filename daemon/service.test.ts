@@ -27,6 +27,15 @@ test("buildPlist puts the interpreter dir + Homebrew on PATH", () => {
   expect(p).toContain("/opt/homebrew/bin");
 });
 
+test("buildPlist prepends the inherited PATH (so CLI shims are found) and dedupes", () => {
+  const p = buildPlist("/Users/me/.bun/bin/bun", "/d", "/l", "/Users/me/.volta/bin:/usr/bin");
+  // Extract the PATH string from the plist.
+  const path = p.match(/<key>PATH<\/key><string>([^<]+)<\/string>/)![1]!;
+  const parts = path.split(":");
+  expect(parts[0]).toBe("/Users/me/.volta/bin"); // inherited entry comes first
+  expect(parts.filter((x) => x === "/usr/bin").length).toBe(1); // deduped vs fallback
+});
+
 test("buildPlist escapes paths containing XML-special characters", () => {
   const p = buildPlist("/Users/a&b/bun", "/Users/a&b/diktat", "/l");
   expect(p).toContain("/Users/a&amp;b/bun");

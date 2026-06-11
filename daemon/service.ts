@@ -35,11 +35,21 @@ export function xmlEscape(s: string): string {
 /**
  * Build the LaunchAgent plist. `bun` is the absolute interpreter path
  * (process.execPath), `dir` the daemon directory, `logFile` the combined
- * stdout/stderr log. PATH is set explicitly because launchd starts jobs with a
- * minimal environment that omits ~/.bun/bin and Homebrew.
+ * stdout/stderr log, `inheritedPath` the PATH the user had when they ran
+ * `diktat start`.
+ *
+ * PATH must be set explicitly because launchd starts jobs with a minimal
+ * environment. Crucially we PREPEND the user's interactive PATH: CLI agents
+ * (claude, cursor, codex…) commonly live in ~/.* dirs or version-manager shims
+ * (volta/asdf/nvm/npm-global) that aren't on any standard path, and the daemon
+ * detects them with `which`. Without this, launchd-run daemons find zero CLIs.
  */
-export function buildPlist(bun: string, dir: string, logFile: string): string {
-  const path = [dirname(bun), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
+export function buildPlist(bun: string, dir: string, logFile: string, inheritedPath?: string): string {
+  const fallback = [dirname(bun), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+  const seen = new Set<string>();
+  const path = [...(inheritedPath ? inheritedPath.split(":") : []), ...fallback]
+    .filter((p) => p && !seen.has(p) && seen.add(p))
+    .join(":");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,7 +83,7 @@ function launchctl(args: string[]): { ok: boolean; stderr: string } {
 export function installAndLoad(dir: string, logFile: string): { ok: boolean; error?: string } {
   try {
     mkdirSync(dirname(plistPath()), { recursive: true });
-    writeFileSync(plistPath(), buildPlist(process.execPath, dir, logFile));
+    writeFileSync(plistPath(), buildPlist(process.execPath, dir, logFile, process.env.PATH));
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
