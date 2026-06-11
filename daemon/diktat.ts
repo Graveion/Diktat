@@ -146,7 +146,11 @@ async function pair(): Promise<never> {
   const code = await spawnAttached("pair.ts", rest);
   if (code !== 0) process.exit(code); // pairing failed/cancelled; pair.ts already explained
   await startDaemon({ restart: true });
-  console.log("\n✓ Paired and connected. Your Mac is now reachable from the app.\n");
+  // The daemon connects to the relay asynchronously in its own process, so we
+  // can't assert it's online here — point at the real signals instead of
+  // overclaiming "connected".
+  console.log("\n✓ Paired. The daemon is starting and should come online within a few seconds.");
+  console.log("  Watch the machine's dot in the app, or run `diktat logs` (look for \"registered as machine\").\n");
   process.exit(0);
 }
 
