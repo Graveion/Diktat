@@ -10,7 +10,6 @@ import {
   RefreshControl,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInUp, ZoomIn, useReducedMotion } from "react-native-reanimated";
@@ -61,16 +60,8 @@ export function MachinesScreen({
   const [scanError, setScanError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [copiedInstall, setCopiedInstall] = useState(false);
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-
-  const copyInstall = () => {
-    Clipboard.setStringAsync(INSTALL_COMMAND);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setCopiedInstall(true);
-    setTimeout(() => setCopiedInstall(false), 1500);
-  };
 
   const doRefresh = async () => {
     setRefreshing(true);
@@ -173,17 +164,10 @@ export function MachinesScreen({
             <View style={styles.step}>
               <Text style={styles.stepNum}>1</Text>
               <View style={styles.stepBody}>
-                <Text style={styles.stepText}>Install the daemon on your Mac</Text>
-                <TouchableOpacity
-                  style={styles.installCmd}
-                  onPress={copyInstall}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy install command"
-                >
-                  <Text style={styles.installCmdText} numberOfLines={1}>{INSTALL_COMMAND}</Text>
-                  <Text style={styles.installCopy}>{copiedInstall ? "copied" : "copy"}</Text>
-                </TouchableOpacity>
+                <Text style={styles.stepText}>Run this on your Mac to install the daemon</Text>
+                <View style={styles.installCmd}>
+                  <Text style={styles.installCmdText} selectable>{INSTALL_COMMAND}</Text>
+                </View>
               </View>
             </View>
 
@@ -318,12 +302,10 @@ const styles = StyleSheet.create({
   stepBody: { flex: 1, gap: 8, paddingTop: 2 },
   stepText: { fontFamily: fonts.body, fontSize: 14, color: colors.textSub, lineHeight: 20 },
   installCmd: {
-    flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: colors.codeBg, borderWidth: 1, borderColor: colors.border,
     borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 10,
   },
-  installCmdText: { flex: 1, fontFamily: fonts.mono, fontSize: 11, color: colors.codeText },
-  installCopy: { fontFamily: fonts.mono, fontSize: 11, color: colors.accent },
+  installCmdText: { fontFamily: fonts.mono, fontSize: 12, color: colors.codeText, lineHeight: 18 },
   mono: { fontFamily: fonts.mono, color: colors.accentBright },
 
   footer: { paddingHorizontal: space.lg, gap: 8 },

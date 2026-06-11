@@ -19,7 +19,6 @@ import { useSettings } from "../hooks/useSettings";
 import {
   buildContextualStrings, detectSlashCommand,
 } from "../utils/voice";
-import { suggestCommands } from "../utils/suggestions";
 import { formatToolLabel } from "../utils/tools";
 import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
@@ -372,6 +371,7 @@ export function ChatScreen({
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
   const [selectorOpen, setSelectorOpen] = useState<"model" | "perm" | null>(null);
+  const [railOpen, setRailOpen] = useState(false);
   // Reset selectors to defaults when the session/CLI changes.
   useEffect(() => {
     setSelectedModel("");
@@ -463,19 +463,6 @@ export function ChatScreen({
     // input stays — user can edit / type freely
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [stopAllVoice]);
-
-  const prefixSlash = useCallback((cmd: string) => {
-    setInput((cur) => {
-      const trimmed = cur.trim();
-      // If already prefixed with a slash command, replace it
-      if (trimmed.startsWith("/")) {
-        const rest = trimmed.split(" ").slice(1).join(" ");
-        return rest ? `${cmd} ${rest}` : `${cmd} `;
-      }
-      return trimmed ? `${cmd} ${trimmed}` : `${cmd} `;
-    });
-    Haptics.selectionAsync();
-  }, []);
 
   const enterReviewMode = useCallback(() => {
     setMode("reviewing");
@@ -642,16 +629,15 @@ export function ChatScreen({
   // Slash command rail — always visible when commands exist for the session's CLI.
   // When the user types `/`, the rail filters to matching commands.
   const slashCommands = sessionCli ? (SLASH_COMMANDS[sessionCli] ?? []) : [];
-  const availableCmdNames = slashCommands.map((c) => c.cmd);
-  const railCommands = input.startsWith("/")
+  // Slash rail: collapsed to a "/" toggle by default (saves vertical space).
+  // Typing "/" auto-expands and filters to matches; otherwise the toggle
+  // expands/collapses the full command list.
+  const typingSlash = input.startsWith("/");
+  const railCommands = typingSlash
     ? slashCommands.filter((c) => c.cmd.startsWith(input.split(" ")[0]))
     : slashCommands;
-  const showRail = railCommands.length > 0 && !listening;
-
-  // Intent-based suggestions for the review card
-  const intentSuggestions = reviewing
-    ? suggestCommands(input, availableCmdNames)
-    : [];
+  const railVisible = slashCommands.length > 0 && !listening;
+  const chipsShown = typingSlash || railOpen;
 
   const applyCommand = (cmd: string) => {
     // If user already typed a slash prefix, replace it; otherwise prefix it.
@@ -917,57 +903,18 @@ export function ChatScreen({
       {/* Review card — replaces rail + input row when reviewing */}
       {reviewing ? (
         <View style={styles.reviewCard}>
-          {/* Transcript — scrollable for long dictations; hint below is tap-to-edit */}
-          <ScrollView
-            style={styles.reviewTranscriptScroll}
-            contentContainerStyle={styles.reviewTranscriptContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.reviewText} selectable>{input}</Text>
-          </ScrollView>
-          <TouchableOpacity activeOpacity={0.7} onPress={editDraft}>
-            <Text style={styles.reviewEditHint}>
-              tap to edit · then Send or Cancel
-            </Text>
-          </TouchableOpacity>
-
-          {/* Intent suggestions — highlighted chips */}
-          {intentSuggestions.length > 0 && (
-            <View style={styles.suggestionRow}>
-              {intentSuggestions.map((cmd) => (
-                <TouchableOpacity
-                  key={cmd}
-                  style={styles.suggestionChip}
-                  onPress={() => prefixSlash(cmd)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.suggestionText}>{cmd}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Modifier chips */}
-          {slashCommands.length > 0 && (
+          {/* Transcript itself is the edit target — tap anywhere on it to edit. */}
+          <TouchableOpacity activeOpacity={0.7} onPress={editDraft} accessibilityRole="button" accessibilityLabel="Edit dictated message">
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.reviewChipsContent}
-              keyboardShouldPersistTaps="always"
-              style={styles.reviewChipsRow}
+              style={styles.reviewTranscriptScroll}
+              contentContainerStyle={styles.reviewTranscriptContent}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={false}
             >
-              {slashCommands.map((c) => (
-                <TouchableOpacity
-                  key={c.cmd}
-                  style={styles.reviewChip}
-                  onPress={() => prefixSlash(c.cmd)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.reviewChipText}>{c.cmd}</Text>
-                </TouchableOpacity>
-              ))}
+              <Text style={styles.reviewText}>{input}</Text>
             </ScrollView>
-          )}
+            <Text style={styles.reviewEditHint}>tap to edit</Text>
+          </TouchableOpacity>
 
           {/* Action buttons */}
           <View style={styles.reviewActions}>
@@ -991,8 +938,9 @@ export function ChatScreen({
         </View>
       ) : (
         <>
-          {/* Command rail — horizontal scrollable chips */}
-          {showRail && (
+          {/* Command rail — collapsible. A leading "/" toggle expands/collapses
+              the chip list; typing "/" auto-expands with filtered matches. */}
+          {railVisible && (
             <View style={styles.rail}>
               <ScrollView
                 horizontal
@@ -1000,7 +948,20 @@ export function ChatScreen({
                 contentContainerStyle={styles.railContent}
                 keyboardShouldPersistTaps="always"
               >
-                {railCommands.map((c) => (
+                {!typingSlash && (
+                  <TouchableOpacity
+                    testID="slash-rail-toggle"
+                    style={styles.railToggle}
+                    onPress={() => { Haptics.selectionAsync(); setRailOpen((o) => !o); }}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={chipsShown ? "Hide commands" : "Show commands"}
+                  >
+                    <Text style={styles.chipCmd}>/</Text>
+                    <Ionicons name={railOpen ? "chevron-down" : "chevron-forward"} size={12} color={colors.accent} />
+                  </TouchableOpacity>
+                )}
+                {chipsShown && railCommands.map((c) => (
                   <TouchableOpacity
                     key={c.cmd}
                     testID={`slash-${c.cmd}`}
@@ -1024,7 +985,7 @@ export function ChatScreen({
 
           {/* Model / permission selector (expands above the composer) */}
           {selectorOpen ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorRow} keyboardShouldPersistTaps="handled">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorRow} contentContainerStyle={styles.selectorRowContent} keyboardShouldPersistTaps="handled">
               {selectorOpen === "model"
                 ? (agentOpts?.models ?? []).map((m) => (
                     <TouchableOpacity
@@ -1050,7 +1011,7 @@ export function ChatScreen({
           ) : null}
 
           {/* Compact selector pills (permission always; model when >1 option) */}
-          <View style={styles.optionsBar}>
+          <View style={[styles.optionsBar, { justifyContent: "flex-end" }]}>
             <TouchableOpacity
               testID="composer-perm-pill"
               style={[styles.optionPill, selectorOpen === "perm" && styles.optionPillActive]}
@@ -1312,6 +1273,17 @@ const styles = StyleSheet.create({
     height: 30,
     justifyContent: "center",
   },
+  railToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.accentDim,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    height: 30,
+  },
   chipCmd: {
     fontFamily: fonts.bodyMedium,
     color: colors.accent,
@@ -1337,6 +1309,7 @@ const styles = StyleSheet.create({
   optionPillActive: { borderColor: colors.accentDim, backgroundColor: colors.accentFaint },
   optionPillText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12 },
   selectorRow: { paddingHorizontal: 12, paddingBottom: 6, maxHeight: 44 },
+  selectorRowContent: { flexGrow: 1, justifyContent: "flex-end" },
   selectorChip: {
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -1406,48 +1379,6 @@ const styles = StyleSheet.create({
     color: colors.textSub,
     fontSize: 11,
     marginBottom: 10,
-  },
-  suggestionRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-    flexWrap: "wrap",
-  },
-  suggestionChip: {
-    backgroundColor: colors.accentFaint,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  suggestionText: {
-    fontFamily: fonts.bodySemi,
-    color: colors.accent,
-    fontSize: 12,
-  },
-  reviewChipsRow: {
-    maxHeight: 38,
-    marginBottom: 12,
-  },
-  reviewChipsContent: {
-    flexDirection: "row",
-    gap: 8,
-    paddingRight: 16,
-  },
-  reviewChip: {
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.accentDim,
-    borderRadius: 14,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    justifyContent: "center",
-  },
-  reviewChipText: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.accent,
-    fontSize: 12,
   },
   reviewActions: {
     flexDirection: "row",

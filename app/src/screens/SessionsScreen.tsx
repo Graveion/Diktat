@@ -227,12 +227,17 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
           style={[styles.newButton, clis.length === 0 && styles.newButtonDisabled]}
           onPress={openPicker}
           disabled={clis.length === 0}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="New session"
         >
           <Text style={styles.newButtonText}>+ New session</Text>
         </TouchableOpacity>
+        {connectionState === "connected" && clis.length === 0 ? (
+          <Text style={styles.noAgents}>
+            No coding agents detected on this machine. Check `diktat logs` on your Mac.
+          </Text>
+        ) : null}
       </View>
 
       {visibleSessions.length > 0 && (
@@ -462,6 +467,7 @@ const styles = StyleSheet.create({
   },
   newButtonDisabled: { opacity: 0.35 },
   newButtonText: { fontFamily: fonts.bodySemi, color: colors.onAccent, fontSize: 15 },
+  noAgents: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, textAlign: "center", marginTop: 10, lineHeight: 17 },
 
   searchInput: {
     fontFamily: fonts.body,
