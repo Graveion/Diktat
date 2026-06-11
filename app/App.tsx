@@ -2,14 +2,10 @@ import { useState, useEffect, useRef, useCallback, Component } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
-import Constants from "expo-constants";
 import * as Updates from "expo-updates";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useFonts,
-  Syne_700Bold,
-  Syne_800ExtraBold,
-} from "@expo-google-fonts/syne";
-import {
   SpaceGrotesk_700Bold,
 } from "@expo-google-fonts/space-grotesk";
 import {
@@ -26,6 +22,7 @@ import { usePushToken } from "./src/hooks/usePushToken";
 import { useAuth, type AuthApi } from "./src/hooks/useAuth";
 import { useMachines, type Machine } from "./src/hooks/useMachines";
 import { useEntitlements } from "./src/hooks/useEntitlements";
+import { Banner } from "./src/components/Banner";
 import { SignInScreen } from "./src/screens/SignInScreen";
 import { MachinesScreen } from "./src/screens/MachinesScreen";
 import { PaywallScreen } from "./src/screens/PaywallScreen";
@@ -72,19 +69,6 @@ class CrashBoundary extends Component<{ children: React.ReactNode }, { crashed: 
   }
 }
 
-export const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
-
-// Shows which OTA update is running: "dev" in Expo Go, a short hash in production
-export const UPDATE_LABEL: string = (() => {
-  if (__DEV__) return "dev";
-  const id = Updates.updateId;         // UUID of the currently-running OTA update
-  const at = Updates.createdAt;        // Date it was published
-  if (!id) return "embedded";
-  const short = id.slice(0, 8);
-  const time = at ? at.toISOString().slice(0, 16).replace("T", " ") : "";
-  return `${short}${time ? " · " + time : ""}`;
-})();
-
 function AppWithRealDiktat({ auth, onTryDemo }: { auth: AuthApi; onTryDemo: () => void }) {
   const [relay, setRelay] = useState<RelayDescriptor | undefined>(undefined);
   const diktat = useDiktat(relay);
@@ -113,10 +97,12 @@ function AppWithRealDiktat({ auth, onTryDemo }: { auth: AuthApi; onTryDemo: () =
   );
 }
 
-function AppWithMockDiktat({ auth }: { auth: AuthApi }) {
+function AppWithMockDiktat({ auth, onExitDemo }: { auth: AuthApi; onExitDemo?: () => void }) {
   const diktat = useMockDiktat();
   // Demo / dev mock: already "connected", starts directly on sessions screen.
-  return <AppInner diktat={diktat} auth={auth} connectToMachine={() => {}} leaveMachine={() => {}} demoMode />;
+  return (
+    <AppInner diktat={diktat} auth={auth} connectToMachine={() => {}} leaveMachine={() => {}} demoMode onExitDemo={onExitDemo} />
+  );
 }
 
 function Splash() {
@@ -127,16 +113,37 @@ function Splash() {
   );
 }
 
+// Eager OTA pull: check for a newer bundle on every cold launch and apply it
+// immediately. Default expo-updates behaviour downloads in the background and
+// applies on the NEXT launch, which makes "did the latest OTA reach my phone?"
+// annoyingly ambiguous. Lives at the root (not behind sign-in) so signed-out
+// users receive updates too.
+function useEagerOtaUpdate() {
+  useEffect(() => {
+    if (__DEV__) return;
+    (async () => {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (!check.isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      } catch (e) {
+        info("UPDATE", `OTA check failed: ${(e as Error).message}`);
+      }
+    })();
+  }, []);
+}
+
 function App() {
   // Fonts + auth are resolved here so the sign-in gate and the app both render
   // with the loaded fonts. Login is required for the whole app (local + relay).
   const [fontsLoaded] = useFonts({
-    Syne_700Bold, Syne_800ExtraBold,
     Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
     SpaceGrotesk_700Bold,
   });
   const auth = useAuth();
   const [demoMode, setDemoMode] = useState(false);
+  useEagerOtaUpdate();
 
   if (!fontsLoaded || auth.loading) return <Splash />;
 
@@ -154,17 +161,20 @@ function App() {
     );
   }
 
-  if (MOCK_MODE || demoMode) return <AppWithMockDiktat auth={auth} />;
+  if (MOCK_MODE || demoMode) {
+    return <AppWithMockDiktat auth={auth} onExitDemo={demoMode ? () => setDemoMode(false) : undefined} />;
+  }
   return <AppWithRealDiktat auth={auth} onTryDemo={() => setDemoMode(true)} />;
 }
 
-function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = false, onTryDemo }: {
+function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = false, onTryDemo, onExitDemo }: {
   diktat: ReturnType<typeof useDiktat> | ReturnType<typeof useMockDiktat>;
   auth: AuthApi;
   connectToMachine: (m: Machine) => void;
   leaveMachine: () => void;
   demoMode?: boolean;
   onTryDemo?: () => void;
+  onExitDemo?: () => void;
 }) {
   const [screen, setScreen] = useState<Screen>(demoMode ? "sessions" : "machines");
   const [activeSession, setActiveSession] = useState<DiktatSession | null>(null);
@@ -175,6 +185,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
   const machines = useMachines();
   const ent = useEntitlements();
   const pushToken = usePushToken();
+  const insets = useSafeAreaInsets();
   const prevScreen = useRef<Screen>("machines");
 
   useEffect(() => {
@@ -186,25 +197,6 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
     setSelectedMachine(m);
     connectToMachine(m);
   }, [connectToMachine]);
-
-  // Eager OTA pull: check for a newer bundle on every cold launch and apply
-  // it immediately. Default expo-updates behaviour downloads in the background
-  // and applies on the NEXT launch, which makes "did the latest OTA reach my
-  // phone?" annoyingly ambiguous. This trades ~1s of extra cold-start time
-  // for "if there's an update, you're on it after this launch."
-  useEffect(() => {
-    if (__DEV__) return;
-    (async () => {
-      try {
-        const check = await Updates.checkForUpdateAsync();
-        if (!check.isAvailable) return;
-        await Updates.fetchUpdateAsync();
-        await Updates.reloadAsync();
-      } catch (e) {
-        info("UPDATE", `OTA check failed: ${(e as Error).message}`);
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     // Advance to sessions once the selected machine's relay leg is connected.
@@ -220,23 +212,44 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
     if (!diktat.activeSessionId && screen === "chat") setScreen("sessions");
   }, [diktat.activeSessionId]);
 
-  // Deep-link from push notification tap
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const sessionId = response.notification.request.content.data?.sessionId as string | undefined;
-      if (!sessionId) return;
-      const target = diktat.sessions.find((s) => s.id === sessionId);
-      if (target) {
+  // Deep-link from push notification tap. Guards: demo mode ignores pushes
+  // entirely (they'd navigate the mock), and "session not found" only falls
+  // back to the sessions list when a machine is actually connected — the push
+  // may be for a different machine, and a fresh cold start has none connected.
+  const handlePushResponse = useCallback((response: Notifications.NotificationResponse) => {
+    if (demoMode) return;
+    const sessionId = response.notification.request.content.data?.sessionId as string | undefined;
+    if (!sessionId) return;
+    const target = diktat.sessions.find((s) => s.id === sessionId);
+    if (target) {
+      // Same entitlement gate as a manual resume — pushes shouldn't bypass it.
+      ent.gateAccess().then((ok) => {
+        if (!ok) { setPaywallVisible(true); return; }
         info("NAV", `push tap → chat (session ${sessionId})`);
         setActiveSession(target);
         diktat.resumeSession(target);
         setScreen("chat");
-      } else if (screen !== "chat") {
-        setScreen("sessions");
-      }
-    });
+      });
+    } else if (screen !== "chat" && selectedMachine) {
+      setScreen("sessions");
+    }
+  }, [demoMode, diktat.sessions, screen, selectedMachine, ent]);
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(handlePushResponse);
     return () => sub.remove();
-  }, [diktat.sessions, screen]);
+  }, [handlePushResponse]);
+
+  // Cold-start tap: when the app is *launched by* a push, the listener above
+  // mounts too late to see it. Replay the launch response once.
+  const coldStartPushHandled = useRef(false);
+  useEffect(() => {
+    if (coldStartPushHandled.current) return;
+    coldStartPushHandled.current = true;
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handlePushResponse(response);
+    }).catch(() => {});
+  }, [handlePushResponse]);
 
   const handleResume = async (session: DiktatSession) => {
     if (!(await ent.gateAccess())) { setPaywallVisible(true); return; }
@@ -268,26 +281,33 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
     >
       <StatusBar style="light" />
       {diktat.errorMessage ? (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{diktat.errorMessage}</Text>
-          <TouchableOpacity onPress={diktat.clearError}>
-            <Text style={styles.errorDismiss}>✕</Text>
-          </TouchableOpacity>
-        </View>
+        <Banner
+          variant="error"
+          text={diktat.errorMessage}
+          actionLabel="Dismiss"
+          onAction={diktat.clearError}
+          topInset={insets.top}
+        />
       ) : null}
 
       {demoMode ? (
-        <View style={styles.demoBanner}>
-          <Text style={styles.demoText}>Demo Mode — no Mac required</Text>
-        </View>
+        <Banner
+          variant="success"
+          text="Demo mode — no Mac required"
+          actionLabel={onExitDemo ? "Exit" : undefined}
+          onAction={onExitDemo}
+          topInset={diktat.errorMessage ? 0 : insets.top}
+          testID="demo-banner"
+        />
       ) : null}
 
       {!demoMode && ent.ready && !ent.isPro && !ent.compActive && ent.freeSecondsRemaining > 0 && ent.freeSecondsRemaining < 3600 ? (
-        <TouchableOpacity style={styles.trialBanner} onPress={() => setPaywallVisible(true)}>
-          <Text style={styles.trialText}>
-            Free trial · {Math.ceil(ent.freeSecondsRemaining / 60)} min left — tap to upgrade
-          </Text>
-        </TouchableOpacity>
+        <Banner
+          variant="accent"
+          text={`Free trial · ${Math.ceil(ent.freeSecondsRemaining / 60)} min left — tap to upgrade`}
+          onPress={() => setPaywallVisible(true)}
+          topInset={diktat.errorMessage ? 0 : insets.top}
+        />
       ) : null}
 
       {screen === "debug" ? (
@@ -354,23 +374,15 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
 
 export default function AppWithBoundary() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <CrashBoundary><App /></CrashBoundary>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <CrashBoundary><App /></CrashBoundary>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  errorBanner: {
-    backgroundColor: "#5a1a1a", paddingTop: 56, paddingBottom: 12,
-    paddingHorizontal: 16, flexDirection: "row", alignItems: "center",
-  },
-  errorText: { flex: 1, color: "#ffaaaa", fontSize: 14, lineHeight: 20 },
-  errorDismiss: { color: "#ff8888", fontSize: 18, paddingLeft: 12 },
-  demoBanner: { backgroundColor: "#0f2d1a", paddingVertical: 6, alignItems: "center" },
-  demoText: { color: "#4ade80", fontSize: 12, fontWeight: "600" as const },
-  trialBanner: { backgroundColor: "#241a3a", paddingVertical: 6, alignItems: "center" },
-  trialText: { color: "#c4b5fd", fontSize: 12, fontWeight: "600" },
   paywallOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
 });

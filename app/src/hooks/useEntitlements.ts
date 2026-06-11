@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import Constants from "expo-constants";
-import Purchases, { type PurchasesPackage } from "react-native-purchases";
+import Purchases, { type CustomerInfo, type PurchasesPackage } from "react-native-purchases";
 import { supabase } from "../store/supabase";
 
 // Simulator dev: everything unlocked so we're never blocked.
@@ -65,6 +66,7 @@ export function useEntitlements(): EntitlementsApi {
   }, []);
 
   useEffect(() => {
+    let listener: ((ci: CustomerInfo) => void) | null = null;
     (async () => {
       if (MOCK_MODE) {
         setIsPro(true);
@@ -82,9 +84,8 @@ export function useEntitlements(): EntitlementsApi {
           setIsPro(Boolean(info.entitlements.active[PRO_ENTITLEMENT]));
           const offerings = await Purchases.getOfferings();
           setPackages(offerings.current?.availablePackages ?? []);
-          Purchases.addCustomerInfoUpdateListener((ci) =>
-            setIsPro(Boolean(ci.entitlements.active[PRO_ENTITLEMENT])),
-          );
+          listener = (ci) => setIsPro(Boolean(ci.entitlements.active[PRO_ENTITLEMENT]));
+          Purchases.addCustomerInfoUpdateListener(listener);
         }
       } catch {
         /* RC not reachable / not configured — fall back to trial + comp */
@@ -92,6 +93,25 @@ export function useEntitlements(): EntitlementsApi {
       await refreshAccountState();
       setReady(true);
     })();
+    return () => {
+      if (listener) Purchases.removeCustomerInfoUpdateListener(listener);
+    };
+  }, [refreshAccountState]);
+
+  // Refetch on foreground so a subscription bought on another device (or a
+  // comp/trial change) shows up without an app restart.
+  useEffect(() => {
+    if (MOCK_MODE) return;
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") return;
+      refreshAccountState().catch(() => {});
+      if (rcConfigured) {
+        Purchases.getCustomerInfo()
+          .then((ci) => setIsPro(Boolean(ci.entitlements.active[PRO_ENTITLEMENT])))
+          .catch(() => {});
+      }
+    });
+    return () => sub.remove();
   }, [refreshAccountState]);
 
   const now = Date.now();

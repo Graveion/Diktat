@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as AppleAuthentication from "expo-apple-authentication";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 import { colors, fonts } from "../theme";
-import { APP_VERSION, UPDATE_LABEL } from "../../App";
+import { APP_VERSION, UPDATE_LABEL } from "../constants";
 
 type Props = {
   appleAvailable: boolean;
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   hero: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 24 },
   wordmark: {
-    fontFamily: fonts.displayXBold,
+    fontFamily: fonts.display,
     fontSize: 64,
     color: colors.text,
     letterSpacing: -2,

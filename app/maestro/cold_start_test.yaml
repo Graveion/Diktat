@@ -1,0 +1,24 @@
+appId: com.graveion.diktat
+---
+# Cold-start smoke: launch with CLEARED state — the true first-run path.
+# This is the exact render sequence that shipped the "rendered more hooks"
+# crash (fonts loading → splash → first real render), which every other flow
+# misses because they all use clearState: false. If the app crashes or shows
+# the crash boundary here, fail loudly.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+# A crash surfaces the CrashBoundary screen — assert it is NOT present.
+- assertNotVisible: "Something crashed"
+# Dev/mock builds land on machines (mock machine present) or sign-in in a
+# release-style run; either way ONE of the two known first screens must render.
+- runFlow:
+    when:
+      notVisible: "Your machines"
+    commands:
+      - assertVisible: "diktat"
+# Relaunch WITHOUT clearing state — second-launch path (persisted state replay).
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- assertNotVisible: "Something crashed"

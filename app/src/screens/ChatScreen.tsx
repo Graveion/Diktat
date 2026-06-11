@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
@@ -8,6 +8,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Markdown from "react-native-markdown-display";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import Reanimated, { FadeInDown, FadeInUp, ZoomIn, useReducedMotion } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
@@ -60,6 +63,7 @@ const SLASH_COMMANDS: Record<string, Array<{ cmd: string; description: string }>
 // ─── Voice waveform ──────────────────────────────────────────────────────────
 
 function VoiceWaveform() {
+  const reducedMotion = useReducedMotion();
   const bars = [
     useRef(new Animated.Value(0.3)).current,
     useRef(new Animated.Value(0.6)).current,
@@ -69,6 +73,7 @@ function VoiceWaveform() {
   ];
 
   useEffect(() => {
+    if (reducedMotion) return; // static bars are signal enough
     const anims = bars.map((bar, i) =>
       Animated.loop(
         Animated.sequence([
@@ -80,7 +85,7 @@ function VoiceWaveform() {
     );
     anims.forEach((a) => a.start());
     return () => anims.forEach((a) => a.stop());
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <View style={waveStyles.container}>
@@ -97,12 +102,14 @@ function VoiceWaveform() {
 // ─── Typing indicator ────────────────────────────────────────────────────────
 
 function TypingIndicator() {
+  const reducedMotion = useReducedMotion();
   const dots = [
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0.6)).current,
+    useRef(new Animated.Value(0.6)).current,
+    useRef(new Animated.Value(0.6)).current,
   ];
   useEffect(() => {
+    if (reducedMotion) return;
     const anims = dots.map((dot, i) =>
       Animated.loop(
         Animated.sequence([
@@ -115,7 +122,7 @@ function TypingIndicator() {
     );
     anims.forEach((a) => a.start());
     return () => anims.forEach((a) => a.stop());
-  }, []);
+  }, [reducedMotion]);
   return (
     <View style={typingStyles.container}>
       {dots.map((dot, i) => (
@@ -127,6 +134,30 @@ function TypingIndicator() {
     </View>
   );
 }
+
+// ─── Streaming caret ─────────────────────────────────────────────────────────
+// Terminal-style block cursor breathing at the tail of the streaming message.
+
+function StreamingCaret() {
+  const reducedMotion = useReducedMotion();
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (reducedMotion) return; // steady caret, no blink
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.15, duration: 550, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 550, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity, reducedMotion]);
+  return <Animated.Text style={[caretStyles.caret, { opacity }]}>▍</Animated.Text>;
+}
+
+const caretStyles = StyleSheet.create({
+  caret: { color: colors.accent, fontSize: 15, lineHeight: 22, paddingLeft: 12 },
+});
 
 // ─── Message bubble ──────────────────────────────────────────────────────────
 
@@ -203,10 +234,16 @@ function ToolPreviewDrawer({
   );
 }
 
-function MessageBubble({
+// Memoized: every streamed token replaces the messages array, but only the
+// last bubble's object identity changes — without memo every earlier bubble
+// re-renders (including a full Markdown re-parse) on each token.
+const MessageBubble = memo(function MessageBubble({
   message,
+  streamingTail = false,
 }: {
   message: DiktatMessage;
+  /** True for the last assistant bubble while output is streaming — shows the caret. */
+  streamingTail?: boolean;
 }) {
   const handleLongPress = useCallback(() => {
     Clipboard.setStringAsync(message.text);
@@ -232,6 +269,7 @@ function MessageBubble({
         onLongPress={handleLongPress}
         activeOpacity={0.85}
         delayLongPress={400}
+        accessibilityLabel={`You said: ${message.text}`}
       >
         <View style={[bubbleStyles.bubble, bubbleStyles.userBubble]}>
           <Text style={bubbleStyles.userText}>{message.text}</Text>
@@ -252,10 +290,11 @@ function MessageBubble({
         <Markdown style={markdownStyles} rules={markdownRules}>
           {message.text}
         </Markdown>
+        {streamingTail ? <StreamingCaret /> : null}
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 // On Fabric (New Architecture), a horizontal ScrollView with no explicit height
 // inside a vertical ScrollView inflates to the outer viewport height. Setting
@@ -311,7 +350,9 @@ type Props = {
   activeSessionId: string | null;
   sessionCli?: string;
   agents?: AgentSelectionMap;
-  onSend: (text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => void;
+  // Returns false when the message couldn't be delivered (socket not open) so
+  // the composer keeps the draft; void/true means sent.
+  onSend: (text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => boolean | void;
   onCancel: (sessionId: string) => void;
   onBack: () => void;
   onRetryConnect?: () => void;
@@ -350,6 +391,12 @@ export function ChatScreen({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { settings, update: updateSettings } = useSettings();
+  const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
+  // Index from which message-entry animations play. History loads en masse and
+  // must NOT animate; only messages appended after the initial load spring in.
+  const animateFromIdx = useRef(Number.MAX_SAFE_INTEGER);
+  const baselineSet = useRef(false);
 
   // Load persisted draft on mount
   useEffect(() => {
@@ -397,7 +444,7 @@ export function ChatScreen({
     stopAllVoice();
     const text = inputRef2.current.trim();
     setMode("idle");
-    if (text) sendWithOpts(text);
+    if (text && sendWithOpts(text) === false) return; // keep draft — not delivered
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
   }, [stopAllVoice, sendWithOpts]);
@@ -508,6 +555,8 @@ export function ChatScreen({
     setMode("idle");
     setExpandedToolIdx(null);
     setPeekPath(null);
+    animateFromIdx.current = Number.MAX_SAFE_INTEGER;
+    baselineSet.current = false;
     historyIdx.current = -1;
     userScrolledAwayRef.current = false;
     isAtBottomRef.current = true;
@@ -569,7 +618,7 @@ export function ChatScreen({
       inputHistory.current = [text, ...inputHistory.current].slice(0, 50);
     }
     historyIdx.current = -1;
-    sendWithOpts(text);
+    if (sendWithOpts(text) === false) return; // keep draft — not delivered
     setInput("");
     AsyncStorage.removeItem(DRAFT_KEY);
   }, [input, streaming, sendWithOpts]);
@@ -649,6 +698,14 @@ export function ChatScreen({
     return () => sub.remove();
   }, [flashCopied]);
 
+  // Once the initial history settles, later messages animate in.
+  useEffect(() => {
+    if (!historyLoading && !baselineSet.current) {
+      baselineSet.current = true;
+      animateFromIdx.current = messages.length;
+    }
+  }, [historyLoading, messages.length]);
+
   const showTyping = streaming && messages[messages.length - 1]?.role !== "assistant";
   // currentTool live indicator: only show if the last message isn't already a tool card
   const lastMsg = messages[messages.length - 1];
@@ -666,21 +723,33 @@ export function ChatScreen({
       keyboardVerticalOffset={0}
     >
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>←</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to sessions">
+          <Ionicons name="chevron-back" size={24} color={colors.accent} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {sessionLabel ?? "Session"}
         </Text>
         <View style={styles.headerRight}>
           {streaming && activeSessionId ? (
-            <TouchableOpacity testID="stop-button" onPress={() => onCancel(activeSessionId)} style={styles.cancelButton}>
+            <TouchableOpacity
+              testID="stop-button"
+              onPress={() => onCancel(activeSessionId)}
+              style={styles.cancelButton}
+              accessibilityRole="button"
+              accessibilityLabel="Stop the running turn"
+            >
               <Text style={styles.cancelText}>Stop</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity testID="settings-button" onPress={() => setSettingsOpen(true)} style={styles.settingsBtn}>
-              <Text style={styles.settingsIcon}>⚙</Text>
+            <TouchableOpacity
+              testID="settings-button"
+              onPress={() => setSettingsOpen(true)}
+              style={styles.settingsBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.textSub} />
             </TouchableOpacity>
           )}
         </View>
@@ -723,8 +792,10 @@ export function ChatScreen({
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
             const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
             // Show the scroll-to-bottom button when > 60px from bottom.
+            // Only commit state when the value flips — onScroll fires
+            // continuously and each set re-renders the whole screen.
             const atBottom = distanceFromBottom < 60;
-            setIsAtBottom(atBottom);
+            if (atBottom !== isAtBottomRef.current) setIsAtBottom(atBottom);
             isAtBottomRef.current = atBottom;
             // 30px hair-trigger: any noticeable upward scroll stops auto-scroll,
             // including during streaming so the user can read earlier messages.
@@ -789,21 +860,36 @@ export function ChatScreen({
                     onLongPress={fullPath ? () => { Haptics.selectionAsync(); setPeekPath(fullPath); } : undefined}
                     delayLongPress={400}
                     activeOpacity={hasPreview || fullPath ? 0.6 : 1}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Tool: ${label}`}
                   >
                     <Text style={styles.toolIcon}>{icon}</Text>
                     <Text style={styles.toolText} numberOfLines={1} ellipsizeMode="middle">{label}{isLive ? "…" : ""}</Text>
-                    {hasPreview ? <Text style={styles.toolChevron}>{expanded ? "▾" : "▸"}</Text>
-                      : fullPath ? <Text style={styles.toolChevron}>›</Text> : null}
+                    {hasPreview ? (
+                      <Ionicons name={expanded ? "chevron-down" : "chevron-forward"} size={13} color={colors.textSub} style={styles.toolChevron} />
+                    ) : fullPath ? (
+                      <Ionicons name="chevron-forward" size={13} color={colors.textSub} style={styles.toolChevron} />
+                    ) : null}
                   </TouchableOpacity>
-                  {expanded && hasPreview ? <ToolPreviewDrawer message={tm} onCopy={emitCopied} /> : null}
+                  {expanded && hasPreview ? (
+                    <Reanimated.View entering={reducedMotion ? undefined : FadeInDown.duration(180)}>
+                      <ToolPreviewDrawer message={tm} onCopy={emitCopied} />
+                    </Reanimated.View>
+                  ) : null}
                 </View>
               );
             }
             const msg = item as DiktatMessage;
+            const isStreamingTail = streaming && msg.role === "assistant" && index === data.length - 1;
+            // New user messages spring in; history and streamed content don't.
+            const animateIn = !reducedMotion && msg.role === "user" && index >= animateFromIdx.current;
             return (
-              <View key={`msg-${index}`}>
-                <MessageBubble message={msg} />
-              </View>
+              <Reanimated.View
+                key={`msg-${index}`}
+                entering={animateIn ? FadeInUp.springify().damping(16).stiffness(190) : undefined}
+              >
+                <MessageBubble message={msg} streamingTail={isStreamingTail} />
+              </Reanimated.View>
             );
           })}
         </ScrollView>
@@ -820,8 +906,10 @@ export function ChatScreen({
             testID="scroll-to-bottom-button"
             style={styles.scrollToBottom}
             onPress={() => listRef.current?.scrollToEnd({ animated: true })}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll to latest message"
           >
-            <Text style={styles.scrollToBottomIcon}>↓</Text>
+            <Ionicons name="arrow-down" size={16} color={colors.textSub} />
           </TouchableOpacity>
         )}
       </View>
@@ -853,7 +941,7 @@ export function ChatScreen({
                   onPress={() => prefixSlash(cmd)}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.suggestionText}>✨ {cmd}</Text>
+                  <Text style={styles.suggestionText}>{cmd}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -985,22 +1073,10 @@ export function ChatScreen({
             ) : null}
           </View>
 
-          {/* Input area */}
-          <View style={styles.inputRow}>
-            <TouchableOpacity
-              testID="mic-button"
-              style={[styles.micButton, listening && styles.micButtonActive]}
-              onPress={settings.micMode === "toggle" ? toggleListening : undefined}
-              onPressIn={settings.micMode === "hold" ? onMicPressIn : undefined}
-              onPressOut={settings.micMode === "hold" ? onMicPressOut : undefined}
-              disabled={streaming}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.micIcon}>
-                {listening ? "🔴" : "🎙"}
-              </Text>
-            </TouchableOpacity>
-
+          {/* Input area. One primary control: the accent button is the mic when
+              the draft is empty (voice is the product) and morphs into the
+              send arrow once text exists; while listening it becomes stop. */}
+          <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.inputWrap}>
               {listening ? (
                 <View style={styles.listeningBox}>
@@ -1015,7 +1091,7 @@ export function ChatScreen({
                   value={input}
                   onChangeText={handleInputChange}
                   placeholder="Message…"
-                  placeholderTextColor="#444"
+                  placeholderTextColor={colors.textSub}
                   multiline
                   editable={!streaming}
                   returnKeyType="default"
@@ -1024,14 +1100,33 @@ export function ChatScreen({
               )}
             </View>
 
-            <TouchableOpacity
-              testID="send-button"
-              style={[styles.sendButton, (!input.trim() || streaming) && styles.sendDisabled]}
-              onPress={handleSend}
-              disabled={!input.trim() || streaming}
-            >
-              <Text style={styles.sendIcon}>↑</Text>
-            </TouchableOpacity>
+            {(() => {
+              const hasText = !!input.trim();
+              const icon = listening ? "stop" : hasText ? "arrow-up" : "mic";
+              return (
+                <TouchableOpacity
+                  testID={hasText && !listening ? "send-button" : "mic-button"}
+                  style={[styles.primaryBtn, listening && styles.primaryBtnListening, streaming && styles.primaryBtnDisabled]}
+                  onPress={
+                    listening
+                      ? (settings.micMode === "toggle" ? toggleListening : undefined)
+                      : hasText
+                        ? handleSend
+                        : (settings.micMode === "toggle" ? toggleListening : undefined)
+                  }
+                  onPressIn={!listening && !hasText && settings.micMode === "hold" ? onMicPressIn : undefined}
+                  onPressOut={settings.micMode === "hold" ? onMicPressOut : undefined}
+                  disabled={streaming}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={listening ? "Stop listening" : hasText ? "Send message" : "Dictate a message"}
+                >
+                  <Reanimated.View key={icon} entering={reducedMotion ? undefined : ZoomIn.duration(140)}>
+                    <Ionicons name={icon} size={21} color={listening ? colors.error : colors.onAccent} />
+                  </Reanimated.View>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </>
       )}
@@ -1081,11 +1176,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
+    paddingBottom: 14, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
   backButton: { padding: 4, marginRight: 10 },
-  backText: { color: colors.accent, fontSize: 22 },
   headerTitle: { flex: 1, fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15 },
   headerRight: { minWidth: 48, alignItems: "flex-end" },
   cancelButton: {
@@ -1117,7 +1211,7 @@ const styles = StyleSheet.create({
   historyLoadingContainer: { alignItems: "center", marginTop: 100 },
   emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
   emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 8 },
-  emptyHint: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 13, textAlign: "center", lineHeight: 20 },
+  emptyHint: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyExamples: {
     marginTop: 22,
     gap: 8,
@@ -1149,7 +1243,7 @@ const styles = StyleSheet.create({
   },
   toolIcon: { fontSize: 11 },
   toolText: { fontFamily: fonts.bodyMedium, color: colors.accentBright, fontSize: 12, flex: 1 },
-  toolChevron: { color: colors.textSub, fontSize: 14, marginLeft: 4 },
+  toolChevron: { marginLeft: 4 },
 
   copyToast: {
     position: "absolute",
@@ -1257,7 +1351,7 @@ const styles = StyleSheet.create({
   selectorChipTextActive: { fontFamily: fonts.bodyMedium, color: colors.text },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
-    paddingHorizontal: 10, paddingTop: 8, paddingBottom: 32,
+    paddingHorizontal: 10, paddingTop: 8,
     borderTopWidth: 1, borderTopColor: colors.borderFaint,
     backgroundColor: colors.bg, gap: 6,
   },
@@ -1277,20 +1371,12 @@ const styles = StyleSheet.create({
   },
   listeningText: { fontFamily: fonts.body, color: colors.accent, fontSize: 14, flex: 1 },
 
-  micButton: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.card, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: colors.border,
-  },
-  micButtonActive: { backgroundColor: colors.accentFaint, borderColor: colors.accentDim },
-  micIcon: { fontSize: 18 },
-
-  sendButton: {
-    width: 40, height: 40, borderRadius: 20,
+  primaryBtn: {
+    width: 46, height: 46, borderRadius: 23,
     backgroundColor: colors.accent, justifyContent: "center", alignItems: "center",
   },
-  sendDisabled: { opacity: 0.2 },
-  sendIcon: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  primaryBtnListening: { backgroundColor: colors.accentFaint, borderWidth: 1, borderColor: colors.accentDim },
+  primaryBtnDisabled: { opacity: 0.3 },
 
   // ─── Review card ─────────────────────────────────────────────────────────
   reviewCard: {
@@ -1317,7 +1403,7 @@ const styles = StyleSheet.create({
   },
   reviewEditHint: {
     fontFamily: fonts.body,
-    color: colors.textMuted,
+    color: colors.textSub,
     fontSize: 11,
     marginBottom: 10,
   },
@@ -1416,7 +1502,7 @@ const bubbleStyles = StyleSheet.create({
 const markdownStyles: any = {
   body: { fontFamily: fonts.body, color: colors.text, fontSize: 15, lineHeight: 24 },
   code_inline: {
-    backgroundColor: colors.card, color: "#c9d1d9",
+    backgroundColor: colors.codeBg, color: colors.codeText,
     fontFamily: fonts.mono, fontSize: 13, borderRadius: 4,
   },
   link: { color: colors.accent },
@@ -1440,20 +1526,20 @@ const typingStyles = StyleSheet.create({
 
 const codeBlockStyles = StyleSheet.create({
   wrapper: { marginVertical: 6, position: "relative" },
-  scroll: { backgroundColor: "#161b22", borderRadius: 8 },
+  scroll: { backgroundColor: colors.codeBg, borderRadius: 8, borderWidth: 1, borderColor: colors.border },
   content: { padding: 12 },
   text: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 12, lineHeight: 18, color: "#c9d1d9",
+    fontFamily: fonts.mono,
+    fontSize: 12, lineHeight: 18, color: colors.codeText,
   },
   copyBtn: {
     position: "absolute", top: 6, right: 8,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: colors.card,
     borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3,
   },
   copyBtnText: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 10, color: "#8b949e",
+    fontFamily: fonts.mono,
+    fontSize: 10, color: colors.textSub,
   },
 });
 
@@ -1465,10 +1551,10 @@ const toolDrawerStyles = StyleSheet.create({
     gap: 8,
   },
   block: {
-    backgroundColor: "#0d1117",
+    backgroundColor: colors.codeBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#21262d",
+    borderColor: colors.border,
     overflow: "hidden",
   },
   header: {
@@ -1479,39 +1565,39 @@ const toolDrawerStyles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "#21262d",
+    borderBottomColor: colors.border,
   },
   headerLabel: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontFamily: fonts.mono,
     fontSize: 10,
-    color: "#7d8590",
+    color: colors.textSub,
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   copyText: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontFamily: fonts.mono,
     fontSize: 10,
-    color: "#58a6ff",
+    color: colors.accent,
   },
   bodyScrollV: { maxHeight: 320 },
   bodyContent: { padding: 10 },
   line: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontFamily: fonts.mono,
     fontSize: 11,
     lineHeight: 16,
   },
-  lineCtx: { color: "#c9d1d9" },
-  lineAdd: { color: "#7ee787", backgroundColor: "rgba(46,160,67,0.12)" },
-  lineDel: { color: "#ffa198", backgroundColor: "rgba(248,81,73,0.12)" },
-  lineHunk: { color: "#8b949e" },
+  lineCtx: { color: colors.codeText },
+  lineAdd: { color: colors.success, backgroundColor: "rgba(52,211,153,0.10)" },
+  lineDel: { color: colors.error, backgroundColor: "rgba(248,113,113,0.10)" },
+  lineHunk: { color: colors.textSub },
   truncated: {
     fontFamily: fonts.body,
     fontSize: 10,
-    color: "#7d8590",
+    color: colors.textSub,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderTopWidth: 1,
-    borderTopColor: "#21262d",
+    borderTopColor: colors.border,
   },
 });
 

@@ -1,11 +1,13 @@
 import { Platform } from "react-native";
 
 // ─── Palette ────────────────────────────────────────────────────────────────
-// Warm-dark "amber terminal" aesthetic.
-// Near-black with warm undertones, amber as the dominant accent.
+// "Violet terminal": layered violet-blacks, electric violet as the single
+// accent, semantic colors doing the rest. Code/diff surfaces use the same
+// family (codeBg/codeText below) — never import another palette (e.g. GitHub
+// grays) next to this one.
 
 export const colors = {
-  // Backgrounds — layered warm blacks
+  // Backgrounds — layered violet-blacks
   bg:          "#07060a",   // canvas
   surface:     "#0f0d13",   // cards / screen bg
   card:        "#171420",   // elevated cards
@@ -18,15 +20,23 @@ export const colors = {
   accentBright: "#c4b5fd",  // hover / highlight
   accentDim:    "#4c1d95",  // muted variant
   accentFaint:  "#120d1f",  // tinted surface
+  // Dark ink for glyphs sitting ON an accent-filled control
+  onAccent:     "#1a1033",
 
   // User message bubble
   userBubble:   "#5b21b6",  // deep violet
 
-  // Text scale
+  // Text scale. textSub passes WCAG AA on bg (5.6:1) — use it for any copy a
+  // user is meant to read. textMuted (~3:1) is for decoration only: chevrons,
+  // dividers, timestamps — never sentences or hints.
   text:         "#f0eef8",  // primary — slightly warm white
-  textSub:      "#8b85a1",  // secondary
-  textMuted:    "#3d3850",  // muted
+  textSub:      "#8b85a1",  // secondary (readable)
+  textMuted:    "#5f5878",  // decorative
   textFaint:    "#1e1b2a",  // barely-there
+
+  // Code / tool-output surfaces (violet-tinted, NOT GitHub gray)
+  codeBg:    "#110e18",
+  codeText:  "#d6d2e8",
 
   // Semantic
   success:  "#34d399",
@@ -36,12 +46,11 @@ export const colors = {
 };
 
 // ─── Typography ─────────────────────────────────────────────────────────────
-// Syne (display) — angular, geometric, characterful
+// Space Grotesk (display) — technical, geometric, terminal-adjacent
 // Outfit (body) — clean but distinctive, not Inter
 
 export const fonts = {
   display:     "SpaceGrotesk_700Bold",
-  displayXBold:"SpaceGrotesk_700Bold",
   body:        "Outfit_400Regular",
   bodyMedium:  "Outfit_500Medium",
   bodySemi:    "Outfit_600SemiBold",

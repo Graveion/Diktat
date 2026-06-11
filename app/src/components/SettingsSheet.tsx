@@ -6,7 +6,7 @@ import { MicMode, MIC_LABELS, Settings } from "../utils/settings";
 import { submitFeedback, type FeedbackKind } from "../utils/feedback";
 import { openStoreReview } from "../utils/review";
 import { PRIVACY_URL, SUPPORT_URL } from "../constants";
-import { APP_VERSION, UPDATE_LABEL } from "../../App";
+import { APP_VERSION, UPDATE_LABEL } from "../constants";
 
 type Props = {
   visible: boolean;

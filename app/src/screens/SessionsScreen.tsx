@@ -4,8 +4,7 @@ import {
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { DiktatSession, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
 import { loadHiddenSessions, hideSession } from "../store/config";
 import { colors, fonts } from "../theme";
@@ -54,7 +53,6 @@ function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {
   const preview = typeof s.firstMessage === "string" && s.firstMessage.trim()
     ? s.firstMessage.trim()
     : null;
-  const shortId = s.id.slice(0, 8);
 
   return (
     <Swipeable renderRightActions={renderRightActions} overshootRight={false}>
@@ -78,7 +76,7 @@ function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {
           {showProject ? (
             <Text style={styles.sessionProjectLabel} numberOfLines={1}>{showProject}</Text>
           ) : null}
-          <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}  ·  {shortId}</Text>
+          <Text style={styles.sessionDate}>{formatDate(s.lastActiveAt)}</Text>
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -111,6 +109,7 @@ function bestProjectName(path: string) {
 }
 
 export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
+  const insets = useSafeAreaInsets();
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
@@ -194,7 +193,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
         <TouchableOpacity
           activeOpacity={1}
           onPress={() => {
@@ -217,7 +216,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
             <Text style={styles.connectedHost}>{connectedHost}</Text>
           ) : null}
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleDisconnect}>
+        <TouchableOpacity onPress={handleDisconnect} accessibilityRole="button" accessibilityLabel="Disconnect from machine">
           <Text style={styles.disconnect}>Disconnect</Text>
         </TouchableOpacity>
       </View>
@@ -229,13 +228,10 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
           onPress={openPicker}
           disabled={clis.length === 0}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="New session"
         >
-          <LinearGradient
-            colors={[colors.accent, "#6d28d9"]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          />
-          <Text style={styles.newButtonText}>+ New Session</Text>
+          <Text style={styles.newButtonText}>+ New session</Text>
         </TouchableOpacity>
       </View>
 
@@ -253,7 +249,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color="#4f8ef7" />
+          <ActivityIndicator color={colors.accent} />
           <Text style={styles.loadingText}>Loading sessions…</Text>
         </View>
       ) : (() => {
@@ -446,7 +442,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end",
-    paddingHorizontal: 20, paddingTop: 64, paddingBottom: 16,
+    paddingHorizontal: 20, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -462,10 +458,10 @@ const styles = StyleSheet.create({
   newButtonWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   newButton: {
     borderRadius: 12, padding: 15, alignItems: "center",
-    overflow: "hidden",
+    backgroundColor: colors.accent,
   },
   newButtonDisabled: { opacity: 0.35 },
-  newButtonText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 15 },
+  newButtonText: { fontFamily: fonts.bodySemi, color: colors.onAccent, fontSize: 15 },
 
   searchInput: {
     fontFamily: fonts.body,

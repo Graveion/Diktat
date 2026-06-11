@@ -9,8 +9,10 @@ import {
   Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import type { PurchasesPackage } from "react-native-purchases";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, radii, space } from "../theme";
 
 type Props = {
@@ -30,6 +32,7 @@ function periodLabel(pkg: PurchasesPackage): string {
 }
 
 export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClose, onUnlocked }: Props) {
+  const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<string | null>(null);
   const [showRedeem, setShowRedeem] = useState(false);
   const [code, setCode] = useState("");
@@ -81,8 +84,14 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.6 }}
       />
-      <TouchableOpacity style={styles.close} onPress={onClose} hitSlop={14}>
-        <Text style={styles.closeText}>✕</Text>
+      <TouchableOpacity
+        style={[styles.close, { top: insets.top + 12 }]}
+        onPress={onClose}
+        hitSlop={14}
+        accessibilityRole="button"
+        accessibilityLabel="Close paywall"
+      >
+        <Ionicons name="close" size={24} color={colors.textSub} />
       </TouchableOpacity>
 
       <View style={styles.body}>
@@ -158,8 +167,7 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  close: { position: "absolute", top: 56, left: 20, zIndex: 2 },
-  closeText: { color: colors.textSub, fontSize: 22, fontFamily: fonts.body },
+  close: { position: "absolute", left: 20, zIndex: 2 },
 
   body: { flex: 1, justifyContent: "center", paddingHorizontal: space.lg },
   title: { fontFamily: fonts.display, fontSize: 40, color: colors.text, textAlign: "center", letterSpacing: -1 },

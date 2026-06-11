@@ -15,23 +15,6 @@ export interface Machine {
   lastSeenAt: string | null;
 }
 
-export interface PairingCode {
-  code: string;
-  expiresAt: string;
-}
-
-// Human-typable code: 8 chars, no ambiguous 0/O/1/I/L characters.
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-function generateCode(): string {
-  let s = "";
-  for (let i = 0; i < 8; i++) {
-    s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-  }
-  return s;
-}
-
-const PAIRING_TTL_MS = 10 * 60 * 1000;
-
 const MOCK_MACHINES: Machine[] = [
   { id: "mock-mac", name: "MacBook Pro", lastSeenAt: new Date().toISOString() },
 ];
@@ -41,7 +24,6 @@ export interface MachinesApi {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  createPairingCode: () => Promise<PairingCode>;
   /** Claim a QR pairing nonce (scanned from the Mac) for this account. */
   claimQrPairing: (nonce: string) => Promise<{ ok: boolean; machineId?: string; error?: string }>;
   unpair: (id: string) => Promise<void>;
@@ -74,21 +56,6 @@ export function useMachines(): MachinesApi {
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  const createPairingCode = useCallback(async (): Promise<PairingCode> => {
-    const code = generateCode();
-    const expiresAt = new Date(Date.now() + PAIRING_TTL_MS).toISOString();
-    if (MOCK_MODE) return { code, expiresAt };
-
-    const { data: u } = await supabase.auth.getUser();
-    const accountId = u.user?.id;
-    if (!accountId) throw new Error("Not signed in");
-    const { error: err } = await supabase
-      .from("pairing_codes")
-      .insert({ code, account_id: accountId, expires_at: expiresAt });
-    if (err) throw err;
-    return { code, expiresAt };
-  }, []);
 
   const claimQrPairing = useCallback(
     async (nonce: string): Promise<{ ok: boolean; machineId?: string; error?: string }> => {
@@ -134,5 +101,5 @@ export function useMachines(): MachinesApi {
     [refresh],
   );
 
-  return { machines, loading, error, refresh, createPairingCode, claimQrPairing, unpair };
+  return { machines, loading, error, refresh, claimQrPairing, unpair };
 }

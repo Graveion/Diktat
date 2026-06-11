@@ -3,6 +3,7 @@ import { info, warn, error as logError } from "../utils/logger";
 import { mergeSessions, toolDisplayString, appendOutput } from "../utils/messages";
 import { track } from "../utils/analytics";
 import { recordSessionAndMaybePrompt } from "../utils/review";
+import { supabase } from "../store/supabase";
 
 export type DiktatSession = {
   id: string;
@@ -69,8 +70,16 @@ export function useDiktat(relay?: RelayDescriptor) {
   const relayRef = useRef<RelayDescriptor | undefined>(relay);
   relayRef.current = relay;
   const pushTokenRef = useRef<string | null>(null);
-  const pendingResumeRef = useRef<{ session: any } | null>(null);
+  const pendingResumeRef = useRef<{ session: DiktatSession } | null>(null);
   const isAutoResumingRef = useRef(false);
+  // Set when the daemon couldn't replay the full detached gap (its buffer
+  // overflowed) and asks us to reload history instead of preserving the now-
+  // stale in-memory transcript on the next auto-resume.
+  const forceHistoryReloadRef = useRef(false);
+  // Consecutive auth rejections. The descriptor's token can expire mid-session;
+  // each redial fetches a fresh one, so a rejection is usually transient. Only
+  // give up after several in a row (genuinely revoked session).
+  const authFailures = useRef(0);
 
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [reconnecting, setReconnecting] = useState(false);
@@ -87,7 +96,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     const relayCfg = relayRef.current;
     if (!relayCfg) { warn("WS", "connect() called with no relay descriptor — skipping"); return; }
 
@@ -98,6 +107,16 @@ export function useDiktat(relay?: RelayDescriptor) {
     ws.current = null;
     setState("connecting");
     setErrorMessage(null);
+
+    // Supabase access tokens expire (~1h) and the descriptor's copy is frozen
+    // at connect-to-machine time, so every dial — especially reconnects — must
+    // use the freshest session token. getSession() auto-refreshes if expired.
+    let accountToken = relayCfg.accountToken;
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) accountToken = data.session.access_token;
+    } catch { /* offline — fall back to the descriptor token */ }
+    if (relayRef.current !== relayCfg || intentionalDisconnect.current) return;
 
     let socket: WebSocket;
     {
@@ -114,7 +133,7 @@ export function useDiktat(relay?: RelayDescriptor) {
         new (url: string, protocols: undefined, options: { headers: Record<string, string> }): WebSocket;
       };
       socket = new RNWebSocket(url, undefined, {
-        headers: { Authorization: `Bearer ${relayCfg.accountToken}` },
+        headers: { Authorization: `Bearer ${accountToken}` },
       });
     }
     ws.current = socket;
@@ -122,6 +141,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     socket.onopen = () => {
       if (ws.current !== socket) { info("WS", "onopen: stale socket — ignoring"); return; }
       reconnectDelay.current = RECONNECT_DELAY_MS;
+      authFailures.current = 0;
       hasConnected.current = true;
       setReconnecting(false);
       setState("connected");
@@ -169,11 +189,17 @@ export function useDiktat(relay?: RelayDescriptor) {
           case "relay_error": {
             const code = msg.code as string | undefined;
             logError("RELAY", `relay_error: code=${code} message=${msg.message ?? ""}`);
-            // For auth/ownership failures the socket will also close. Avoid
-            // hammering the relay with backoff retries on a non-transient
-            // rejection — let onclose see the intentional flag and stay down.
-            if (code === "forbidden" || code === "unauthorized") {
+            // Ownership failures are permanent — stay down. Auth failures are
+            // usually a token that expired mid-backoff; each redial fetches a
+            // fresh one, so retry a couple of times before giving up.
+            if (code === "forbidden") {
               intentionalDisconnect.current = true;
+            } else if (code === "unauthorized") {
+              authFailures.current += 1;
+              if (authFailures.current >= 3) {
+                intentionalDisconnect.current = true;
+                setErrorMessage("Session expired — please sign in again.");
+              }
             }
             // "replaced" (and any close that follows) goes through the normal
             // onclose backoff path.
@@ -225,15 +251,34 @@ export function useDiktat(relay?: RelayDescriptor) {
         return;
       }
 
+      // Daemon's detached-output buffer overflowed: the in-memory transcript
+      // can't be trusted to be complete, so reload history on the pending
+      // auto-resume instead of preserving it.
+      if (msg.type === "resync") {
+        info("SESSION", "resync requested by daemon (detached buffer overflow)");
+        forceHistoryReloadRef.current = true;
+        return;
+      }
+
       if (msg.type === "spawned" || msg.type === "resumed") {
         discardOutput.current = false;
         setActiveSessionId(msg.session.id);
-        if (msg.type === "resumed" && isAutoResumingRef.current) {
-          // Reconnect mid-session: keep current in-memory messages and the
-          // hasReceivedOutput gate so the trailing history load is skipped.
+        // Register spawned sessions for auto-resume too — without this, a WS
+        // drop after spawn leaves the new session unattached on reconnect.
+        // (resumeSession already registered resumed ones with the full record.)
+        if (msg.type === "spawned") {
+          pendingResumeRef.current = { session: { source: "daemon", ...msg.session } };
+        }
+        if (msg.type === "resumed" && isAutoResumingRef.current && !forceHistoryReloadRef.current) {
+          // Reconnect mid-session, gap already replayed by the daemon: keep
+          // current in-memory messages and the hasReceivedOutput gate so the
+          // trailing history load is skipped.
           isAutoResumingRef.current = false;
           info("SESSION", `resumed (auto, preserving in-memory msgs): sessionId=${msg.session.id}`);
         } else {
+          // Fresh resume OR an overflow resync — reload history from scratch.
+          isAutoResumingRef.current = false;
+          forceHistoryReloadRef.current = false;
           hasReceivedOutput.current = false;
           setMessages([]);
           setStreaming(false);
@@ -332,9 +377,13 @@ export function useDiktat(relay?: RelayDescriptor) {
       if (msg.type === "error") {
         logError("MSG", `daemon error: ${msg.message}`);
         setErrorMessage(msg.message ?? "An error occurred");
+        // A failed (auto-)resume must clear the flag, or the next manual
+        // resume takes the preserve-messages branch and shows stale content.
+        isAutoResumingRef.current = false;
         if (msg.message?.includes("No active session")) {
           warn("SESSION", "Active session invalidated (daemon may have restarted)");
           setActiveSessionId(null);
+          pendingResumeRef.current = null;
           setStreaming(false);
           setCurrentTool(null);
         }
@@ -386,6 +435,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     info("SESSION", "leaveSession() — discarding further output from current session");
     discardOutput.current = true;
     pendingResumeRef.current = null;
+    isAutoResumingRef.current = false;
     setActiveSessionId(null);
     setMessages([]);
     setStreaming(false);
@@ -428,11 +478,18 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   const sendMessage = useCallback((text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => {
-    if (!activeSessionId) { warn("SESSION", "sendMessage called with no activeSessionId"); return; }
+    if (!activeSessionId) { warn("SESSION", "sendMessage called with no activeSessionId"); return false; }
+    // Never show an optimistic bubble for a message the socket can't deliver —
+    // during backoff or machine-offline the send would silently vanish.
+    if (ws.current?.readyState !== WebSocket.OPEN) {
+      warn("SESSION", "sendMessage: socket not open — message not sent");
+      setErrorMessage("Not connected — message not sent. Retry when reconnected.");
+      return false;
+    }
     info("SESSION", `input: sessionId=${activeSessionId} text="${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
     track("message_sent", { ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}) });
     setMessages((prev) => [...prev, { role: "user", text }]);
-    ws.current?.send(JSON.stringify({
+    ws.current.send(JSON.stringify({
       type: "input",
       sessionId: activeSessionId,
       text,
@@ -441,6 +498,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}),
     }));
     setStreaming(true);
+    return true;
   }, [activeSessionId]);
 
   const registerPushToken = useCallback((token: string) => {
@@ -457,6 +515,9 @@ export function useDiktat(relay?: RelayDescriptor) {
     return () => {
       intentionalDisconnect.current = true;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      // onclose normally clears the ping timer, but it can never fire if the
+      // socket already errored — clear here too or the interval leaks forever.
+      if (pingTimer.current) clearInterval(pingTimer.current);
       ws.current?.close();
     };
   }, []);
