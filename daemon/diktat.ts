@@ -39,8 +39,8 @@ function usage(): never {
   process.exit(cmd ? 1 : 0);
 }
 
-/** Run one of the daemon scripts attached to this terminal; exit with its code. */
-async function runAttached(script: string, args: string[] = []): Promise<never> {
+/** Run a daemon script attached to this terminal; resolve with its exit code. */
+async function spawnAttached(script: string, args: string[] = []): Promise<number> {
   const proc = Bun.spawn(["bun", join(DIR, script), ...args], {
     cwd: DIR,
     stdin: "inherit",
@@ -48,7 +48,12 @@ async function runAttached(script: string, args: string[] = []): Promise<never> 
     stderr: "inherit",
   });
   await proc.exited;
-  process.exit(proc.exitCode ?? 0);
+  return proc.exitCode ?? 0;
+}
+
+/** Run a daemon script attached to this terminal; exit with its code. */
+async function runAttached(script: string, args: string[] = []): Promise<never> {
+  process.exit(await spawnAttached(script, args));
 }
 
 function readPid(): number | null {
@@ -75,37 +80,32 @@ function stopLegacyPid(): void {
   if (pid) rmSync(PID_FILE, { force: true });
 }
 
-async function start(): Promise<never> {
-  const foreground = rest.includes("-f") || rest.includes("--foreground");
-
-  if (foreground) {
-    return runAttached("index.ts");
-  }
-
+/**
+ * Bring the background daemon up. With `restart`, always reload it (used after
+ * pairing, so the freshly-written token is picked up — a running daemon only
+ * reads config.json at startup). Without `restart`, leave an already-running
+ * daemon alone.
+ */
+async function startDaemon(opts: { restart: boolean }): Promise<void> {
   mkdirSync(STATE, { recursive: true });
+  const displayLog = LOG_FILE.replace(homedir(), "~");
 
   // macOS: run under launchd so the daemon survives logout, crash, and reboot.
-  // This is the difference between the phone reliably reaching this Mac and the
-  // connection silently dying after a restart with no way to fix it remotely.
   if (service.isMac()) {
-    if (service.isLoaded()) {
-      console.log("Diktat daemon is already managed by launchd (running).");
+    if (service.isLoaded() && !opts.restart) {
+      console.log("Diktat daemon is already running (managed by launchd).");
       console.log("  diktat stop   to stop it · diktat logs   to follow logs");
-      process.exit(0);
+      return;
     }
     stopLegacyPid(); // avoid two daemons if upgrading from a nohup install
+    // installAndLoad unloads any existing instance first, so this also restarts.
     const r = service.installAndLoad(DIR, LOG_FILE);
     if (r.ok) {
-      const displayLog = LOG_FILE.replace(homedir(), "~");
-      console.log("Diktat daemon installed and started via launchd.");
-      console.log("It will now start automatically on login and restart if it crashes.");
-      console.log("");
-      console.log("  diktat status   Check whether it's running");
-      console.log("  diktat logs     Follow the daemon logs");
-      console.log("  diktat stop     Stop and disable autostart");
-      console.log("");
-      console.log(`  Logs: ${displayLog}`);
-      process.exit(0);
+      console.log(opts.restart
+        ? "Daemon (re)started via launchd — it will connect with the new pairing."
+        : "Diktat daemon started via launchd (autostarts on login, restarts on crash).");
+      console.log(`  diktat status · diktat logs · diktat stop    Logs: ${displayLog}`);
+      return;
     }
     console.warn(`launchd setup failed (${r.error}); falling back to a background process.`);
     // fall through to nohup
@@ -113,8 +113,11 @@ async function start(): Promise<never> {
 
   const existing = readPid();
   if (existing && isRunning(existing)) {
-    console.log(`Daemon already running (pid ${existing}).`);
-    process.exit(0);
+    if (!opts.restart) {
+      console.log(`Daemon already running (pid ${existing}).`);
+      return;
+    }
+    stopLegacyPid(); // restart: kill the stale process before respawning
   }
   const out = openSync(LOG_FILE, "a");
   // nohup keeps it alive after the terminal closes; unref lets us exit now.
@@ -128,9 +131,22 @@ async function start(): Promise<never> {
   });
   proc.unref();
   writeFileSync(PID_FILE, String(proc.pid));
-  const displayLog = LOG_FILE.replace(homedir(), "~");
-  console.log(`Diktat daemon started (pid ${proc.pid}).`);
-  console.log(`  Logs: ${displayLog}`);
+  console.log(`Diktat daemon started (pid ${proc.pid}).  Logs: ${displayLog}`);
+}
+
+async function start(): Promise<never> {
+  const foreground = rest.includes("-f") || rest.includes("--foreground");
+  if (foreground) return runAttached("index.ts");
+  await startDaemon({ restart: false });
+  process.exit(0);
+}
+
+/** `diktat pair` — pair, then (re)start the daemon so it's immediately live. */
+async function pair(): Promise<never> {
+  const code = await spawnAttached("pair.ts", rest);
+  if (code !== 0) process.exit(code); // pairing failed/cancelled; pair.ts already explained
+  await startDaemon({ restart: true });
+  console.log("\n✓ Paired and connected. Your Mac is now reachable from the app.\n");
   process.exit(0);
 }
 
@@ -178,7 +194,7 @@ async function logs(): Promise<never> {
 
 switch (cmd) {
   case "pair":
-    await runAttached("pair.ts", rest);
+    await pair();
     break;
   case "start":
     await start();

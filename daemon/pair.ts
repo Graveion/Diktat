@@ -102,7 +102,8 @@ async function main() {
 
   console.log(`\n✓ Paired. Wrote relay config to daemon/config.json`);
   console.log(`  Machine: ${name} (${machineId})`);
-  console.log(`\n  Run 'diktat start' to connect via the relay.\n`);
+  // The `diktat` CLI (re)starts the daemon after this returns; when pair.ts is
+  // run directly via `bun pair.ts`, start the daemon yourself with `diktat start`.
 }
 
 /** Typed-code fallback: redeem a code the phone displayed. */
