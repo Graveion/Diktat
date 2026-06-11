@@ -192,11 +192,19 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
     if (pushToken) diktat.registerPushToken(pushToken);
   }, [pushToken]);
 
-  const handleSelectMachine = useCallback((m: Machine) => {
+  const handleSelectMachine = useCallback(async (m: Machine) => {
+    // Gate BEFORE connecting. The relay refuses the client leg for an expired
+    // trial by rejecting the WS upgrade, which the app can't distinguish from a
+    // network drop — so it would silently loop and never reach a screen with
+    // the paywall. Checking here surfaces the paywall (and its redeem field).
+    if (!demoMode && !(await ent.gateAccess())) {
+      setPaywallVisible(true);
+      return;
+    }
     info("NAV", `machines → connecting (machine ${m.id})`);
     setSelectedMachine(m);
     connectToMachine(m);
-  }, [connectToMachine]);
+  }, [connectToMachine, demoMode, ent]);
 
   useEffect(() => {
     // Advance to sessions once the selected machine's relay leg is connected.

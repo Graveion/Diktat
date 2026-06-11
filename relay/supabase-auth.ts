@@ -41,6 +41,9 @@ export type EntitlementLookup =
   | { ok: true; row: EntitlementRow | null }
   | { ok: false };
 
+/** Free-trial window. Must match the app's FREE_TRIAL_MS (useEntitlements.ts). */
+export const TRIAL_MS = 24 * 60 * 60 * 1000; // 1 day
+
 /**
  * Pure entitlement decision.
  * - lookup error (ok=false) → deny (fail closed)
@@ -54,7 +57,7 @@ export function isEntitled(lookup: EntitlementLookup): boolean {
   const { entitled_until, comp_until, trial_started_at } = lookup.row;
   if (entitled_until && (entitled_until.startsWith("infinity") || new Date(entitled_until).getTime() > now)) return true;
   if (comp_until && (comp_until.startsWith("infinity") || new Date(comp_until).getTime() > now)) return true;
-  if (trial_started_at && new Date(trial_started_at).getTime() + 3_600_000 > now) return true;
+  if (trial_started_at && new Date(trial_started_at).getTime() + TRIAL_MS > now) return true;
   return false;
 }
 

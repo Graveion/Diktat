@@ -8,7 +8,8 @@ import { supabase } from "../store/supabase";
 const MOCK_MODE = __DEV__;
 
 const PRO_ENTITLEMENT = "pro";
-export const FREE_TRIAL_MS = 60 * 60 * 1000; // 1 hour of free usage
+// Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
+export const FREE_TRIAL_MS = 24 * 60 * 60 * 1000; // 1 day of free usage
 const RC_IOS_KEY = ((Constants.expoConfig?.extra ?? {}) as Record<string, string>).revenueCatIosKey ?? "";
 
 let rcConfigured = false;

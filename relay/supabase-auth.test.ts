@@ -89,8 +89,13 @@ describe("entitlement", () => {
   });
 
   it("isEntitled: has row with expired trial → false", () => {
-    const trial_started_at = new Date(Date.now() - 4_000_000).toISOString(); // > 1h ago
+    const trial_started_at = new Date(Date.now() - 25 * 3_600_000).toISOString(); // > 1 day ago
     expect(isEntitled({ ok: true, row: { trial_started_at, comp_until: null, entitled_until: null } })).toBe(false);
+  });
+
+  it("isEntitled: trial still active well within the day window → true", () => {
+    const trial_started_at = new Date(Date.now() - 12 * 3_600_000).toISOString(); // 12h ago
+    expect(isEntitled({ ok: true, row: { trial_started_at, comp_until: null, entitled_until: null } })).toBe(true);
   });
 
   it("isEntitled: has row with comp_until = 'infinity' → true", () => {
@@ -120,7 +125,7 @@ describe("entitlement", () => {
   });
 
   it("authenticator client leg: expired trial returns 4402", async () => {
-    const trial_started_at = new Date(Date.now() - 4_000_000).toISOString();
+    const trial_started_at = new Date(Date.now() - 25 * 3_600_000).toISOString();
     const auth = makeSupabaseAuthenticator(
       deps({
         getEntitlement: async () => ({
