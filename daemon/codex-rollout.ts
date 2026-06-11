@@ -1,4 +1,4 @@
-// ─── Codex CLI rollout JSONL — schema (types only, no reader yet) ────────────
+// ─── Codex CLI rollout JSONL — schema ────────────────────────────────────────
 //
 // Source of truth: derived from the openai/codex Rust source (serde attributes
 // ARE the wire contract), not a captured sample:
@@ -12,8 +12,7 @@
 // object per line. The SQLite `state_*.sqlite` `threads` table indexes these
 // files (threads.rollout_path → the JSONL); see agents.ts `history`.
 //
-// Parser status: NOT written yet (agents.ts codex.history.reader === false).
-// These types are the spec a future parseCodexRollout() implements. Gotchas:
+// Parsed by codex-sessions.ts (parseCodexRollout / readCodexHistory). Gotchas:
 //   • The OUTER line `type` and the response_item payload's OWN nested `type`
 //     are different discriminators — don't conflate them.
 //   • function_call_output.output serializes as a BARE string or array (its

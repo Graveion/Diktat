@@ -1,10 +1,7 @@
-import { existsSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
 import { loadConfig } from "./config";
 import { detectCLIs } from "./cli-detector";
 import { Session } from "./session";
-import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
+import { cursorShellPermissionGranted } from "./cursor-shell-permissions";
 import { type MessageContext } from "./message-handler";
 import { startRelayClient } from "./relay-client";
 
@@ -12,16 +9,10 @@ const config = loadConfig();
 
 const availableCLIs = await detectCLIs();
 
-// On first startup (no cli-config.json yet), auto-create it with Shell(*).
-// If the file already exists we leave it alone — the user may have custom entries.
+// Granting Shell(*) is a consent decision — only `diktat setup` (which prompts)
+// writes it. Here we just point the user there.
 if (availableCLIs["cursor"] && !cursorShellPermissionGranted()) {
-  const configPath = join(homedir(), ".cursor", "cli-config.json");
-  if (!existsSync(configPath)) {
-    grantCursorShellPermission();
-    console.log("[cursor] Created ~/.cursor/cli-config.json with Shell(*) permission");
-  } else {
-    console.warn("[cursor] Shell(*) not set in ~/.cursor/cli-config.json — cursor sessions may have limited shell access. Run `diktat setup` to configure.");
-  }
+  console.log("[cursor] Shell(*) not set in ~/.cursor/cli-config.json — cursor sessions may have limited shell access. Run `diktat setup` to configure.");
 }
 
 const activeSessions = new Map<string, Session>();

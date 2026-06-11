@@ -66,11 +66,20 @@ export interface RelayClientHandle {
  * - It is a single stable object so `clientPushTokens` (a WeakMap keyed by ws)
  *   keeps the registered token across attach/detach cycles.
  */
+/** Cap on output buffered while the phone is detached. Past this we drop the
+ *  oldest frames and flag overflow, so reattach falls back to a full history
+ *  reload rather than replaying a partial (misleading) tail. */
+export const MAX_DETACHED_BUFFER_BYTES = 256 * 1024;
+
 export class AdapterWs {
   /** 1 = open (client attached), 3 = closed (no client). */
   readyState = 3;
   /** The live agent socket; swapped on each (re)connect. */
   private socket: RelaySocket | null = null;
+  /** Session frames emitted while detached, awaiting replay on reattach. */
+  private buffer: string[] = [];
+  private bufferedBytes = 0;
+  private overflowed = false;
 
   setSocket(socket: RelaySocket | null): void {
     this.socket = socket;
@@ -85,13 +94,41 @@ export class AdapterWs {
   }
 
   send(data: string): void {
-    // If the agent socket dropped mid-run, silently drop — session output is
-    // best-effort while disconnected, mirroring a closed local ws.
+    // While a phone is attached, forward live. While detached, buffer session
+    // frames so the phone can be caught up on reattach — except `_relay`
+    // control frames (e.g. keep-alive pings), which are transport noise.
+    if (this.readyState !== 1) {
+      if (!data.includes('"_relay"')) this.bufferWhileDetached(data);
+      return;
+    }
     try {
       this.socket?.send(data);
     } catch {
       /* best-effort */
     }
+  }
+
+  private bufferWhileDetached(data: string): void {
+    this.buffer.push(data);
+    this.bufferedBytes += data.length;
+    // Ring-drop oldest frames past the cap; once we've dropped anything the
+    // replay would be partial, so mark overflow.
+    while (this.bufferedBytes > MAX_DETACHED_BUFFER_BYTES && this.buffer.length > 1) {
+      const dropped = this.buffer.shift()!;
+      this.bufferedBytes -= dropped.length;
+      this.overflowed = true;
+    }
+  }
+
+  /** Drain frames buffered while detached. Caller replays them on reattach
+   *  (or, if `overflowed`, asks the client to reload history instead). */
+  drainBuffer(): { frames: string[]; overflowed: boolean } {
+    const frames = this.buffer;
+    const overflowed = this.overflowed;
+    this.buffer = [];
+    this.bufferedBytes = 0;
+    this.overflowed = false;
+    return { frames, overflowed };
   }
 }
 
@@ -170,11 +207,23 @@ export function startRelayClient(opts: StartRelayClientOpts): RelayClientHandle 
       case "agent_registered":
         log(`registered as machine ${machineId}`);
         break;
-      case "client_attached":
+      case "client_attached": {
         log(`client attached${msg.clientId ? ` (${msg.clientId})` : ""}`);
         adapter.markAttached();
         adapter.send(JSON.stringify(buildConnectedPayload(ctx)));
+        // Catch the phone up on output that streamed while it was away. A
+        // small gap replays verbatim; an overflow asks the client to reload
+        // history instead of showing a misleading partial tail.
+        const { frames, overflowed } = adapter.drainBuffer();
+        if (overflowed) {
+          log("detached buffer overflowed — requesting client resync");
+          adapter.send(JSON.stringify({ type: "resync" }));
+        } else if (frames.length > 0) {
+          log(`replaying ${frames.length} buffered frame(s) to reattached client`);
+          for (const f of frames) adapter.send(f);
+        }
         break;
+      }
       case "client_detached":
         log("client detached");
         adapter.markDetached();

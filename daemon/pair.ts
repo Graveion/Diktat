@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { hostname } from "os";
 import qrcode from "qrcode-terminal";
 
@@ -99,7 +99,8 @@ async function main() {
     : await pairWithQr(base, machineId, name);
 
   const config = buildPairedConfig(existing, { relayUrl, machineId, daemonToken: token });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  chmodSync(CONFIG_PATH, 0o600); // mode option only applies on create
 
   console.log(`\n✓ Paired. Wrote relay config to daemon/config.json`);
   console.log(`  Machine: ${name} (${machineId})`);

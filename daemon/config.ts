@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 
 interface Config {
   port: number;
@@ -18,6 +18,10 @@ export function loadConfig(configPath = CONFIG_PATH): Config {
     console.error(`No config.json found. Run \`diktat setup\`, then \`diktat pair <code>\`.`);
     process.exit(1);
   }
+  // config.json holds the relay bearer token — keep it owner-only (best-effort).
+  try {
+    if ((statSync(configPath).mode & 0o077) !== 0) chmodSync(configPath, 0o600);
+  } catch { /* best-effort */ }
   return JSON.parse(readFileSync(configPath, "utf-8")) as Config;
 }
 

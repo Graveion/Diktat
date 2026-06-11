@@ -14,6 +14,30 @@ import {
 } from "./run-summary";
 import { permissionFlags, modelFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
 
+/** Kill a CLI that has produced no output for this long. */
+export const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Re-assembles complete lines from arbitrary stream chunks — NDJSON events can
+ * span two reads, so per-chunk splitting would corrupt them.
+ */
+export class LineBuffer {
+  private carry = "";
+  /** Append a chunk; returns the complete lines now available. */
+  push(chunk: string): string[] {
+    this.carry += chunk;
+    const parts = this.carry.split("\n");
+    this.carry = parts.pop() ?? "";
+    return parts;
+  }
+  /** Return any trailing partial line (stream end). */
+  flush(): string {
+    const rest = this.carry;
+    this.carry = "";
+    return rest;
+  }
+}
+
 function pickToolPath(input: any): string | undefined {
   if (!input) return undefined;
   if (typeof input.file_path === "string") return input.file_path;
@@ -269,32 +293,71 @@ export class Session {
     const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
     this.activeProc = proc;
 
+    // Inactivity watchdog: a CLI that goes silent for too long is killed and
+    // reported like a cancelled run (exit -1).
+    let timedOut = false;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    const bumpWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+    bumpWatchdog();
+
     let needsRetry = false;
     const streamOutput = async (stream: ReadableStream<Uint8Array>, isStderr: boolean) => {
       const decoder = new TextDecoder();
       const reader = stream.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        if (!isStderr && this.data.cli === "claude") {
-          if (this.parseClaudeChunk(chunk)) needsRetry = true;
-        } else if (!isStderr && this.data.cli === "cursor") {
-          this.parseCursorChunk(chunk);
-        } else if (!isStderr && (this.data.cli === "kiro" || this.data.cli === "codex")) {
+      // Claude/Cursor stdout is NDJSON — buffer across chunks so an event split
+      // mid-line by the pipe still parses as one line.
+      const lineParsed = !isStderr && (this.data.cli === "claude" || this.data.cli === "cursor");
+      const buf = new LineBuffer();
+      const handleLine = (line: string) => {
+        if (!line) return;
+        if (this.data.cli === "claude") {
+          if (this.parseClaudeChunk(line)) needsRetry = true;
+        } else {
+          this.parseCursorChunk(line);
+        }
+      };
+      const handleRaw = (chunk: string) => {
+        if (!chunk) return;
+        if (!isStderr && (this.data.cli === "kiro" || this.data.cli === "codex")) {
           // Kiro/Codex print styled text; strip ANSI before forwarding.
           const clean = stripAnsi(chunk);
           if (clean) this.ws.send(JSON.stringify({ type: "output", text: clean }));
         } else {
           this.ws.send(JSON.stringify({ type: "output", text: chunk }));
         }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bumpWatchdog();
+        const chunk = decoder.decode(value, { stream: true });
+        if (lineParsed) {
+          for (const line of buf.push(chunk)) handleLine(line);
+        } else {
+          handleRaw(chunk);
+        }
+      }
+      const tail = decoder.decode(); // flush any buffered partial code point
+      if (lineParsed) {
+        for (const line of buf.push(tail)) handleLine(line);
+        handleLine(buf.flush());
+      } else {
+        handleRaw(tail);
       }
     };
 
     await Promise.all([streamOutput(proc.stdout, false), streamOutput(proc.stderr, true)]);
+    if (watchdog) clearTimeout(watchdog);
 
     // Claude said "no conversation found" — clear stale session ID and retry fresh
-    if (needsRetry && !retry) {
+    if (needsRetry && !retry && !timedOut) {
+      await proc.exited;
       this.activeProc = null;
       this.data.cliSessionId = undefined;
       saveSession(this.data);
@@ -308,7 +371,8 @@ export class Session {
     if (this.data.cli === "kiro") this.data.started = true;
     saveSession(this.data);
 
-    const exitCode = await proc.exited;
+    const rawExit = await proc.exited;
+    const exitCode = timedOut ? -1 : rawExit; // timeout reports like a cancel
     this.ws.send(JSON.stringify({ type: "exit", code: exitCode }));
 
     // Only push if the WebSocket has since closed — if it's still open the app

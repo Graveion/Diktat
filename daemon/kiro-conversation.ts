@@ -1,4 +1,4 @@
-// ─── Kiro CLI conversation store — schema (types only, no reader yet) ────────
+// ─── Kiro CLI conversation store — schema ────────────────────────────────────
 //
 // Kiro CLI is Amazon Q Developer CLI rebranded (open source:
 // github.com/aws/amazon-q-developer-cli). Source of truth = its Rust serde defs:
@@ -22,7 +22,7 @@
 //     a wrapping JSON key, e.g. content: { "Prompt": { "prompt": "…" } }.
 //   • ToolResultStatus serializes as the bare strings "Error" / "Success".
 //
-// Parser status: NOT written yet (agents.ts kiro.history.reader === false).
+// Parsed by kiro-sessions.ts (parseKiroConversation / readKiroHistory).
 
 export interface StoredConversation {
   conversation_id: string;

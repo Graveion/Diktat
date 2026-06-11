@@ -1,5 +1,5 @@
 import { createInterface } from "readline";
-import { existsSync, writeFileSync, readFileSync, readdirSync, statSync } from "fs";
+import { chmodSync, existsSync, writeFileSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { detectCLIs } from "./cli-detector";
@@ -272,7 +272,8 @@ async function main() {
     projects: projects.length > 0 ? projects : (existing.projects ?? []),
   };
 
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  chmodSync(CONFIG_PATH, 0o600); // mode option only applies on create
   section("Config written to daemon/config.json");
 
   // --- Done ---

@@ -242,3 +242,78 @@ test("invalid JSON → 'Invalid message format'", () => {
   expect(sent).toHaveLength(1);
   expect(sent[0]).toEqual({ type: "error", message: "Invalid message format" });
 });
+
+// ---------------------------------------------------------------------------
+// sessionId validation — phone-supplied ids flow into filesystem path joins
+// ---------------------------------------------------------------------------
+
+const TRAVERSAL_IDS = ["../../etc/passwd", "foo/../bar", "a\\b", ""];
+
+test("resume: traversal sessionId rejected, no factory/history call", async () => {
+  for (const bad of TRAVERSAL_IDS) {
+    const { ws, sent } = mockWs();
+    const created: any[] = [];
+    let historyRead = false;
+    const ctx = makeCtx({
+      sessionFactory: recordingFactory(created),
+      readClaudeHistory: () => { historyRead = true; return []; },
+    });
+    await handleClientMessage(ctx, ws, { type: "resume", sessionId: bad, isClaudeSession: true, project: "/p" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toEqual({ type: "error", message: `Session not found: ${bad}` });
+    expect(created).toHaveLength(0);
+    expect(historyRead).toBe(false);
+  }
+});
+
+test("resume: non-string sessionId rejected", async () => {
+  for (const bad of [undefined, null, 42, { a: 1 }]) {
+    const { ws, sent } = mockWs();
+    const created: any[] = [];
+    const ctx = makeCtx({ sessionFactory: recordingFactory(created) });
+    await handleClientMessage(ctx, ws, { type: "resume", sessionId: bad, isCursorSession: true });
+    expect(sent[0].type).toBe("error");
+    expect(created).toHaveLength(0);
+  }
+});
+
+test("resume: traversal sessionId rejected for codex/copilot/kiro history readers", async () => {
+  for (const flag of ["isCodexSession", "isCopilotSession", "isKiroSession"]) {
+    const { ws, sent } = mockWs();
+    const created: any[] = [];
+    const ctx = makeCtx({ sessionFactory: recordingFactory(created) });
+    await handleClientMessage(ctx, ws, { type: "resume", sessionId: "../../etc/passwd", [flag]: true });
+    expect(sent[0].type).toBe("error");
+    expect(created).toHaveLength(0);
+  }
+});
+
+test("input: traversal sessionId rejected", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx();
+  await handleClientMessage(ctx, ws, { type: "input", sessionId: "foo/../bar", text: "hi" });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toEqual({ type: "error", message: "No active session: foo/../bar" });
+});
+
+test("cancel: traversal sessionId silently ignored", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx();
+  await handleClientMessage(ctx, ws, { type: "cancel", sessionId: "a\\b" });
+  expect(sent).toHaveLength(0);
+});
+
+test("resume: valid UUID sessionId still accepted", async () => {
+  const { ws, sent } = mockWs();
+  const created: any[] = [];
+  const ctx = makeCtx({ sessionFactory: recordingFactory(created) });
+  await handleClientMessage(ctx, ws, {
+    type: "resume",
+    sessionId: "6e69c404-9884-4611-86ca-a6f67680f09b",
+    isClaudeSession: true,
+    project: "/p",
+  });
+  expect(sent[0].type).toBe("resumed");
+  expect(created).toHaveLength(1);
+});

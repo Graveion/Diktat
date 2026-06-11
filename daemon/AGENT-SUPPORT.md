@@ -14,11 +14,11 @@ v1 — see notes below). This documents how to add more agentic coding CLIs clea
 > --silent --no-color --session-id <uuid>` and forwards the plain response text
 > verbatim (the existing `{type:"output"}` passthrough). We **own the session
 > UUID** (`--session-id` both creates and resumes), so no session-id scraping.
-> What's missing vs Claude/Cursor: **rich tool previews** (diffs/results) and
-> **history import**, because those need Copilot's `--output-format json` JSONL
-> event schema, which isn't documented here and couldn't be captured offline
-> (the CLI is a compiled binary and needs auth to run). **Follow-up:** capture one
-> authed `--output-format json` sample, then add `parseCopilotChunk` to emit
+> **History import is done** — read from `~/.copilot/session-store.db` via
+> `bun:sqlite` (`copilot-sessions.ts`). What's still missing vs Claude/Cursor:
+> **live rich tool previews** (diffs/results), which need Copilot's
+> `--output-format json` JSONL event schema. **Follow-up:** capture one authed
+> `--output-format json` sample, then add `parseCopilotChunk` to emit
 > `tool_use`/`tool_result` events.
 
 > **Kiro (added, text-mode v1):** the assistant is `kiro-cli chat`. We run

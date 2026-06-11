@@ -287,7 +287,7 @@ The daemon uses `entry.message?.content ?? entry.content` to handle both shapes.
 
 ## 5. Daemon ↔ App WebSocket protocol
 
-The daemon binds on its Tailscale IP and the configured port. The app connects via WebSocket. All messages are JSON strings.
+The daemon is relay-only: it dials out to the relay (`config.relayUrl`) over a WebSocket and the app connects to the same relay; the daemon never listens on a local port. All messages are JSON strings.
 
 ### App → Daemon (inbound)
 
@@ -298,13 +298,15 @@ The daemon binds on its Tailscale IP and the configured port. The app connects v
   "type": "spawn",
   "cli": "claude",
   "project": "/abs/path/to/project",
-  "mode": "auto"
+  "model": "opus",
+  "permissionMode": "auto"
 }
 ```
 
-- `cli`: `"claude"` or `"cursor"`.
+- `cli`: `"claude"`, `"cursor"`, `"codex"`, `"copilot"`, or `"kiro"`.
 - `project`: Must be in the daemon's `config.projects` allowlist.
-- `mode`: Optional. Passed through to Cursor as `--mode`.
+- `model`: Optional model override (per-CLI values — see `agents.ts`).
+- `permissionMode`: Optional. `"plan"`, `"auto"`, or `"full"`.
 
 Response: `spawned`
 
@@ -316,13 +318,16 @@ Response: `spawned`
   "sessionId": "uuid",
   "project": "/abs/path/to/project",
   "isClaudeSession": true,
-  "isCursorSession": false
+  "isCursorSession": false,
+  "isCodexSession": false,
+  "isCopilotSession": false,
+  "isKiroSession": false
 }
 ```
 
-- `isClaudeSession`: Resume a raw Claude CLI session (from `claudeSessions` list).
-- `isCursorSession`: Resume a raw Cursor CLI session (from `cursorSessions` list).
-- Neither flag: Resume a daemon-tracked session by its daemon ID.
+- `isClaudeSession` / `isCursorSession` / `isCodexSession` / `isCopilotSession` / `isKiroSession`: Resume a raw CLI session (from the corresponding `*Sessions` list in `connected`).
+- No flag set: Resume a daemon-tracked session by its daemon ID.
+- `sessionId` must match `^[A-Za-z0-9._-]+$` (no `..`, `/`, or `\`); anything else is rejected with an `error`.
 
 Response: `resumed`, then async `history`.
 
@@ -332,11 +337,13 @@ Response: `resumed`, then async `history`.
 {
   "type": "input",
   "sessionId": "uuid",
-  "text": "user message here"
+  "text": "user message here",
+  "model": "opus",
+  "permissionMode": "auto"
 }
 ```
 
-The session runs the appropriate CLI and streams responses back as `output`, `tool_use`, `tool_result`, and `exit` messages.
+`model` and `permissionMode` are optional per-turn overrides from the composer dropdowns. The session runs the appropriate CLI and streams responses back as `output`, `tool_use`, `tool_result`, and `exit` messages.
 
 #### `cancel` — kill the running process
 
@@ -377,8 +384,9 @@ Response: `pong`.
 ```json
 {
   "type": "connected",
-  "clis": ["claude", "cursor"],
+  "clis": ["claude", "cursor", "codex", "copilot", "kiro"],
   "projects": ["/abs/path/to/project"],
+  "agents": { "claude": { "models": ["..."], "permissionModes": ["..."] } },
   "sessions": [
     {
       "id": "daemon-uuid",
@@ -405,9 +413,15 @@ Response: `pong`.
       "firstMessage": "First 120 chars of first message",
       "lastActiveAt": "2024-01-01T00:00:00.000Z"
     }
-  ]
+  ],
+  "codexSessions": [],
+  "copilotSessions": [],
+  "kiroSessions": []
 }
 ```
+
+- `agents`: per-CLI model + permission-mode options for the app's dropdowns (shape from `agentSelectionData()` in `agents.ts`).
+- `codexSessions` / `copilotSessions` / `kiroSessions`: same shape as `cursorSessions`, listing each CLI's native past conversations.
 
 #### `spawned` — session created
 
@@ -519,6 +533,20 @@ Not sent if the result text is empty or matches the "file has been updated/creat
 ```
 
 `code: -1` means the session was cancelled. If the WebSocket is already closed at exit time and a push token is registered, a push notification is also sent.
+
+#### `resync` — client should reload history
+
+```json
+{ "type": "resync" }
+```
+
+While the phone is detached (relay-mode only), the daemon buffers session
+output and replays it verbatim when the phone reattaches, so a brief
+disconnection leaves no gap in the live transcript. If that buffer overflows
+(`MAX_DETACHED_BUFFER_BYTES`, a long disconnection), a partial replay would be
+misleading, so the daemon instead sends `resync` after the `connected` payload.
+The app responds by reloading full history on its next (auto-)resume rather than
+preserving the now-incomplete in-memory transcript.
 
 The completion push summarizes what the agent actually did during the run (derived from the parsed tool stream — see `run-summary.ts`), not the user's prompt.
 

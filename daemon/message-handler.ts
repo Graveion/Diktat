@@ -63,6 +63,21 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
   }
 }
 
+// Phone-supplied session ids flow into filesystem path joins in the history
+// readers. All real ids are UUIDs (Claude/Cursor/Codex/Copilot/Kiro), but allow
+// the slightly wider [A-Za-z0-9._-] charset; never path separators or "..".
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
+export function isValidSessionId(id: unknown): id is string {
+  return (
+    typeof id === "string" &&
+    id.length > 0 &&
+    SAFE_SESSION_ID.test(id) &&
+    !id.includes("..") &&
+    !id.includes("/") &&
+    !id.includes("\\")
+  );
+}
+
 export interface SessionFactory {
   create(ws: any, cli: string, cliPath: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full"): Session;
   resume(ws: any, sessionId: string): Session | null;
@@ -111,6 +126,10 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
   }
 
   if (msg.type === "resume") {
+    if (!isValidSessionId(msg.sessionId)) {
+      ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
+      return;
+    }
     const session = msg.isClaudeSession
       ? factory.fromClaudeSession(ws, msg.sessionId, msg.project ?? process.cwd(), ctx.availableCLIs["claude"] ?? "claude")
       : msg.isCursorSession
@@ -159,6 +178,10 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
   }
 
   if (msg.type === "input") {
+    if (!isValidSessionId(msg.sessionId)) {
+      ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
+      return;
+    }
     const session = ctx.activeSessions.get(msg.sessionId);
     if (!session) {
       ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
@@ -179,6 +202,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
   }
 
   if (msg.type === "cancel") {
+    if (!isValidSessionId(msg.sessionId)) return;
     const session = ctx.activeSessions.get(msg.sessionId);
     if (session) {
       session.cancel();

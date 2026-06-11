@@ -53,4 +53,4 @@ echo
 echo "  Next:"
 echo "    diktat setup     # detect your CLIs + pick projects"
 echo "    diktat pair      # show a QR; scan it in the Diktat app"
-echo "    diktat start     # run in the background"
+echo "    diktat start     # run in the background (auto-starts on login via launchd)"

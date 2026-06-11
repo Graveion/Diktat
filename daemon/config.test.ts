@@ -49,3 +49,11 @@ test("loadConfig: invalid JSON throws (surfaced to caller)", () => {
   const path = tmpConfig("{ not valid json");
   expect(() => loadConfig(path)).toThrow();
 });
+
+test("loadConfig: broad file perms tightened to 0600", () => {
+  const path = tmpConfig(JSON.stringify({ port: 9000, projects: [] }));
+  const { chmodSync, statSync } = require("fs");
+  chmodSync(path, 0o644);
+  loadConfig(path);
+  expect(statSync(path).mode & 0o777).toBe(0o600);
+});

@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { Session } from "./session";
+import { Session, LineBuffer } from "./session";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -654,4 +654,55 @@ test("fixture: [REDACTED] in cursor stream text is stripped before forwarding", 
   expect(output).toBeDefined();
   expect(output.text).not.toContain("[REDACTED]");
   expect(output.text).toContain("InboundSyncRouter");
+});
+
+// ---------------------------------------------------------------------------
+// LineBuffer — cross-chunk line re-assembly
+// ---------------------------------------------------------------------------
+
+test("LineBuffer: JSON event split mid-line across two chunks parses as one event", () => {
+  const event =
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Hello from a split event" }] },
+    }) + "\n";
+  const buf = new LineBuffer();
+
+  // First chunk ends mid-JSON — no complete line yet.
+  expect(buf.push(event.slice(0, 30))).toHaveLength(0);
+  const lines = buf.push(event.slice(30));
+  expect(lines).toHaveLength(1);
+
+  // The re-assembled line parses through parseClaudeChunk as one event.
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+  for (const line of lines) (session as any).parseClaudeChunk(line);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Hello from a split event" });
+});
+
+test("LineBuffer: multiple complete lines plus a partial in one chunk", () => {
+  const buf = new LineBuffer();
+  expect(buf.push("a\nb\npart")).toEqual(["a", "b"]);
+  expect(buf.push("ial\n")).toEqual(["partial"]);
+});
+
+test("LineBuffer: flush returns the trailing partial line and resets", () => {
+  const buf = new LineBuffer();
+  buf.push("no newline yet");
+  expect(buf.flush()).toBe("no newline yet");
+  expect(buf.flush()).toBe("");
+});
+
+test("LineBuffer: cursor event split across chunks still captured", () => {
+  const event = JSON.stringify({ session_id: "split-session-id" }) + "\n";
+  const buf = new LineBuffer();
+  buf.push(event.slice(0, 10));
+  const lines = buf.push(event.slice(10));
+  expect(lines).toHaveLength(1);
+
+  const { ws } = mockWs();
+  const session = Session.fromCursorSession(ws, "", "/tmp/fake-project", "agent");
+  for (const line of lines) (session as any).parseCursorChunk(line);
+  expect(session.summary.cliSessionId).toBe("split-session-id");
 });

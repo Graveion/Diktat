@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import * as service from "./service";
 
 const DIR = import.meta.dir; // the daemon directory (where index.ts etc. live)
 const STATE = join(homedir(), ".diktat");
@@ -65,21 +66,60 @@ function isRunning(pid: number): boolean {
   }
 }
 
+/** Stop a legacy nohup-managed daemon (pre-launchd installs) if one is running. */
+function stopLegacyPid(): void {
+  const pid = readPid();
+  if (pid && isRunning(pid)) {
+    try { process.kill(pid); } catch { /* already gone */ }
+  }
+  if (pid) rmSync(PID_FILE, { force: true });
+}
+
 async function start(): Promise<never> {
   const foreground = rest.includes("-f") || rest.includes("--foreground");
-  const existing = readPid();
-  if (existing && isRunning(existing)) {
-    console.log(`Daemon already running (pid ${existing}).`);
-    process.exit(0);
-  }
 
   if (foreground) {
     return runAttached("index.ts");
   }
 
   mkdirSync(STATE, { recursive: true });
+
+  // macOS: run under launchd so the daemon survives logout, crash, and reboot.
+  // This is the difference between the phone reliably reaching this Mac and the
+  // connection silently dying after a restart with no way to fix it remotely.
+  if (service.isMac()) {
+    if (service.isLoaded()) {
+      console.log("Diktat daemon is already managed by launchd (running).");
+      console.log("  diktat stop   to stop it · diktat logs   to follow logs");
+      process.exit(0);
+    }
+    stopLegacyPid(); // avoid two daemons if upgrading from a nohup install
+    const r = service.installAndLoad(DIR, LOG_FILE);
+    if (r.ok) {
+      const displayLog = LOG_FILE.replace(homedir(), "~");
+      console.log("Diktat daemon installed and started via launchd.");
+      console.log("It will now start automatically on login and restart if it crashes.");
+      console.log("");
+      console.log("  diktat status   Check whether it's running");
+      console.log("  diktat logs     Follow the daemon logs");
+      console.log("  diktat stop     Stop and disable autostart");
+      console.log("");
+      console.log(`  Logs: ${displayLog}`);
+      process.exit(0);
+    }
+    console.warn(`launchd setup failed (${r.error}); falling back to a background process.`);
+    // fall through to nohup
+  }
+
+  const existing = readPid();
+  if (existing && isRunning(existing)) {
+    console.log(`Daemon already running (pid ${existing}).`);
+    process.exit(0);
+  }
   const out = openSync(LOG_FILE, "a");
   // nohup keeps it alive after the terminal closes; unref lets us exit now.
+  // NOTE: this fallback does NOT survive a reboot (no launchd) — re-run
+  // `diktat start` after restarting, or use the launchd path on macOS.
   const proc = Bun.spawn(["nohup", "bun", join(DIR, "index.ts")], {
     cwd: DIR,
     stdin: "ignore",
@@ -90,34 +130,31 @@ async function start(): Promise<never> {
   writeFileSync(PID_FILE, String(proc.pid));
   const displayLog = LOG_FILE.replace(homedir(), "~");
   console.log(`Diktat daemon started (pid ${proc.pid}).`);
-  console.log("");
-  console.log("  Commands:");
-  console.log("    diktat status   Check whether it's running");
-  console.log("    diktat logs     Follow the daemon logs");
-  console.log("    diktat stop     Stop the daemon");
-  console.log("");
   console.log(`  Logs: ${displayLog}`);
   process.exit(0);
 }
 
 function stop(): never {
+  // Tear down the launchd service (if any) AND any legacy nohup process.
+  const hadService = service.isMac() && service.unload();
   const pid = readPid();
-  if (!pid || !isRunning(pid)) {
-    console.log("Daemon is not running.");
-    if (pid) rmSync(PID_FILE, { force: true });
-    process.exit(0);
+  const hadPid = !!(pid && isRunning(pid));
+  if (hadPid) {
+    try { process.kill(pid!); } catch { /* already gone */ }
   }
-  try {
-    process.kill(pid);
-  } catch {
-    /* already gone */
-  }
-  rmSync(PID_FILE, { force: true });
-  console.log(`Stopped daemon (pid ${pid}).`);
+  if (pid) rmSync(PID_FILE, { force: true });
+
+  if (hadService) console.log("Stopped daemon and disabled autostart.");
+  else if (hadPid) console.log(`Stopped daemon (pid ${pid}).`);
+  else console.log("Daemon is not running.");
   process.exit(0);
 }
 
 function status(): never {
+  if (service.isMac() && service.isLoaded()) {
+    console.log("Daemon is running (managed by launchd; autostarts on login).");
+    process.exit(0);
+  }
   const pid = readPid();
   if (pid && isRunning(pid)) console.log(`Daemon is running (pid ${pid}).`);
   else console.log("Daemon is not running.");

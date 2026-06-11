@@ -8,7 +8,7 @@
  * exercised end-to-end without spawning a CLI.
  */
 import { test, expect } from "bun:test";
-import { startRelayClient, type RelaySocket } from "./relay-client";
+import { startRelayClient, AdapterWs, MAX_DETACHED_BUFFER_BYTES, type RelaySocket } from "./relay-client";
 import type { MessageContext, SessionFactory } from "./message-handler";
 
 // ---------------------------------------------------------------------------
@@ -196,6 +196,88 @@ test("on socket close, a reconnect is scheduled and reconnect opens a new socket
   // Firing it opens a fresh socket.
   reconnect.fn();
   expect(created.length).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// Detached-output buffering / replay
+// ---------------------------------------------------------------------------
+
+test("AdapterWs buffers session frames while detached and drains them in order", () => {
+  const a = new AdapterWs();
+  a.markDetached();
+  a.send(JSON.stringify({ type: "output", text: "one" }));
+  a.send(JSON.stringify({ type: "output", text: "two" }));
+  const { frames, overflowed } = a.drainBuffer();
+  expect(overflowed).toBe(false);
+  expect(frames.map((f) => JSON.parse(f).text)).toEqual(["one", "two"]);
+  // Draining empties the buffer.
+  expect(a.drainBuffer().frames.length).toBe(0);
+});
+
+test("AdapterWs does NOT buffer _relay control frames (e.g. pings)", () => {
+  const a = new AdapterWs();
+  a.markDetached();
+  a.send(JSON.stringify({ _relay: true, type: "ping" }));
+  expect(a.drainBuffer().frames.length).toBe(0);
+});
+
+test("AdapterWs writes live (does not buffer) while attached", () => {
+  const a = new AdapterWs();
+  const sent: string[] = [];
+  a.setSocket({ send: (d) => sent.push(d), close: () => {} });
+  a.markAttached();
+  a.send(JSON.stringify({ type: "output", text: "live" }));
+  expect(sent.length).toBe(1);
+  expect(a.drainBuffer().frames.length).toBe(0);
+});
+
+test("AdapterWs flags overflow and drops oldest past the cap", () => {
+  const a = new AdapterWs();
+  a.markDetached();
+  const big = "x".repeat(Math.ceil(MAX_DETACHED_BUFFER_BYTES / 2));
+  // Three half-cap frames exceed the cap → oldest dropped, overflow set.
+  a.send(JSON.stringify({ type: "output", text: big }));
+  a.send(JSON.stringify({ type: "output", text: big }));
+  a.send(JSON.stringify({ type: "output", text: big }));
+  const { frames, overflowed } = a.drainBuffer();
+  expect(overflowed).toBe(true);
+  expect(frames.length).toBeLessThan(3);
+});
+
+test("client_attached replays buffered frames after the connected payload", () => {
+  const { handle, created } = harness();
+  const sock = created[0]!;
+  sock.fireOpen();
+  // Attach, then detach so subsequent output buffers.
+  sock.fireMessage({ _relay: true, type: "client_attached" });
+  sock.fireMessage({ _relay: true, type: "client_detached" });
+  sock.sent.length = 0;
+
+  handle.adapter.send(JSON.stringify({ type: "output", text: "missed" }));
+  expect(sock.sent.length).toBe(0); // buffered, not sent live
+
+  // Reattach: connected payload first, then the replayed frame.
+  sock.fireMessage({ _relay: true, type: "client_attached" });
+  expect(sock.sent[0].type).toBe("connected");
+  expect(sock.sent[1]).toEqual({ type: "output", text: "missed" });
+});
+
+test("client_attached sends a resync frame (not a partial replay) on overflow", () => {
+  const { handle, created } = harness();
+  const sock = created[0]!;
+  sock.fireOpen();
+  sock.fireMessage({ _relay: true, type: "client_attached" });
+  sock.fireMessage({ _relay: true, type: "client_detached" });
+  sock.sent.length = 0;
+
+  const big = "x".repeat(Math.ceil(MAX_DETACHED_BUFFER_BYTES / 2));
+  for (let i = 0; i < 3; i++) handle.adapter.send(JSON.stringify({ type: "output", text: big }));
+
+  sock.fireMessage({ _relay: true, type: "client_attached" });
+  expect(sock.sent[0].type).toBe("connected");
+  expect(sock.sent[1]).toEqual({ type: "resync" });
+  // No buffered output frames replayed alongside the resync.
+  expect(sock.sent.some((f: any) => f.type === "output")).toBe(false);
 });
 
 test("stop() prevents further reconnects and closes the socket", () => {
