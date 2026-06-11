@@ -20,6 +20,7 @@ import {
   PairingStore,
   type PairingDeps,
 } from "./pairing.ts";
+import { clientIp, RateLimiter } from "./http.ts";
 
 /** Per-connection data attached at upgrade time. */
 interface ConnData {
@@ -62,21 +63,19 @@ const touchMachine: ((machineId: string) => void) | null =
 
 const broker = new Broker();
 
-// Per-IP rate limit on /pair/init (20 requests / 60s per IP).
-const PAIR_INIT_MAX = 20;
-const PAIR_INIT_WINDOW_MS = 60_000;
-const pairInitCounts = new Map<string, { count: number; resetAt: number }>();
+// Per-IP rate limit on HTTP endpoints (20 requests / 60s per endpoint:ip).
+// /pair/poll gets a bigger bucket: the daemon polls ~every 2s for up to 300s.
+const rateLimiter = new RateLimiter(20, 60_000);
+const pollRateLimiter = new RateLimiter(120, 60_000);
+setInterval(() => {
+  rateLimiter.sweep();
+  pollRateLimiter.sweep();
+}, 300_000).unref?.();
 
-function checkPairInitRateLimit(ip: string): boolean {
-  const now = Date.now();
-  let entry = pairInitCounts.get(ip);
-  if (!entry || now >= entry.resetAt) {
-    entry = { count: 0, resetAt: now + PAIR_INIT_WINDOW_MS };
-    pairInitCounts.set(ip, entry);
-  }
-  entry.count++;
-  return entry.count <= PAIR_INIT_MAX;
+function rateLimited(endpoint: string, req: Request, limiter = rateLimiter): boolean {
+  return !limiter.check(`${endpoint}:${clientIp(req)}`);
 }
+
 
 // Per-account concurrent client connection cap.
 const CLIENT_CONN_MAX = 5;
@@ -104,10 +103,14 @@ const server = Bun.serve<ConnData, never>({
   async fetch(req, srv) {
     const url = new URL(req.url);
 
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
     // Pairing: daemon redeems a code for a per-machine token (RELAY.md pairing).
     if (url.pathname === "/pair/complete") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!pairingDeps) return new Response("pairing unavailable", { status: 503 });
+      if (rateLimited("/pair/complete", req)) return json({ error: "rate limited" }, 429);
       let body: { code?: string; machineId?: string; name?: string };
       try {
         body = (await req.json()) as typeof body;
@@ -132,15 +135,11 @@ const server = Bun.serve<ConnData, never>({
       });
     }
 
-    const json = (body: unknown, status = 200) =>
-      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-
     // QR pairing — daemon registers a pending pairing and gets a nonce to show.
     if (url.pathname === "/pair/init") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
-      const ip = req.headers.get("x-forwarded-for") ?? "unknown";
-      if (!checkPairInitRateLimit(ip)) return json({ error: "rate limited" }, 429);
+      if (rateLimited("/pair/init", req)) return json({ error: "rate limited" }, 429);
       let b: { machineId?: string; name?: string };
       try { b = (await req.json()) as typeof b; } catch { return json({ error: "invalid JSON" }, 400); }
       if (!b.machineId) return json({ error: "missing machineId" }, 400);
@@ -152,6 +151,7 @@ const server = Bun.serve<ConnData, never>({
     if (url.pathname === "/pair/claim") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!pairingDeps || !supaDeps) return json({ error: "pairing unavailable" }, 503);
+      if (rateLimited("/pair/claim", req)) return json({ error: "rate limited" }, 429);
       const token = bearer(req);
       if (!token) return json({ error: "missing bearer token" }, 401);
       const accountId = await supaDeps.verifyAccountToken(token);
@@ -169,6 +169,7 @@ const server = Bun.serve<ConnData, never>({
     if (url.pathname === "/account/delete") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!supaDeps || !SUPABASE_URL || !SUPABASE_SECRET_KEY) return json({ error: "unavailable" }, 503);
+      if (rateLimited("/account/delete", req)) return json({ error: "rate limited" }, 429);
       const token = bearer(req);
       if (!token) return json({ error: "missing bearer token" }, 401);
       const accountId = await supaDeps.verifyAccountToken(token);
@@ -184,55 +185,15 @@ const server = Bun.serve<ConnData, never>({
       return json({ ok: true });
     }
 
-    // RevenueCat webhook — receives purchase / renewal / expiry events and
-    // updates account_state.entitled_until so the relay entitlement gate
-    // reflects real subscription state server-side.
-    if (url.pathname === "/rc/webhook") {
-      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) return json({ error: "unavailable" }, 503);
-
-      // Verify shared secret RC sends in the Authorization header (set in RC dashboard).
-      const RC_WEBHOOK_SECRET = process.env.RC_WEBHOOK_SECRET;
-      if (RC_WEBHOOK_SECRET) {
-        const auth = req.headers.get("authorization");
-        if (auth !== RC_WEBHOOK_SECRET) return new Response("unauthorized", { status: 401 });
-      }
-
-      let body: { event?: { type?: string; app_user_id?: string; expiration_at_ms?: number | null } };
-      try { body = (await req.json()) as typeof body; } catch { return json({ error: "invalid JSON" }, 400); }
-
-      const event = body.event;
-      const accountId = event?.app_user_id;
-      if (!accountId) return json({ ok: true }); // anonymous / no user id — ignore
-
-      // Always write expiration_at_ms as entitled_until regardless of event type:
-      // active subscription → future date; expired → past date; the relay gate
-      // compares against now() so both cases resolve correctly.
-      const expiresMs = event?.expiration_at_ms ?? null;
-      const entitledUntil = expiresMs != null ? new Date(expiresMs).toISOString() : null;
-
-      const base = SUPABASE_URL.replace(/\/$/, "");
-      const headers = {
-        apikey: SUPABASE_SECRET_KEY,
-        Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
-      };
-      // Upsert — account_state row may not exist yet if user subscribed before
-      // starting a trial session (rare but possible via family sharing / promo).
-      await fetch(`${base}/rest/v1/account_state`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ account_id: accountId, entitled_until: entitledUntil }),
-      }).catch(() => {});
-
-      console.log(`[rc-webhook] ${event?.type} accountId=${accountId} entitled_until=${entitledUntil ?? "null"}`);
-      return json({ ok: true });
-    }
+    // NOTE: RevenueCat events are handled by the `rc-webhook` Supabase Edge
+    // Function (supabase/functions/rc-webhook), which writes
+    // account_state.entitled_until directly. The relay only *reads* that column
+    // at connect time for the entitlement gate.
 
     // QR pairing — daemon polls until the phone claims (then gets the token once).
     if (url.pathname === "/pair/poll") {
       if (!pairingDeps) return json({ error: "pairing unavailable" }, 503);
+      if (rateLimited("/pair/poll", req, pollRateLimiter)) return json({ error: "rate limited" }, 429);
       const nonce = url.searchParams.get("nonce");
       if (!nonce) return json({ error: "missing nonce" }, 400);
       const taken = pairingStore.take(nonce);

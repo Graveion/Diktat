@@ -66,6 +66,8 @@ export interface SupabaseAuthDeps {
   getMachine(machineId: string): Promise<MachineRow | null>;
   /** Fetch entitlement state for an account; fail closed on error. */
   getEntitlement(accountId: string): Promise<EntitlementLookup>;
+  /** Insert the account_state row with trial_started_at=now (never modifies an existing row). True on success. */
+  startTrial(accountId: string): Promise<boolean>;
 }
 
 /** Build an Authenticator over the given IO deps (pure decision logic). */
@@ -87,6 +89,12 @@ export function makeSupabaseAuthenticator(deps: SupabaseAuthDeps): Authenticator
     if (machine.accountId !== accountId) return { ok: false, code: CloseCode.forbidden };
     const entResult = await deps.getEntitlement(accountId);
     if (!isEntitled(entResult)) return { ok: false, code: CloseCode.notEntitled };
+    if (entResult.ok && entResult.row === null) {
+      // First connection: start the trial server-side so a client that never
+      // calls start_trial can't ride the no-row allowance forever. Tolerate
+      // failure — this connection is allowed either way; the row lands next time.
+      await deps.startTrial(accountId).catch(() => false);
+    }
     return { ok: true, accountId };
   };
 }
@@ -180,6 +188,24 @@ export function createSupabaseDeps(env: SupabaseEnv): SupabaseAuthDeps {
         return { ok: true, row: { trial_started_at: rows[0].trial_started_at, comp_until: rows[0].comp_until, entitled_until: rows[0].entitled_until } };
       } catch {
         return { ok: false }; // network error → fail closed
+      }
+    },
+
+    async startTrial(accountId) {
+      try {
+        const res = await fetch(`${base}/rest/v1/account_state`, {
+          method: "POST",
+          headers: {
+            apikey: env.serviceKey,
+            Authorization: `Bearer ${env.serviceKey}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=ignore-duplicates", // existing row is never modified
+          },
+          body: JSON.stringify({ account_id: accountId, trial_started_at: new Date().toISOString() }),
+        });
+        return res.ok;
+      } catch {
+        return false;
       }
     },
   };

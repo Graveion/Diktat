@@ -19,6 +19,7 @@ function deps(over: Partial<SupabaseAuthDeps> = {}): SupabaseAuthDeps {
     verifyAccountToken: async (t) => (t === "good-jwt" ? ACCT : null),
     getMachine: async (id) => (id === MACHINE ? machine : null),
     getEntitlement: async (_accountId) => ({ ok: true, row: null }),
+    startTrial: async (_accountId) => true,
     ...over,
   };
 }
@@ -136,5 +137,45 @@ describe("entitlement", () => {
       deps({ getEntitlement: async () => ({ ok: false }) }),
     );
     expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: false, code: CloseCode.notEntitled });
+  });
+});
+
+describe("server-side trial start", () => {
+  it("no-row entitlement triggers startTrial and allows", async () => {
+    const started: string[] = [];
+    const auth = makeSupabaseAuthenticator(
+      deps({ startTrial: async (accountId) => (started.push(accountId), true) }),
+    );
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: true, accountId: ACCT });
+    expect(started).toEqual([ACCT]);
+  });
+
+  it("startTrial failure still allows the connection", async () => {
+    const auth = makeSupabaseAuthenticator(
+      deps({ startTrial: async () => { throw new Error("network"); } }),
+    );
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: true, accountId: ACCT });
+  });
+
+  it("existing-row path does NOT call startTrial", async () => {
+    let called = 0;
+    const auth = makeSupabaseAuthenticator(
+      deps({
+        getEntitlement: async () => ({
+          ok: true,
+          row: { trial_started_at: new Date().toISOString(), comp_until: null, entitled_until: null },
+        }),
+        startTrial: async () => (called++, true),
+      }),
+    );
+    expect(await auth("client", MACHINE, "good-jwt")).toEqual({ ok: true, accountId: ACCT });
+    expect(called).toBe(0);
+  });
+
+  it("agent leg does NOT call startTrial", async () => {
+    let called = 0;
+    const auth = makeSupabaseAuthenticator(deps({ startTrial: async () => (called++, true) }));
+    expect(await auth("agent", MACHINE, DAEMON_TOKEN)).toEqual({ ok: true, accountId: ACCT });
+    expect(called).toBe(0);
   });
 });

@@ -385,6 +385,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# RevenueCat webhook receiver. RC authenticates with its own shared-secret
+# Authorization header (not a Supabase JWT), so JWT verification must be off or
+# Supabase rejects the POST before the function runs.
+[functions.rc-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
