@@ -184,10 +184,22 @@ export class Broker {
   /**
    * Route an inbound frame from `from` (RELAY.md §5).
    * Control frames (`_relay:true`) are consumed at the edge, never cross-forwarded.
+   * Agent pings get a pong reply so the daemon can detect frozen TCP sockets.
    * App frames are forwarded verbatim (the raw string, not re-serialized) to the peer.
    */
   route(machineId: string, from: Leg, raw: string): void {
-    if (isControlFrame(raw)) return; // never forwarded across legs
+    if (isControlFrame(raw)) {
+      // Respond to agent pings so the daemon can detect dead connections.
+      if (from === "agent") {
+        let parsed: { type?: string } | null = null;
+        try { parsed = JSON.parse(raw); } catch { /* ignore */ }
+        if (parsed?.type === "ping") {
+          const state = this.machines.get(machineId);
+          if (state?.agent) state.agent.send(controlFrame("pong"));
+        }
+      }
+      return;
+    }
     const state = this.machines.get(machineId);
     if (!state) return;
     const peer = from === "client" ? state.agent : state.client;

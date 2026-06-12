@@ -135,6 +135,9 @@ export class AdapterWs {
 // ---------------------------------------------------------------------------
 
 const PING_INTERVAL_MS = 30_000;
+// If no pong arrives within this window after a ping, the TCP socket is likely
+// frozen (e.g. Fly VM suspended mid-connection). Force-close to trigger reconnect.
+const PING_TIMEOUT_MS = 15_000;
 const BACKOFF_MIN_MS = 5_000;
 const BACKOFF_MAX_MS = 30_000;
 
@@ -163,6 +166,8 @@ export function startRelayClient(opts: StartRelayClientOpts): RelayClientHandle 
   let backoff = BACKOFF_MIN_MS;
   let reconnectHandle: unknown = null;
   let pingHandle: unknown = null;
+  let pingTimeoutHandle: unknown = null;
+  let lastPongAt: number = 0; // 0 = no pong received yet (first ping cycle)
   let socket: RelaySocket | null = null;
 
   function log(msg: string): void {
@@ -173,6 +178,10 @@ export function startRelayClient(opts: StartRelayClientOpts): RelayClientHandle 
     if (pingHandle != null) {
       clearTimer(pingHandle);
       pingHandle = null;
+    }
+    if (pingTimeoutHandle != null) {
+      clearTimer(pingTimeoutHandle);
+      pingTimeoutHandle = null;
     }
   }
 
@@ -191,12 +200,21 @@ export function startRelayClient(opts: StartRelayClientOpts): RelayClientHandle 
   function startPing(): void {
     if (!enablePing) return;
     clearPing();
+    lastPongAt = Date.now(); // treat connection open as an implicit first pong
     const tick = () => {
       if (stopped) return;
-      // A `_relay` ping the broker can ignore. Chosen over WS protocol pings so
-      // the keep-alive is explicit, transport-agnostic, and never reaches app
-      // dispatch (it carries _relay:true). The relay drops unknown _relay types.
       adapter.send(JSON.stringify({ _relay: true, type: "ping" }));
+      // Expect a pong back within PING_TIMEOUT_MS. If the TCP socket is frozen
+      // (e.g. Fly VM suspended), the pong never arrives and we force a reconnect.
+      pingTimeoutHandle = setTimer(() => {
+        pingTimeoutHandle = null;
+        if (stopped) return;
+        const elapsed = Date.now() - lastPongAt;
+        if (elapsed > PING_TIMEOUT_MS) {
+          log(`ping timeout (no pong in ${elapsed}ms) — reconnecting`);
+          socket?.close();
+        }
+      }, PING_TIMEOUT_MS);
       pingHandle = setTimer(tick, PING_INTERVAL_MS);
     };
     pingHandle = setTimer(tick, PING_INTERVAL_MS);
@@ -204,6 +222,13 @@ export function startRelayClient(opts: StartRelayClientOpts): RelayClientHandle 
 
   function handleControlFrame(msg: any): void {
     switch (msg.type) {
+      case "pong":
+        lastPongAt = Date.now();
+        if (pingTimeoutHandle != null) {
+          clearTimer(pingTimeoutHandle);
+          pingTimeoutHandle = null;
+        }
+        break;
       case "agent_registered":
         log(`registered as machine ${machineId}`);
         break;
