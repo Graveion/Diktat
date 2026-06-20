@@ -26,7 +26,7 @@ test("permissionFlags: codex maps to approval × sandbox (and bypass for full)",
 
 test("permissionFlags: cursor/copilot/kiro tiers", () => {
   expect(permissionFlags("cursor", "plan")).toEqual(["--mode", "plan"]);
-  expect(permissionFlags("cursor", "auto")).toEqual(["--trust", "--mode", "agent"]);
+  expect(permissionFlags("cursor", "auto")).toEqual(["--trust", "--mode", "ask"]);
   expect(permissionFlags("copilot", "plan")).toEqual([]);
   expect(permissionFlags("copilot", "full")).toEqual(["--allow-all-tools"]);
   expect(permissionFlags("kiro", "plan")).toEqual(["--trust-tools="]);

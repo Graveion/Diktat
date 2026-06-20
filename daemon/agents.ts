@@ -139,7 +139,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
       recordSchema: "role:user|assistant with content blocks (Anthropic-like; <user_query> wrappers)",
       notes: "The Cursor *desktop* app stores chats in a separate sqlite-blob (~/Library/Application Support/Cursor/**/state.vscdb, ItemTable) — not read here.",
     },
-    modes: ["agent", "plan", "ask"],
+    modes: ["ask", "plan"],
     login: { check: "IDE-managed", command: "(sign in via the Cursor app)" },
   },
   copilot: {
@@ -285,7 +285,8 @@ export function permissionFlags(cli: string, mode: PermissionModeId): string[] {
       return ["--permission-mode", mode === "plan" ? "plan" : mode === "auto" ? "acceptEdits" : "bypassPermissions"];
     case "cursor":
       // --trust lets it run shell; plan stays read-only via --mode plan.
-      return mode === "plan" ? ["--mode", "plan"] : ["--trust", "--mode", "agent"];
+      // "agent" is not a valid --mode value; "ask" is the most permissive valid mode.
+      return mode === "plan" ? ["--mode", "plan"] : ["--trust", "--mode", "ask"];
     case "copilot":
       // Headless can't prompt; plan = no auto-grant (limited), else allow all.
       return mode === "plan" ? [] : ["--allow-all-tools"];
