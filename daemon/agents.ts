@@ -126,7 +126,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     binary: "agent", // the standalone `agent` binary
     subcommand: null,
     prompt: "flag:-p",
-    trustFlags: ["--trust"],
+    trustFlags: ["--trust"],          // --yolo added on top for "full" tier
     extraFlags: ["--output-format", "stream-json", "--stream-partial-output"],
     output: "stream-json",
     structuredEvents: true,
@@ -284,9 +284,11 @@ export function permissionFlags(cli: string, mode: PermissionModeId): string[] {
     case "claude":
       return ["--permission-mode", mode === "plan" ? "plan" : mode === "auto" ? "acceptEdits" : "bypassPermissions"];
     case "cursor":
-      // --trust lets it run shell; plan stays read-only via --mode plan.
-      // "agent" is not a valid --mode value; "ask" is the most permissive valid mode.
-      return mode === "plan" ? ["--mode", "plan"] : ["--trust", "--mode", "ask"];
+      // --mode plan/ask are both read-only. No --mode = default headless agent mode
+      // (full write+shell access via -p/--print). --force/--yolo = force-allow cmds.
+      if (mode === "plan") return ["--mode", "plan"];
+      if (mode === "full") return ["--yolo", "--trust"];
+      return ["--trust"]; // auto: trust workspace, default headless = full tool access
     case "copilot":
       // Headless can't prompt; plan = no auto-grant (limited), else allow all.
       return mode === "plan" ? [] : ["--allow-all-tools"];

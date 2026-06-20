@@ -1,5 +1,72 @@
 # Expanding agent support — plan
 
+## Verified CLI help output
+
+### Cursor (`agent --help`) — verified 2026-06-20
+
+```
+Usage: agent [options] [command] [prompt...]
+
+Start the Cursor Agent
+
+Arguments:
+  prompt                       Initial prompt for the agent
+
+Options:
+  -v, --version                Output the version number
+  --api-key <key>              API key for authentication (can also use CURSOR_API_KEY env var)
+  -H, --header <header>        Add custom header to agent requests (format: 'Name: Value', can be used multiple times)
+  -p, --print                  Print responses to console (for scripts or non-interactive use). Has access to all tools, including write and shell. (default: false)
+  --output-format <format>     Output format (only works with --print): text | json | stream-json (default: "text")
+  --stream-partial-output      Stream partial output as individual text deltas (only works with --print and stream-json format) (default: false)
+  --mode <mode>                Start in the given execution mode. plan: read-only/planning (analyze, propose plans, no edits). ask: Q&A style for explanations and questions
+                               (read-only). (choices: "plan", "ask")
+  --plan                       Start in plan mode (shorthand for --mode=plan). (default: false)
+  --resume [chatId]            Select a session to resume (default: false)
+  --continue                   Continue previous session (default: false)
+  --model <model>              Model to use (e.g., gpt-5, sonnet-4-thinking). Parameterized models accept quoted bracket overrides, e.g.
+                               'claude-opus-4-8[context=1m,effort=high,fast=false]'
+  --list-models                List available models and exit (default: false)
+  -f, --force                  Force allow commands unless explicitly denied (default: false)
+  --yolo                       Alias for --force (Run Everything) (default: false)
+  --sandbox <mode>             Explicitly enable or disable sandbox mode (overrides config) (choices: "enabled", "disabled")
+  --approve-mcps               Automatically approve all MCP servers (default: false)
+  --trust                      Trust the current workspace without prompting (only works with --print/headless mode) (default: false)
+  --workspace <path>           Workspace directory to use (defaults to current working directory)
+  --plugin-dir <path>          Load a local plugin directory (can be specified multiple times)
+  -w, --worktree [name]        Start in an isolated git worktree at ~/.cursor/worktrees/<reponame>/<name>. If omitted, a name is generated.
+  --worktree-base <branch>     Branch or ref to base the new worktree on (default: current HEAD)
+  --skip-worktree-setup        Skip running worktree setup scripts from .cursor/worktrees.json (default: false)
+  -h, --help                   Display help for command
+
+Commands:
+  install-shell-integration    Install shell integration to ~/.zshrc
+  uninstall-shell-integration  Remove shell integration from ~/.zshrc
+  login                        Authenticate with Cursor. Set NO_OPEN_BROWSER to disable browser opening.
+  logout                       Sign out and clear stored authentication
+  mcp                          Manage MCP servers
+  worker [options]             Start a private cloud worker that connects to Cursor to run agents in your environment
+  status|whoami [options]      View authentication status
+  models                       List available models for this account
+  about [options]              Display version, system, and account information
+  update                       Update Cursor Agent to the latest version
+  create-chat                  Create a new empty chat and return its ID
+  generate-rule|rule           Generate a new Cursor rule with interactive prompts
+  agent [prompt...]            Start the Cursor Agent
+  ls                           Resume a chat session
+  resume                       Resume the latest chat session
+  help [command]               Display help for command
+```
+
+**Key facts:**
+- `--mode` only accepts `plan` and `ask` — both are **read-only**. No `--mode` flag = full agent (write+shell).
+- `-p` / `--print` enables headless mode (access to all tools including write and shell).
+- `--trust` = trust workspace without prompting (only works with `--print`).
+- `--force` / `--yolo` = force-allow all commands unless explicitly denied.
+- Permission tier mapping: `plan` → `--mode plan` · `auto` → `--trust` · `full` → `--yolo --trust`
+
+---
+
 **Status:** planned · post-release task. Today Diktat supports **Claude Code**,
 **Cursor**, **GitHub Copilot**, **Kiro**, and **Codex** (the last three text-mode
 v1 — see notes below). This documents how to add more agentic coding CLIs cleanly.
