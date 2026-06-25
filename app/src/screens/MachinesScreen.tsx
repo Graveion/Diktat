@@ -8,11 +8,12 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Modal,
+  Pressable,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeIn, FadeInUp, ZoomIn, useReducedMotion } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInUp, FadeOut, ZoomIn, useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, radii, space } from "../theme";
 import { INSTALL_COMMAND } from "../constants";
@@ -60,6 +61,8 @@ export function MachinesScreen({
   const [scanError, setScanError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [offlineMachine, setOfflineMachine] = useState<Machine | null>(null);
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
@@ -117,6 +120,7 @@ export function MachinesScreen({
           style: "destructive",
           onPress: async () => {
             setDeleting(true);
+            setSettingsOpen(false);
             try {
               await onDeleteAccount();
             } catch (e: any) {
@@ -129,23 +133,28 @@ export function MachinesScreen({
     );
   };
 
+  const handleMachinePress = (m: Machine) => {
+    const online = m.lastSeenAt && Date.now() - Date.parse(m.lastSeenAt) < 120_000;
+    if (online) {
+      onSelect(m);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      setOfflineMachine(m);
+    }
+  };
+
   if (scanning) {
     return <ScanScreen onScanned={handleScanned} onCancel={() => setScanning(false)} />;
   }
 
+  const neverConnected = (m: Machine) => !m.lastSeenAt;
+
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={["#120d1f", colors.bg, colors.bg]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.4 }}
-      />
-
       <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
         <Text style={styles.title}>Your machines</Text>
-        <TouchableOpacity onPress={onSignOut} hitSlop={12} accessibilityRole="button" accessibilityLabel="Sign out">
-          <Text style={styles.signOut}>Sign out</Text>
+        <TouchableOpacity onPress={() => setSettingsOpen(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
+          <Ionicons name="settings-outline" size={22} color={colors.textSub} />
         </TouchableOpacity>
       </View>
 
@@ -194,13 +203,12 @@ export function MachinesScreen({
               <Animated.View key={m.id} entering={reducedMotion ? undefined : FadeInUp.delay(i * 60).duration(400)}>
                 <TouchableOpacity
                   style={styles.machineCard}
-                  onPress={() => onSelect(m)}
+                  onPress={() => handleMachinePress(m)}
                   onLongPress={() => confirmUnpair(m)}
                   accessibilityRole="button"
                   accessibilityLabel={`${m.name}, ${online ? "online" : relativeTime(m.lastSeenAt)}`}
-                  accessibilityHint="Connects to this machine. Long-press to unpair."
+                  accessibilityHint={online ? "Connects to this machine. Long-press to unpair." : "Daemon not running. Tap for help."}
                 >
-                  {/* Keyed on online state so coming online replays the bloom */}
                   <Animated.View
                     key={online ? "online" : "offline"}
                     entering={reducedMotion ? undefined : ZoomIn.springify().damping(12)}
@@ -248,15 +256,73 @@ export function MachinesScreen({
             <Text style={styles.tryDemo}>Try the demo →</Text>
           </TouchableOpacity>
         ) : null}
-
-        <TouchableOpacity onPress={confirmDeleteAccount} disabled={deleting} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete account">
-          {deleting ? (
-            <ActivityIndicator color={colors.error} size="small" style={{ marginTop: 4 }} />
-          ) : (
-            <Text style={styles.deleteAccount}>Delete account</Text>
-          )}
-        </TouchableOpacity>
       </View>
+
+      {/* ── Settings sheet ─────────────────────────────────────────────── */}
+      <Modal visible={settingsOpen} transparent animationType="fade" onRequestClose={() => setSettingsOpen(false)}>
+        <Pressable style={styles.overlay} onPress={() => setSettingsOpen(false)}>
+          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Account</Text>
+
+            <TouchableOpacity style={styles.sheetRow} onPress={() => { setSettingsOpen(false); onSignOut(); }} accessibilityRole="button">
+              <Ionicons name="log-out-outline" size={20} color={colors.textSub} />
+              <Text style={styles.sheetRowText}>Sign out</Text>
+            </TouchableOpacity>
+
+            <View style={styles.sheetDivider} />
+
+            <TouchableOpacity style={styles.sheetRow} onPress={confirmDeleteAccount} disabled={deleting} accessibilityRole="button">
+              {deleting ? (
+                <ActivityIndicator color={colors.error} size="small" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={colors.error} />
+              )}
+              <Text style={[styles.sheetRowText, { color: colors.error }]}>Delete account</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Offline machine sheet ──────────────────────────────────────── */}
+      <Modal visible={!!offlineMachine} transparent animationType="fade" onRequestClose={() => setOfflineMachine(null)}>
+        <Pressable style={styles.overlay} onPress={() => setOfflineMachine(null)}>
+          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.offlineIcon}>
+              <Ionicons name="desktop-outline" size={28} color={colors.textMuted} />
+            </View>
+
+            <Text style={styles.sheetTitle}>{offlineMachine?.name ?? "Mac"}</Text>
+            <Text style={styles.offlineBody}>
+              {neverConnected(offlineMachine!) ? (
+                "This Mac has never connected. Complete pairing by running:"
+              ) : (
+                "The daemon isn't running on this Mac. Start it with:"
+              )}
+            </Text>
+
+            <View style={styles.installCmd}>
+              <Text style={styles.installCmdText} selectable>
+                {neverConnected(offlineMachine!) ? "diktat pair" : "diktat start"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.offlineConnectBtn}
+              onPress={() => { setOfflineMachine(null); if (offlineMachine) onSelect(offlineMachine); }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.offlineConnectText}>Try connecting anyway</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setOfflineMachine(null)} hitSlop={12} accessibilityRole="button" style={{ marginTop: 4 }}>
+              <Text style={styles.offlineDismiss}>Dismiss</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -271,7 +337,6 @@ const styles = StyleSheet.create({
     paddingBottom: space.md,
   },
   title: { fontFamily: fonts.display, fontSize: 28, color: colors.text, letterSpacing: -0.5 },
-  signOut: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.textSub },
 
   list: { paddingHorizontal: space.lg, paddingBottom: 24, gap: 10 },
 
@@ -288,7 +353,6 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   machineName: { fontFamily: fonts.bodySemi, fontSize: 16, color: colors.text },
   machineMeta: { fontFamily: fonts.body, fontSize: 12, color: colors.textSub, marginTop: 2 },
-  chevron: { fontFamily: fonts.body, fontSize: 24, color: colors.textMuted },
 
   empty: { marginTop: 40, paddingHorizontal: 8, gap: 18 },
   emptyTitle: { fontFamily: fonts.bodySemi, fontSize: 18, color: colors.text, marginBottom: 4, textAlign: "center" },
@@ -316,7 +380,47 @@ const styles = StyleSheet.create({
   },
   addBtnText: { fontFamily: fonts.bodySemi, color: colors.onAccent, fontSize: 16 },
   tryDemo: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.accent, textAlign: "center", paddingVertical: 8 },
-  deleteAccount: { fontFamily: fonts.body, fontSize: 13, color: colors.textMuted, textAlign: "center", paddingVertical: 8 },
 
   errorText: { fontFamily: fonts.body, fontSize: 13, color: colors.error, textAlign: "center", marginTop: 8 },
+
+  // ── Shared sheet styles ────────────────────────────────────────────────────
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
+    paddingHorizontal: space.lg, paddingTop: 12,
+    gap: 4,
+  },
+  sheetHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center", marginBottom: 16,
+  },
+  sheetTitle: {
+    fontFamily: fonts.bodySemi, fontSize: 17, color: colors.text,
+    marginBottom: 8,
+  },
+  sheetRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 14,
+  },
+  sheetRowText: { fontFamily: fonts.body, fontSize: 16, color: colors.textSub },
+  sheetDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 2 },
+
+  // ── Offline sheet ──────────────────────────────────────────────────────────
+  offlineIcon: { alignSelf: "center", marginBottom: 4 },
+  offlineBody: {
+    fontFamily: fonts.body, fontSize: 14, color: colors.textSub,
+    lineHeight: 20, marginBottom: 10,
+  },
+  offlineConnectBtn: {
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radii.md, padding: 14, alignItems: "center",
+    marginTop: 12,
+  },
+  offlineConnectText: { fontFamily: fonts.bodySemi, fontSize: 15, color: colors.textSub },
+  offlineDismiss: { fontFamily: fonts.body, fontSize: 14, color: colors.textMuted, textAlign: "center", paddingVertical: 8 },
 });
