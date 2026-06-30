@@ -99,8 +99,22 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
           Diktat Pro
         </Animated.Text>
         <Animated.Text entering={FadeIn.delay(120).duration(500)} style={styles.subtitle}>
-          Code review on the sofa. Hotfix on the bus. Ship from anywhere.
+          One app for Claude Code, Cursor, Codex, Copilot & Kiro — running on your
+          own Mac, with your own logins.
         </Animated.Text>
+
+        <Animated.View entering={FadeIn.delay(180).duration(500)} style={styles.benefits}>
+          {[
+            "Every agent in one place — switch CLIs without switching apps",
+            "Runs on your Mac: your code, your subscriptions, nothing in our cloud",
+            "Voice or type, with live diffs and push when a run finishes",
+          ].map((b) => (
+            <View key={b} style={styles.benefitRow}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
+              <Text style={styles.benefitText}>{b}</Text>
+            </View>
+          ))}
+        </Animated.View>
 
         <View style={styles.packages}>
           {packages.length === 0 ? (
@@ -128,6 +142,10 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
             ))
           )}
         </View>
+
+        {packages.length > 0 ? (
+          <Text style={styles.reassure}>Cancel anytime · less than a coffee a month</Text>
+        ) : null}
 
         {showRedeem ? (
           <View style={styles.redeemBox}>
@@ -178,8 +196,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 21,
     marginTop: 12,
-    marginBottom: 28,
+    marginBottom: 20,
   },
+
+  benefits: { gap: 10, marginBottom: 26, paddingHorizontal: 4 },
+  benefitRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  benefitText: { flex: 1, fontFamily: fonts.body, fontSize: 13.5, color: colors.textSub, lineHeight: 19 },
 
   packages: { gap: 12 },
   pkg: {
@@ -203,6 +225,7 @@ const styles = StyleSheet.create({
   pkgPrice: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   pkgPeriod: { fontFamily: fonts.body, fontSize: 13, color: colors.textSub, marginTop: 2 },
   unavailable: { fontFamily: fonts.body, fontSize: 14, color: colors.textSub, textAlign: "center" },
+  reassure: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 14 },
 
   redeemBox: { flexDirection: "row", gap: 8, marginTop: 20 },
   redeemInput: {
