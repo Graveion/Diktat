@@ -188,6 +188,11 @@ export function useMockDiktat(_host?: string, _port?: number) {
     streaming,
     currentTool: null,
     historyLoading,
+    stats: {
+      overall: { runs: 24, edits: 86, linesAdded: 1240, linesRemoved: 410, commandsRun: 53, filesChanged: 38, testsPassed: 12, testsFailed: 3, durationMs: 5_400_000, lastRunAt: undefined },
+      perSession: { [MOCK_SESSION.id]: { runs: 6, edits: 21, linesAdded: 318, linesRemoved: 95, commandsRun: 14, filesChanged: 9, testsPassed: 4, testsFailed: 1, durationMs: 1_320_000, lastRunAt: undefined } },
+    },
+    lastRunSummary: null,
     connect,
     disconnect: () => {},
     spawnSession,

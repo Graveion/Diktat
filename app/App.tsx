@@ -345,6 +345,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           onResume={handleResume}
           onNew={handleNew}
           onDisconnect={() => { leaveMachine(); setSelectedMachine(null); setScreen("machines"); }}
+          overallStats={diktat.stats?.overall}
         />
       ) : (
         <ChatScreen
@@ -361,6 +362,8 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           sessionLabel={activeSession?.projectLabel ?? activeSession?.project?.split("/").pop()}
           sessionCli={activeSession?.cli ?? undefined}
           agents={diktat.agents}
+          lastRunSummary={diktat.lastRunSummary}
+          sessionStats={diktat.activeSessionId ? diktat.stats?.perSession[diktat.activeSessionId] : undefined}
         />
       )}
 

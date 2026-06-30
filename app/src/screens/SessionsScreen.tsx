@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
+  KeyboardAvoidingView, Platform, Pressable,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { DiktatSession, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
+import type { DiktatSession, AgentSelectionMap, PermissionModeId, StatsTotals } from "../hooks/useDiktat";
 import { loadHiddenSessions, hideSession, loadSessionTitles, setSessionTitle } from "../store/config";
+import { formatRunDuration } from "../utils/runStats";
 import { colors, fonts } from "../theme";
 
 type Props = {
@@ -22,6 +24,8 @@ type Props = {
   onNew: (cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => void;
   onDisconnect: () => void;
   onOpenDebug?: () => void;
+  /** Locally-persisted overall usage totals from the daemon. */
+  overallStats?: StatsTotals | null;
 };
 
 const CLI_LABELS: Record<string, string> = {
@@ -124,7 +128,7 @@ function bestProjectName(path: string) {
   return last;
 }
 
-export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug }: Props) {
+export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug, overallStats }: Props) {
   const insets = useSafeAreaInsets();
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
@@ -182,7 +186,9 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
 
   const openRename = (session: DiktatSession) => {
     setRenameTarget(session);
-    setRenameValue(titles[session.id] ?? cleanPreview(session.firstMessage) ?? "");
+    // Prefill only with an existing custom title; otherwise start blank (the
+    // current auto-title is shown as a hint above the box).
+    setRenameValue(titles[session.id] ?? "");
   };
 
   const saveRename = async () => {
@@ -265,6 +271,15 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
         <Text style={styles.noAgents}>
           No coding agents detected on this machine. Check `diktat logs` on your Mac.
         </Text>
+      ) : null}
+
+      {overallStats && overallStats.runs > 0 ? (
+        <View style={styles.usageStrip}>
+          <Ionicons name="pulse-outline" size={13} color={colors.accent} />
+          <Text style={styles.usageText} numberOfLines={1}>
+            {overallStats.runs} runs · {overallStats.filesChanged} files · +{overallStats.linesAdded}/−{overallStats.linesRemoved} · {overallStats.commandsRun} cmd · {formatRunDuration(overallStats.durationMs)}
+          </Text>
+        </View>
       ) : null}
 
       {loading ? (
@@ -461,16 +476,26 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
       </Modal>
 
       <Modal visible={!!renameTarget} animationType="fade" transparent onRequestClose={() => setRenameTarget(null)}>
-        <View style={pickerStyles.overlay}>
+        <KeyboardAvoidingView
+          style={styles.renameOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setRenameTarget(null)} />
           <View style={styles.renameSheet}>
             <Text style={styles.renameTitle}>Rename session</Text>
+            {renameTarget ? (
+              <Text style={styles.renameCurrent} numberOfLines={1}>
+                Currently: {cleanPreview(renameTarget.firstMessage) ?? "Empty session"}
+              </Text>
+            ) : null}
             <TextInput
               style={styles.renameInput}
               value={renameValue}
               onChangeText={setRenameValue}
-              placeholder="Session title"
+              placeholder="New title"
               placeholderTextColor={colors.textMuted}
               autoFocus
+              selectTextOnFocus
               returnKeyType="done"
               onSubmitEditing={saveRename}
             />
@@ -484,7 +509,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -512,6 +537,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
   },
   toolbarHint: { flex: 1, fontFamily: fonts.body, color: colors.textMuted, fontSize: 14, paddingVertical: 11 },
+  usageStrip: {
+    flexDirection: "row", alignItems: "center", gap: 7,
+    marginHorizontal: 16, marginTop: 8, marginBottom: 2,
+    paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: colors.card, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  usageText: { flex: 1, fontFamily: fonts.mono, color: colors.textSub, fontSize: 11 },
   addButton: {
     width: 46, height: 46, borderRadius: 12,
     alignItems: "center", justifyContent: "center",
@@ -567,11 +600,13 @@ const styles = StyleSheet.create({
   },
   hideActionText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 13 },
 
+  renameOverlay: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.75)" },
   renameSheet: {
     marginHorizontal: 24, backgroundColor: colors.surface, borderRadius: 16,
     padding: 20, borderWidth: 1, borderColor: colors.border,
   },
-  renameTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.text, marginBottom: 14 },
+  renameTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.text, marginBottom: 4 },
+  renameCurrent: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, marginBottom: 14 },
   renameInput: {
     fontFamily: fonts.body, backgroundColor: colors.input, color: colors.text,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15,

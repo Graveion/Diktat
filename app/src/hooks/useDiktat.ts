@@ -43,6 +43,38 @@ export type DiktatMessage = {
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
+// Authoritative run summary from the daemon (sent on the `exit` frame). Mirrors
+// the daemon's RunSummary; richer than the client-side derivation (true
+// pass/fail + exact diff counts).
+export type RunSummary = {
+  filesChanged: string[];
+  editCount: number;
+  linesAdded: number;
+  linesRemoved: number;
+  commandsRun: number;
+  testStatus: "pass" | "fail" | "none";
+  durationMs: number;
+  exitCode: number;
+};
+
+// Locally-persisted usage aggregates (daemon's run-stats-store).
+export type StatsTotals = {
+  runs: number;
+  edits: number;
+  linesAdded: number;
+  linesRemoved: number;
+  commandsRun: number;
+  filesChanged: number;
+  testsPassed: number;
+  testsFailed: number;
+  durationMs: number;
+  lastRunAt?: string;
+};
+export type AggregatedStats = {
+  overall: StatsTotals;
+  perSession: Record<string, StatsTotals>;
+};
+
 // Relay-transport descriptor. When provided, the hook connects via the relay
 // broker (wss) instead of dialing the daemon directly (ws://host:port). See
 // relay/RELAY.md for the wire contract.
@@ -95,6 +127,10 @@ export function useDiktat(relay?: RelayDescriptor) {
   // True between spawned/resumed and the first history (or output) event.
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [stats, setStats] = useState<AggregatedStats | null>(null);
+  // Authoritative summary of the most recent run (from the exit frame). Cleared
+  // when a new run starts so the chat's last-run card reflects the latest run.
+  const [lastRunSummary, setLastRunSummary] = useState<RunSummary | null>(null);
 
   const connect = useCallback(async () => {
     const relayCfg = relayRef.current;
@@ -226,6 +262,7 @@ export function useDiktat(relay?: RelayDescriptor) {
           kiroSessions: msg.kiroSessions,
         });
         setSessions(all);
+        if (msg.stats) setStats(msg.stats as AggregatedStats);
         const countBy = (src: string) => all.filter((s) => s.source === src).length;
         info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${countBy("claude")} cursor=${countBy("cursor")} codex=${countBy("codex")} copilot=${countBy("copilot")} kiro=${countBy("kiro")} daemon=${countBy("daemon")})`);
         track("app_connected", { clis: (msg.clis ?? []).length, sessions: all.length });
@@ -366,6 +403,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       if (msg.type === "exit") {
         setStreaming(false);
         setCurrentTool(null);
+        if (msg.summary) setLastRunSummary(msg.summary as RunSummary);
         info("SESSION", `exit: code=${msg.code}`);
         if (msg.code === 0) {
           track("session_completed", { code: 0 });
@@ -489,6 +527,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     info("SESSION", `input: sessionId=${activeSessionId} text="${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
     track("message_sent", { ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}) });
     setMessages((prev) => [...prev, { role: "user", text }]);
+    setLastRunSummary(null); // new turn — clear the previous run's summary card
     ws.current.send(JSON.stringify({
       type: "input",
       sessionId: activeSessionId,
@@ -524,7 +563,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
   return {
     state, reconnecting, errorMessage, clis, agents, projects, sessions, activeSessionId,
-    messages, streaming, currentTool, historyLoading, connect, disconnect,
+    messages, streaming, currentTool, historyLoading, stats, lastRunSummary, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
   };

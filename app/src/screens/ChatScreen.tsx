@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import type { DiktatMessage, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
+import type { DiktatMessage, AgentSelectionMap, PermissionModeId, RunSummary, StatsTotals } from "../hooks/useDiktat";
 import { useSettings } from "../hooks/useSettings";
 import {
   buildContextualStrings, detectSlashCommand,
@@ -380,6 +380,10 @@ type Props = {
   onBack: () => void;
   onRetryConnect?: () => void;
   sessionLabel?: string;
+  /** Authoritative summary of the latest run (from the daemon's exit frame). */
+  lastRunSummary?: RunSummary | null;
+  /** Persisted totals for this session, if any. */
+  sessionStats?: StatsTotals | null;
 };
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -387,6 +391,7 @@ type Props = {
 export function ChatScreen({
   messages, streaming, currentTool, reconnecting, historyLoading,
   activeSessionId, sessionCli, agents, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
+  lastRunSummary, sessionStats,
 }: Props) {
   type Mode = "idle" | "listening" | "reviewing";
   const [input, setInput] = useState("");
@@ -447,9 +452,28 @@ export function ChatScreen({
   const runStartIdx = useRef(0);
   const runStartAt = useRef(0);
   const [lastRun, setLastRun] = useState<(RunStats & { durationMs: number }) | null>(null);
+  const [runDismissed, setRunDismissed] = useState(false);
 
   const listening = mode === "listening";
   const reviewing = mode === "reviewing";
+
+  // Last-run card source: prefer the daemon's authoritative summary (true
+  // pass/fail + exact diffs); fall back to the client-derived stats for older
+  // daemons that don't send a summary on the exit frame.
+  const runCard = lastRunSummary
+    ? {
+        files: lastRunSummary.filesChanged.length, added: lastRunSummary.linesAdded,
+        removed: lastRunSummary.linesRemoved, commands: lastRunSummary.commandsRun,
+        durationMs: lastRunSummary.durationMs, ok: lastRunSummary.exitCode === 0,
+        testStatus: lastRunSummary.testStatus,
+      }
+    : lastRun
+    ? {
+        files: lastRun.files, added: lastRun.added, removed: lastRun.removed,
+        commands: lastRun.commands, durationMs: lastRun.durationMs,
+        ok: undefined as boolean | undefined, testStatus: "none" as "pass" | "fail" | "none",
+      }
+    : null;
 
   // Run-boundary tracking: capture the message index + clock at run start, then
   // derive a compact "last run" summary (files/edits/cmds/lines/duration) from
@@ -460,6 +484,7 @@ export function ChatScreen({
       runStartIdx.current = messages.length;
       runStartAt.current = Date.now();
       setLastRun(null);
+      setRunDismissed(false);
     } else if (prevStreaming.current && !streaming && messages.length > 0) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const stats = computeRunStats(messages.slice(runStartIdx.current));
@@ -751,9 +776,16 @@ export function ChatScreen({
         <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to sessions">
           <Ionicons name="chevron-back" size={24} color={colors.accent} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {sessionLabel ?? "Session"}
-        </Text>
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {sessionLabel ?? "Session"}
+          </Text>
+          {sessionStats && sessionStats.runs > 0 ? (
+            <Text style={styles.headerStats} numberOfLines={1}>
+              {sessionStats.runs} {sessionStats.runs === 1 ? "run" : "runs"} · {sessionStats.filesChanged} files · {formatRunDuration(sessionStats.durationMs)}
+            </Text>
+          ) : null}
+        </View>
         <View style={styles.headerRight}>
           {streaming && activeSessionId ? (
             <TouchableOpacity
@@ -944,22 +976,27 @@ export function ChatScreen({
         )}
       </View>
 
-      {/* Last-run summary — derived client-side from this run's tool messages. */}
-      {lastRun && !streaming && !reviewing ? (
+      {/* Last-run summary — daemon-authoritative when available, else derived. */}
+      {runCard && !runDismissed && !streaming && !reviewing ? (
         <Reanimated.View
           style={styles.runStats}
           entering={reducedMotion ? undefined : FadeInDown.duration(180)}
         >
-          <Ionicons name="stats-chart" size={13} color={colors.accent} />
+          <Ionicons
+            name={runCard.ok === false ? "close-circle" : runCard.ok ? "checkmark-circle" : "stats-chart"}
+            size={13}
+            color={runCard.ok === false ? colors.error : runCard.ok ? colors.success : colors.accent}
+          />
           <Text style={styles.runStatsText} numberOfLines={1}>
             {[
-              lastRun.files > 0 ? `${lastRun.files} ${lastRun.files === 1 ? "file" : "files"}` : null,
-              (lastRun.added > 0 || lastRun.removed > 0) ? `+${lastRun.added}/−${lastRun.removed}` : null,
-              lastRun.commands > 0 ? `${lastRun.commands} cmd` : null,
-              formatRunDuration(lastRun.durationMs),
+              runCard.files > 0 ? `${runCard.files} ${runCard.files === 1 ? "file" : "files"}` : null,
+              (runCard.added > 0 || runCard.removed > 0) ? `+${runCard.added}/−${runCard.removed}` : null,
+              runCard.commands > 0 ? `${runCard.commands} cmd` : null,
+              runCard.testStatus === "pass" ? "tests ✓" : runCard.testStatus === "fail" ? "tests ✗" : null,
+              formatRunDuration(runCard.durationMs),
             ].filter(Boolean).join("  ·  ")}
           </Text>
-          <TouchableOpacity onPress={() => setLastRun(null)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss run summary">
+          <TouchableOpacity onPress={() => setRunDismissed(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss run summary">
             <Ionicons name="close" size={14} color={colors.textMuted} />
           </TouchableOpacity>
         </Reanimated.View>
@@ -1218,7 +1255,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.borderFaint,
   },
   backButton: { padding: 4, marginRight: 10 },
-  headerTitle: { flex: 1, fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15 },
+  headerTitleWrap: { flex: 1 },
+  headerTitle: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 15 },
+  headerStats: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 10, marginTop: 1 },
   headerRight: { minWidth: 48, alignItems: "flex-end" },
   cancelButton: {
     backgroundColor: colors.accentFaint, borderRadius: 8,
