@@ -94,11 +94,15 @@ export class AdapterWs {
   }
 
   send(data: string): void {
-    // While a phone is attached, forward live. While detached, buffer session
-    // frames so the phone can be caught up on reattach — except `_relay`
-    // control frames (e.g. keep-alive pings), which are transport noise.
-    if (this.readyState !== 1) {
-      if (!data.includes('"_relay"')) this.bufferWhileDetached(data);
+    // `_relay` control frames (keep-alive ping/pong) are daemon↔relay transport,
+    // not phone content, so they must reach the relay whether or not a phone is
+    // attached — they bypass the detached-buffering gate entirely. (Gating them
+    // on phone-attachment silently dropped the keep-alive ping while idle: the
+    // relay never saw a ping, so no pong came back and the daemon reconnect-
+    // looped every ~45s.) Session frames still buffer while detached for replay.
+    const isControl = data.includes('"_relay"');
+    if (!isControl && this.readyState !== 1) {
+      this.bufferWhileDetached(data);
       return;
     }
     try {

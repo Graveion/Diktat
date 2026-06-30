@@ -221,6 +221,19 @@ test("AdapterWs does NOT buffer _relay control frames (e.g. pings)", () => {
   expect(a.drainBuffer().frames.length).toBe(0);
 });
 
+test("AdapterWs sends _relay control frames to the socket while detached (keep-alive)", () => {
+  // Regression: pings are daemon↔relay transport and must go out even when no
+  // phone is attached. Gating them on attachment dropped the keep-alive, so the
+  // relay never ponged and the daemon reconnect-looped every ~45s while idle.
+  const a = new AdapterWs();
+  const sent: string[] = [];
+  a.setSocket({ send: (d) => sent.push(d), close: () => {} });
+  a.markDetached();
+  a.send(JSON.stringify({ _relay: true, type: "ping" }));
+  expect(sent.map((f) => JSON.parse(f).type)).toEqual(["ping"]);
+  expect(a.drainBuffer().frames.length).toBe(0); // still never buffered
+});
+
 test("AdapterWs writes live (does not buffer) while attached", () => {
   const a = new AdapterWs();
   const sent: string[] = [];
