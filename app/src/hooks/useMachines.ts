@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { AppState } from "react-native";
 import { RELAY_URL, supabase } from "../store/supabase";
+
+// How often to re-read presence while the screen is mounted. The daemon stamps
+// last_seen_at every ~30s and the online threshold is 120s, so a 25s poll keeps
+// the dot accurate without hammering PostgREST.
+const PRESENCE_POLL_MS = 25_000;
 
 function relayHttpBase(u: string): string {
   return u.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/$/, "");
@@ -55,6 +61,19 @@ export function useMachines(): MachinesApi {
 
   useEffect(() => {
     refresh();
+    if (MOCK_MODE) return;
+    // Poll while mounted so a daemon that connects after the screen loaded
+    // flips its dot to green without a manual pull-to-refresh.
+    const interval = setInterval(refresh, PRESENCE_POLL_MS);
+    // And refresh immediately when the app returns to the foreground (common:
+    // start the daemon on the Mac, then pick up the phone).
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [refresh]);
 
   const claimQrPairing = useCallback(

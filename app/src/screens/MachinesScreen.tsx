@@ -63,6 +63,7 @@ export function MachinesScreen({
   const [deleting, setDeleting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [offlineMachine, setOfflineMachine] = useState<Machine | null>(null);
+  const [offlineOpen, setOfflineOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
@@ -140,6 +141,7 @@ export function MachinesScreen({
     } else {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       setOfflineMachine(m);
+      setOfflineOpen(true);
     }
   };
 
@@ -285,8 +287,8 @@ export function MachinesScreen({
       </Modal>
 
       {/* ── Offline machine sheet ──────────────────────────────────────── */}
-      <Modal visible={!!offlineMachine} transparent animationType="fade" onRequestClose={() => setOfflineMachine(null)}>
-        <Pressable style={styles.overlay} onPress={() => setOfflineMachine(null)}>
+      <Modal visible={offlineOpen} transparent animationType="fade" onRequestClose={() => setOfflineOpen(false)}>
+        <Pressable style={styles.overlay} onPress={() => setOfflineOpen(false)}>
           <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
             <View style={styles.sheetHandle} />
 
@@ -311,13 +313,13 @@ export function MachinesScreen({
 
             <TouchableOpacity
               style={styles.offlineConnectBtn}
-              onPress={() => { setOfflineMachine(null); if (offlineMachine) onSelect(offlineMachine); }}
+              onPress={() => { setOfflineOpen(false); if (offlineMachine) onSelect(offlineMachine); }}
               accessibilityRole="button"
             >
               <Text style={styles.offlineConnectText}>Try connecting anyway</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setOfflineMachine(null)} hitSlop={12} accessibilityRole="button" style={{ marginTop: 4 }}>
+            <TouchableOpacity onPress={() => setOfflineOpen(false)} hitSlop={12} accessibilityRole="button" style={{ marginTop: 4 }}>
               <Text style={styles.offlineDismiss}>Dismiss</Text>
             </TouchableOpacity>
           </Pressable>
