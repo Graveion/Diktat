@@ -4,9 +4,10 @@ import {
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { DiktatSession, AgentSelectionMap, PermissionModeId } from "../hooks/useDiktat";
-import { loadHiddenSessions, hideSession } from "../store/config";
+import { loadHiddenSessions, hideSession, loadSessionTitles, setSessionTitle } from "../store/config";
 import { colors, fonts } from "../theme";
 
 type Props = {
@@ -39,32 +40,47 @@ const CLI_COLOR: Record<string, string> = {
   codex: "#ec4899",
 };
 
-function SessionCard({ session: s, showProject, onPress, onHide, formatDate }: {
-  session: DiktatSession; showProject?: string;
-  onPress: () => void; onHide: () => void;
+// Tidy a raw first-message into a more legible title: drop leading politeness,
+// code fences and markdown noise, collapse whitespace. Best-effort, never AI.
+function cleanPreview(raw?: string): string | null {
+  if (typeof raw !== "string") return null;
+  let t = raw.replace(/```[\s\S]*?```/g, " ").replace(/`([^`]+)`/g, "$1");
+  t = t.replace(/^\s*(?:hey|hi|hello|ok(?:ay)?|so|please|can you|could you|would you|i(?:'| a)m trying to|let'?s)\b[,:]?\s*/i, "");
+  t = t.replace(/[#*_>]+/g, " ").replace(/\s+/g, " ").trim();
+  if (t) t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t || null;
+}
+
+function SessionCard({ session: s, customTitle, showProject, onPress, onHide, onRename, formatDate }: {
+  session: DiktatSession; customTitle?: string; showProject?: string;
+  onPress: () => void; onHide: () => void; onRename: () => void;
   formatDate: (iso: string) => string;
 }) {
   const renderRightActions = () => (
-    <TouchableOpacity style={styles.hideAction} onPress={onHide}>
-      <Text style={styles.hideActionText}>Hide</Text>
-    </TouchableOpacity>
+    <View style={styles.rowActions}>
+      <TouchableOpacity style={styles.renameAction} onPress={onRename}>
+        <Text style={styles.renameActionText}>Rename</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.hideAction} onPress={onHide}>
+        <Text style={styles.hideActionText}>Hide</Text>
+      </TouchableOpacity>
+    </View>
   );
 
-  const preview = typeof s.firstMessage === "string" && s.firstMessage.trim()
-    ? s.firstMessage.trim()
-    : null;
+  const preview = customTitle?.trim() || cleanPreview(s.firstMessage);
 
   return (
     <Swipeable renderRightActions={renderRightActions} overshootRight={false}>
       <TouchableOpacity
         style={styles.sessionCard}
         onPress={onPress}
+        onLongPress={onRename}
         activeOpacity={0.7}
         testID={`session-card-${s.id}`}
       >
         <View style={styles.sessionCardInner}>
           <View style={styles.sessionTop}>
-            <Text style={[styles.sessionTitle, !preview && styles.sessionTitleEmpty]} numberOfLines={1}>
+            <Text style={[styles.sessionTitle, !preview && styles.sessionTitleEmpty]} numberOfLines={2}>
               {preview ?? "Empty session"}
             </Text>
             <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
@@ -116,12 +132,16 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
   const [selectedModel, setSelectedModel] = useState<string>(""); // "" = CLI default
   const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [renameTarget, setRenameTarget] = useState<DiktatSession | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [titleTaps, setTitleTaps] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadHiddenSessions().then(setHiddenIds);
+    loadSessionTitles().then(setTitles);
   }, []);
 
   const visibleSessions = sessions.filter((s) => !hiddenIds.has(s.id));
@@ -160,22 +180,16 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
     setHiddenIds((prev) => new Set([...prev, session.id]));
   };
 
-  const handleLongPress = (session: DiktatSession) => {
-    Alert.alert(
-      projectContext(session.project),
-      "Hide this session from the list?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Hide",
-          style: "destructive",
-          onPress: async () => {
-            await hideSession(session.id);
-            setHiddenIds((prev) => new Set([...prev, session.id]));
-          },
-        },
-      ]
-    );
+  const openRename = (session: DiktatSession) => {
+    setRenameTarget(session);
+    setRenameValue(titles[session.id] ?? cleanPreview(session.firstMessage) ?? "");
+  };
+
+  const saveRename = async () => {
+    if (!renameTarget) return;
+    const next = await setSessionTitle(renameTarget.id, renameValue);
+    setTitles(next);
+    setRenameTarget(null);
   };
 
   const formatDate = (iso: string) => {
@@ -221,36 +235,37 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
         </TouchableOpacity>
       </View>
 
-      <View style={styles.newButtonWrap}>
+      <View style={styles.toolbar}>
+        {visibleSessions.length > 0 ? (
+          <TextInput
+            testID="session-search-input"
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search sessions…"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+          />
+        ) : (
+          <Text style={styles.toolbarHint} numberOfLines={1}>Start a new session</Text>
+        )}
         <TouchableOpacity
           testID="new-session-button"
-          style={[styles.newButton, clis.length === 0 && styles.newButtonDisabled]}
+          style={[styles.addButton, clis.length === 0 && styles.addButtonDisabled]}
           onPress={openPicker}
           disabled={clis.length === 0}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="New session"
         >
-          <Text style={styles.newButtonText}>+ New session</Text>
+          <Ionicons name="add" size={26} color={colors.onAccent} />
         </TouchableOpacity>
-        {connectionState === "connected" && clis.length === 0 ? (
-          <Text style={styles.noAgents}>
-            No coding agents detected on this machine. Check `diktat logs` on your Mac.
-          </Text>
-        ) : null}
       </View>
-
-      {visibleSessions.length > 0 && (
-        <TextInput
-          testID="session-search-input"
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search sessions…"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-        />
-      )}
+      {connectionState === "connected" && clis.length === 0 ? (
+        <Text style={styles.noAgents}>
+          No coding agents detected on this machine. Check `diktat logs` on your Mac.
+        </Text>
+      ) : null}
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -263,6 +278,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
           // Flat filtered list
           const filtered = visibleSessions.filter((s) =>
             projectName(s.project).toLowerCase().includes(query) ||
+            (titles[s.id] ?? "").toLowerCase().includes(query) ||
             (s.firstMessage ?? "").toLowerCase().includes(query)
           );
           return (
@@ -275,9 +291,11 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                 return (
                   <SessionCard
                     session={item}
+                    customTitle={titles[item.id]}
                     showProject={projectLabel}
                     onPress={() => onResume(item)}
                     onHide={() => handleHide(item)}
+                    onRename={() => openRename(item)}
                     formatDate={formatDate}
                   />
                 );
@@ -327,8 +345,10 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
               return (
                 <SessionCard
                   session={s}
+                  customTitle={titles[s.id]}
                   onPress={() => onResume(s)}
                   onHide={() => handleHide(s)}
+                  onRename={() => openRename(s)}
                   formatDate={formatDate}
                 />
               );
@@ -439,6 +459,33 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
           </SafeAreaView>
         </View>
       </Modal>
+
+      <Modal visible={!!renameTarget} animationType="fade" transparent onRequestClose={() => setRenameTarget(null)}>
+        <View style={pickerStyles.overlay}>
+          <View style={styles.renameSheet}>
+            <Text style={styles.renameTitle}>Rename session</Text>
+            <TextInput
+              style={styles.renameInput}
+              value={renameValue}
+              onChangeText={setRenameValue}
+              placeholder="Session title"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={saveRename}
+            />
+            <Text style={styles.renameHint}>Leave empty to restore the default title.</Text>
+            <View style={pickerStyles.actions}>
+              <TouchableOpacity style={pickerStyles.cancelButton} onPress={() => setRenameTarget(null)}>
+                <Text style={pickerStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={pickerStyles.startButton} onPress={saveRename}>
+                <Text style={pickerStyles.startText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -460,23 +507,28 @@ const styles = StyleSheet.create({
   connectedHost: { fontFamily: fonts.body, fontSize: 11, color: colors.accent, marginTop: 2 },
   disconnect: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, paddingBottom: 4 },
 
-  newButtonWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
-  newButton: {
-    borderRadius: 12, padding: 15, alignItems: "center",
+  toolbar: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
+  },
+  toolbarHint: { flex: 1, fontFamily: fonts.body, color: colors.textMuted, fontSize: 14, paddingVertical: 11 },
+  addButton: {
+    width: 46, height: 46, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
     backgroundColor: colors.accent,
   },
-  newButtonDisabled: { opacity: 0.35 },
-  newButtonText: { fontFamily: fonts.bodySemi, color: colors.onAccent, fontSize: 15 },
-  noAgents: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, textAlign: "center", marginTop: 10, lineHeight: 17 },
+  addButtonDisabled: { opacity: 0.35 },
+  noAgents: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, textAlign: "center", marginTop: 10, marginHorizontal: 16, lineHeight: 17 },
 
   searchInput: {
+    flex: 1,
     fontFamily: fonts.body,
     backgroundColor: colors.card,
     color: colors.text,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 11,
     fontSize: 14,
-    marginHorizontal: 16, marginBottom: 4,
+    height: 46,
     borderWidth: 1, borderColor: colors.border,
   },
 
@@ -502,11 +554,30 @@ const styles = StyleSheet.create({
   cliBadgeText: { fontFamily: fonts.bodyMedium, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   sessionDate: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 11 },
 
+  rowActions: { flexDirection: "row", marginRight: 12 },
+  renameAction: {
+    backgroundColor: colors.card, justifyContent: "center",
+    alignItems: "center", width: 72, marginVertical: 3, marginRight: 6, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  renameActionText: { fontFamily: fonts.bodySemi, color: colors.accent, fontSize: 13 },
   hideAction: {
     backgroundColor: colors.error, justifyContent: "center",
-    alignItems: "center", width: 72, marginVertical: 3, marginRight: 12, borderRadius: 12,
+    alignItems: "center", width: 72, marginVertical: 3, borderRadius: 12,
   },
   hideActionText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 13 },
+
+  renameSheet: {
+    marginHorizontal: 24, backgroundColor: colors.surface, borderRadius: 16,
+    padding: 20, borderWidth: 1, borderColor: colors.border,
+  },
+  renameTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.text, marginBottom: 14 },
+  renameInput: {
+    fontFamily: fonts.body, backgroundColor: colors.input, color: colors.text,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  renameHint: { fontFamily: fonts.body, color: colors.textMuted, fontSize: 12, marginTop: 8 },
 
   separator: { height: 0 },
   empty: { fontFamily: fonts.body, color: colors.textSub, textAlign: "center", marginTop: 48, fontSize: 14 },

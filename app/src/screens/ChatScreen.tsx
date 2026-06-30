@@ -9,7 +9,7 @@ import Markdown from "react-native-markdown-display";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import Reanimated, { FadeInDown, FadeInUp, ZoomIn, useReducedMotion } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeInDown, FadeInUp, FadeOut, SlideInDown, ZoomIn, useReducedMotion, useSharedValue, useAnimatedStyle, withTiming, withRepeat } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
@@ -20,6 +20,7 @@ import {
   buildContextualStrings, detectSlashCommand,
 } from "../utils/voice";
 import { formatToolLabel } from "../utils/tools";
+import { computeRunStats, formatRunDuration, type RunStats } from "../utils/runStats";
 import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
 
@@ -32,6 +33,29 @@ const PERMISSION_FALLBACK: { id: PermissionModeId; label: string }[] = [
   { id: "auto", label: "Auto-accept edits" },
   { id: "full", label: "Full access" },
 ];
+
+// Caret that rotates 180° when its selector is open. Replaces the old "▾" text
+// glyph (which sat off the text baseline) with a properly-centered icon.
+function SelectorCaret({ open, reducedMotion }: { open: boolean; reducedMotion: boolean }) {
+  const rot = useSharedValue(open ? 1 : 0);
+  rot.value = reducedMotion ? (open ? 1 : 0) : withTiming(open ? 1 : 0, { duration: 160 });
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rot.value * 180}deg` }] }));
+  return (
+    <Reanimated.View style={style}>
+      <Ionicons name="chevron-down" size={13} color={colors.textSub} />
+    </Reanimated.View>
+  );
+}
+
+// Softly pulsing dot — signals the reconnecting banner is live/working.
+function PulsingDot({ reducedMotion }: { reducedMotion: boolean }) {
+  const pulse = useSharedValue(0.4);
+  useEffect(() => {
+    pulse.value = reducedMotion ? 1 : withRepeat(withTiming(1, { duration: 700 }), -1, true);
+  }, [reducedMotion, pulse]);
+  const style = useAnimatedStyle(() => ({ opacity: pulse.value }));
+  return <Reanimated.View style={[styles.reconnectingDot, style]} />;
+}
 
 const EXAMPLE_PROMPTS = [
   "What's in this codebase?",
@@ -420,14 +444,26 @@ export function ChatScreen({
   const prevStreaming = useRef(streaming);
   const inputHistory = useRef<string[]>([]);
   const historyIdx = useRef(-1);
+  const runStartIdx = useRef(0);
+  const runStartAt = useRef(0);
+  const [lastRun, setLastRun] = useState<(RunStats & { durationMs: number }) | null>(null);
 
   const listening = mode === "listening";
   const reviewing = mode === "reviewing";
 
-  // Completion haptic
+  // Run-boundary tracking: capture the message index + clock at run start, then
+  // derive a compact "last run" summary (files/edits/cmds/lines/duration) from
+  // the messages that arrived during the run. Purely client-side — OTA only.
   useEffect(() => {
-    if (prevStreaming.current && !streaming && messages.length > 0) {
+    if (!prevStreaming.current && streaming) {
+      // Run started — clear any prior summary and mark the boundary.
+      runStartIdx.current = messages.length;
+      runStartAt.current = Date.now();
+      setLastRun(null);
+    } else if (prevStreaming.current && !streaming && messages.length > 0) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const stats = computeRunStats(messages.slice(runStartIdx.current));
+      if (stats) setLastRun({ ...stats, durationMs: Date.now() - runStartAt.current });
     }
     prevStreaming.current = streaming;
   }, [streaming]);
@@ -460,8 +496,10 @@ export function ChatScreen({
   const editDraft = useCallback(() => {
     stopAllVoice();
     setMode("idle");
-    // input stays — user can edit / type freely
-    setTimeout(() => inputRef.current?.focus(), 50);
+    // The composer (and its TextInput) stays mounted under the review overlay,
+    // so focusing is instant — no remount, no 50ms flicker. rAF lets the
+    // overlay-removal commit first so focus lands on the visible input.
+    requestAnimationFrame(() => inputRef.current?.focus());
   }, [stopAllVoice]);
 
   const enterReviewMode = useCallback(() => {
@@ -742,7 +780,13 @@ export function ChatScreen({
       </View>
 
       {reconnecting ? (
-        <View style={styles.reconnectingBanner} testID="reconnecting-banner">
+        <Reanimated.View
+          style={styles.reconnectingBanner}
+          testID="reconnecting-banner"
+          entering={reducedMotion ? undefined : SlideInDown.duration(220)}
+          exiting={reducedMotion ? undefined : FadeOut.duration(160)}
+        >
+          <PulsingDot reducedMotion={reducedMotion} />
           <Text style={styles.reconnectingText}>Reconnecting…</Text>
           {onRetryConnect ? (
             <TouchableOpacity
@@ -755,7 +799,7 @@ export function ChatScreen({
               <Text style={styles.reconnectingRetryText}>Retry</Text>
             </TouchableOpacity>
           ) : null}
-        </View>
+        </Reanimated.View>
       ) : null}
 
       {/* Message list.
@@ -900,47 +944,34 @@ export function ChatScreen({
         )}
       </View>
 
-      {/* Review card — replaces rail + input row when reviewing */}
-      {reviewing ? (
-        <View style={styles.reviewCard}>
-          {/* Transcript itself is the edit target — tap anywhere on it to edit. */}
-          <TouchableOpacity activeOpacity={0.7} onPress={editDraft} accessibilityRole="button" accessibilityLabel="Edit dictated message">
-            <ScrollView
-              style={styles.reviewTranscriptScroll}
-              contentContainerStyle={styles.reviewTranscriptContent}
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={false}
-            >
-              <Text style={styles.reviewText}>{input}</Text>
-            </ScrollView>
-            <Text style={styles.reviewEditHint}>tap to edit</Text>
+      {/* Last-run summary — derived client-side from this run's tool messages. */}
+      {lastRun && !streaming && !reviewing ? (
+        <Reanimated.View
+          style={styles.runStats}
+          entering={reducedMotion ? undefined : FadeInDown.duration(180)}
+        >
+          <Ionicons name="stats-chart" size={13} color={colors.accent} />
+          <Text style={styles.runStatsText} numberOfLines={1}>
+            {[
+              lastRun.files > 0 ? `${lastRun.files} ${lastRun.files === 1 ? "file" : "files"}` : null,
+              (lastRun.added > 0 || lastRun.removed > 0) ? `+${lastRun.added}/−${lastRun.removed}` : null,
+              lastRun.commands > 0 ? `${lastRun.commands} cmd` : null,
+              formatRunDuration(lastRun.durationMs),
+            ].filter(Boolean).join("  ·  ")}
+          </Text>
+          <TouchableOpacity onPress={() => setLastRun(null)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss run summary">
+            <Ionicons name="close" size={14} color={colors.textMuted} />
           </TouchableOpacity>
+        </Reanimated.View>
+      ) : null}
 
-          {/* Action buttons */}
-          <View style={styles.reviewActions}>
-            <TouchableOpacity
-              testID="review-cancel-button"
-              style={[styles.reviewActionBtn, styles.reviewCancelBtn]}
-              onPress={discardDraft}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.reviewCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="review-send-button"
-              style={[styles.reviewActionBtn, styles.reviewSendBtn]}
-              onPress={sendDraft}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.reviewSendText}>Send ↑</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <>
+      {/* Composer — always mounted so the TextInput persists across the
+          review→edit transition. The review card overlays it (below) rather
+          than replacing it, so tapping "edit" never remounts/refocuses → no flicker. */}
+      <>
           {/* Command rail — collapsible. A leading "/" toggle expands/collapses
               the chip list; typing "/" auto-expands with filtered matches. */}
-          {railVisible && (
+          {railVisible && !reviewing && (
             <View style={styles.rail}>
               <ScrollView
                 horizontal
@@ -984,30 +1015,34 @@ export function ChatScreen({
           )}
 
           {/* Model / permission selector (expands above the composer) */}
-          {selectorOpen ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorRow} contentContainerStyle={styles.selectorRowContent} keyboardShouldPersistTaps="handled">
-              {selectorOpen === "model"
-                ? (agentOpts?.models ?? []).map((m) => (
-                    <TouchableOpacity
-                      key={m.id || "default"}
-                      testID={`composer-model-${m.id || "default"}`}
-                      style={[styles.selectorChip, selectedModel === m.id && styles.selectorChipActive]}
-                      onPress={() => { Haptics.selectionAsync(); setSelectedModel(m.id); setSelectorOpen(null); }}
-                    >
-                      <Text style={[styles.selectorChipText, selectedModel === m.id && styles.selectorChipTextActive]}>{m.label}</Text>
-                    </TouchableOpacity>
-                  ))
-                : (agentOpts?.permissionModes ?? PERMISSION_FALLBACK).map((p) => (
-                    <TouchableOpacity
-                      key={p.id}
-                      testID={`composer-perm-${p.id}`}
-                      style={[styles.selectorChip, selectedPermission === p.id && styles.selectorChipActive]}
-                      onPress={() => { Haptics.selectionAsync(); setSelectedPermission(p.id as PermissionModeId); setSelectorOpen(null); }}
-                    >
-                      <Text style={[styles.selectorChipText, selectedPermission === p.id && styles.selectorChipTextActive]}>{p.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-            </ScrollView>
+          {selectorOpen && !reviewing ? (
+            <Reanimated.View entering={reducedMotion ? undefined : FadeInDown.duration(160)}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorRow} contentContainerStyle={styles.selectorRowContent} keyboardShouldPersistTaps="handled">
+                {selectorOpen === "model"
+                  ? (agentOpts?.models ?? []).map((m, i) => (
+                      <Reanimated.View key={m.id || "default"} entering={reducedMotion ? undefined : FadeIn.delay(i * 35).duration(180)}>
+                        <TouchableOpacity
+                          testID={`composer-model-${m.id || "default"}`}
+                          style={[styles.selectorChip, selectedModel === m.id && styles.selectorChipActive]}
+                          onPress={() => { Haptics.selectionAsync(); setSelectedModel(m.id); setSelectorOpen(null); }}
+                        >
+                          <Text style={[styles.selectorChipText, selectedModel === m.id && styles.selectorChipTextActive]}>{m.label}</Text>
+                        </TouchableOpacity>
+                      </Reanimated.View>
+                    ))
+                  : (agentOpts?.permissionModes ?? PERMISSION_FALLBACK).map((p, i) => (
+                      <Reanimated.View key={p.id} entering={reducedMotion ? undefined : FadeIn.delay(i * 35).duration(180)}>
+                        <TouchableOpacity
+                          testID={`composer-perm-${p.id}`}
+                          style={[styles.selectorChip, selectedPermission === p.id && styles.selectorChipActive]}
+                          onPress={() => { Haptics.selectionAsync(); setSelectedPermission(p.id as PermissionModeId); setSelectorOpen(null); }}
+                        >
+                          <Text style={[styles.selectorChipText, selectedPermission === p.id && styles.selectorChipTextActive]}>{p.label}</Text>
+                        </TouchableOpacity>
+                      </Reanimated.View>
+                    ))}
+              </ScrollView>
+            </Reanimated.View>
           ) : null}
 
           {/* Compact selector pills (permission always; model when >1 option) */}
@@ -1018,7 +1053,8 @@ export function ChatScreen({
               onPress={() => { Haptics.selectionAsync(); setSelectorOpen(selectorOpen === "perm" ? null : "perm"); }}
               activeOpacity={0.8}
             >
-              <Text style={styles.optionPillText}>{PERMISSION_LABEL[selectedPermission]} ▾</Text>
+              <Text style={styles.optionPillText}>{PERMISSION_LABEL[selectedPermission]}</Text>
+              <SelectorCaret open={selectorOpen === "perm"} reducedMotion={reducedMotion} />
             </TouchableOpacity>
             {agentOpts && agentOpts.models.length > 1 ? (
               <TouchableOpacity
@@ -1028,8 +1064,9 @@ export function ChatScreen({
                 activeOpacity={0.8}
               >
                 <Text style={styles.optionPillText}>
-                  {(agentOpts.models.find((m) => m.id === selectedModel)?.label ?? "Default")} ▾
+                  {agentOpts.models.find((m) => m.id === selectedModel)?.label ?? "Default"}
                 </Text>
+                <SelectorCaret open={selectorOpen === "model"} reducedMotion={reducedMotion} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1090,7 +1127,47 @@ export function ChatScreen({
             })()}
           </View>
         </>
-      )}
+
+      {/* Review card — overlays the (still-mounted) composer while reviewing. */}
+      {reviewing ? (
+        <Reanimated.View
+          style={[styles.reviewCard, styles.reviewCardOverlay]}
+          entering={reducedMotion ? undefined : FadeIn.duration(140)}
+        >
+          {/* Transcript itself is the edit target — tap anywhere on it to edit. */}
+          <TouchableOpacity activeOpacity={0.7} onPress={editDraft} accessibilityRole="button" accessibilityLabel="Edit dictated message">
+            <ScrollView
+              style={styles.reviewTranscriptScroll}
+              contentContainerStyle={styles.reviewTranscriptContent}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={false}
+            >
+              <Text style={styles.reviewText}>{input}</Text>
+            </ScrollView>
+            <Text style={styles.reviewEditHint}>tap to edit</Text>
+          </TouchableOpacity>
+
+          {/* Action buttons */}
+          <View style={styles.reviewActions}>
+            <TouchableOpacity
+              testID="review-cancel-button"
+              style={[styles.reviewActionBtn, styles.reviewCancelBtn]}
+              onPress={discardDraft}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.reviewCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="review-send-button"
+              style={[styles.reviewActionBtn, styles.reviewSendBtn]}
+              onPress={sendDraft}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reviewSendText}>Send ↑</Text>
+            </TouchableOpacity>
+          </View>
+        </Reanimated.View>
+      ) : null}
 
       {/* Copy confirmation toast */}
       <Animated.View
@@ -1152,10 +1229,11 @@ const styles = StyleSheet.create({
   settingsBtn: { padding: 6 },
   settingsIcon: { color: colors.textSub, fontSize: 18 },
   reconnectingBanner: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     backgroundColor: colors.accentFaint, paddingVertical: 5, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
+  reconnectingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
   reconnectingText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11 },
   reconnectingRetry: {
     borderWidth: 1, borderColor: colors.accent, borderRadius: 10,
@@ -1299,6 +1377,7 @@ const styles = StyleSheet.create({
   optionPill: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
     paddingHorizontal: 11,
     paddingVertical: 5,
     borderRadius: 14,
@@ -1307,7 +1386,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   optionPillActive: { borderColor: colors.accentDim, backgroundColor: colors.accentFaint },
-  optionPillText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12 },
+  optionPillText: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, lineHeight: 16 },
   selectorRow: { paddingHorizontal: 12, paddingBottom: 6, maxHeight: 44 },
   selectorRowContent: { flexGrow: 1, justifyContent: "flex-end" },
   selectorChip: {
@@ -1360,6 +1439,15 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     position: "relative",
   },
+  reviewCardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  runStats: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginHorizontal: 12, marginBottom: 6,
+    paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: colors.card, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  runStatsText: { flex: 1, fontFamily: fonts.mono, color: colors.textSub, fontSize: 11 },
   reviewTranscriptScroll: {
     maxHeight: 180,
     marginTop: 4,

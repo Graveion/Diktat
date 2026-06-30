@@ -7,36 +7,37 @@ import { Platform } from "react-native";
 // grays) next to this one.
 
 export const colors = {
-  // Backgrounds — layered violet-blacks
-  bg:          "#07060a",   // canvas
-  surface:     "#0f0d13",   // cards / screen bg
-  card:        "#171420",   // elevated cards
-  input:       "#1c1927",   // inputs
-  border:      "#252130",   // standard border
-  borderFaint: "#141220",   // very subtle divider
+  // Backgrounds — layered violet-blacks, lifted a notch for daylight legibility
+  // (was #07060a..#1c1927). Keeps the violet identity, just less of a void.
+  bg:          "#0c0a12",   // canvas
+  surface:     "#16131d",   // cards / screen bg
+  card:        "#211c2e",   // elevated cards
+  input:       "#272233",   // inputs
+  border:      "#38324a",   // standard border (stronger, clearly visible)
+  borderFaint: "#1d1a28",   // very subtle divider
 
   // Primary accent — electric violet
   accent:       "#a78bfa",  // violet
   accentBright: "#c4b5fd",  // hover / highlight
   accentDim:    "#4c1d95",  // muted variant
-  accentFaint:  "#120d1f",  // tinted surface
+  accentFaint:  "#1a1230",  // tinted surface
   // Dark ink for glyphs sitting ON an accent-filled control
   onAccent:     "#1a1033",
 
   // User message bubble
   userBubble:   "#5b21b6",  // deep violet
 
-  // Text scale. textSub passes WCAG AA on bg (5.6:1) — use it for any copy a
-  // user is meant to read. textMuted (~3:1) is for decoration only: chevrons,
-  // dividers, timestamps — never sentences or hints.
-  text:         "#f0eef8",  // primary — slightly warm white
-  textSub:      "#8b85a1",  // secondary (readable)
-  textMuted:    "#5f5878",  // decorative
-  textFaint:    "#1e1b2a",  // barely-there
+  // Text scale. textSub is the readable secondary (~7:1 on bg) — use it for any
+  // copy a user is meant to read. textMuted (~4.5:1) is for decoration:
+  // chevrons, dividers, timestamps — now bright enough to not vanish.
+  text:         "#f4f2fb",  // primary — slightly warm white
+  textSub:      "#a59fbd",  // secondary (readable)
+  textMuted:    "#7b7397",  // decorative
+  textFaint:    "#2a2640",  // barely-there
 
   // Code / tool-output surfaces (violet-tinted, NOT GitHub gray)
-  codeBg:    "#110e18",
-  codeText:  "#d6d2e8",
+  codeBg:    "#181423",
+  codeText:  "#e2def0",
 
   // Semantic
   success:  "#34d399",
