@@ -120,6 +120,29 @@ Options (abridged to what Diktat uses; full help pasted in the PR/history):
 - **`--resume-id`** + `--list-sessions` → we can pin the exact session instead of "most recent in dir" (current resume is `-r`; upgrade later).
 - Permission tiers map to `--trust-tools=` (plan, none) / `--trust-all-tools` (auto, full — Kiro has no path/URL distinction, so full == auto).
 
+### Codex (`codex --help`) — verified 2026-06-30
+
+```
+Subcommands: exec [e] (non-interactive runner), review, resume, fork, archive,
+  login/logout, mcp, sandbox, apply, doctor, update, … (exec is what we drive)
+
+  -m, --model <MODEL>                Model the agent should use (open-ended; e.g. o3, gpt-5-codex)
+  -s, --sandbox <MODE>               read-only | workspace-write | danger-full-access
+  -a, --ask-for-approval <POLICY>    untrusted | on-failure(deprecated) | on-request | never
+      --dangerously-bypass-approvals-and-sandbox   skip all prompts + sandbox (EXTREMELY DANGEROUS)
+  -c, --config <key=value>           Override any ~/.codex/config.toml value (TOML-parsed). e.g. -c model="o3"
+  -C, --cd <DIR> / --add-dir <DIR>   working root / extra writable dirs
+      --search                       enable live web search
+  -i, --image <FILE>...              attach image(s) to the initial prompt
+```
+
+**Key facts:**
+- Confirms Diktat's permission mapping is correct: `plan` → `--ask-for-approval never --sandbox read-only` · `auto` → `--ask-for-approval never --sandbox workspace-write` · `full` → `--dangerously-bypass-approvals-and-sandbox`.
+- `--model` is **open-ended** (no `--list-models` in this help). Models are free-text (o3, gpt-5-codex, …); keep "Default" + free-text later.
+- **Reasoning effort is NOT a flag** — Codex sets it via a config override, almost certainly `-c model_reasoning_effort=<low|medium|high>`. **Unverified key/values from this help**, so the effort selector stays OFF for Codex until confirmed (run `codex exec -h` or check the config docs, then wire `effortFlags("codex", …)` to `["-c", "model_reasoning_effort=<level>"]`).
+- `exec` is the non-interactive runner we use; `--json` (exec-level, not shown here) is the JSONL event stream — structured-event parser still TODO.
+- Resume/fork/archive subcommands exist (interactive); our Codex resume is still stateless (each turn a fresh `exec`).
+
 ---
 
 **Status:** planned · post-release task. Today Diktat supports **Claude Code**,
