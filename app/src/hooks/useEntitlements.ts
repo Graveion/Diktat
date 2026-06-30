@@ -9,7 +9,7 @@ const MOCK_MODE = __DEV__;
 
 const PRO_ENTITLEMENT = "pro";
 // Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
-export const FREE_TRIAL_MS = 24 * 60 * 60 * 1000; // 1 day of free usage
+export const FREE_TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of free usage
 const RC_IOS_KEY = ((Constants.expoConfig?.extra ?? {}) as Record<string, string>).revenueCatIosKey ?? "";
 
 let rcConfigured = false;
@@ -27,7 +27,7 @@ export interface EntitlementsApi {
   isPro: boolean;
   /** Comp access (redeemed friend code) currently active. */
   compActive: boolean;
-  /** Seconds left in the free hour (0 once expired; full hour if not started). */
+  /** Seconds left in the free trial (0 once expired; full window if not started). */
   freeSecondsRemaining: number;
   /** Snapshot: does the user currently have access (pro || comp || free hour)? */
   entitled: boolean;

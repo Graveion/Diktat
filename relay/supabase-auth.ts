@@ -41,8 +41,10 @@ export type EntitlementLookup =
   | { ok: true; row: EntitlementRow | null }
   | { ok: false };
 
-/** Free-trial window. Must match the app's FREE_TRIAL_MS (useEntitlements.ts). */
-export const TRIAL_MS = 24 * 60 * 60 * 1000; // 1 day
+/** Free-trial window. Must match the app's FREE_TRIAL_MS (useEntitlements.ts).
+ *  7 days: daemon install + pairing + CLI setup eats into a short trial, and
+ *  relay cost per trial user is negligible, so generosity is essentially free. */
+export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
  * Pure entitlement decision.
