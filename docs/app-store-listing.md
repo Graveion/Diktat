@@ -16,7 +16,12 @@ Diktat — Coding Agents
      Keyword-heavy alt: "Diktat: Remote Coding Agents". -->
 
 ## Subtitle (30 char max)
-On your Mac, from your phone
+Claude, Cursor, Codex & more
+<!-- Names recognizable CLIs = clarity + ASO (Apple indexes the subtitle), and
+     earns a tap for an unknown brand faster than abstract phrasing. Don't repeat
+     "coding agents" (already in the Name). Alts:
+     "Remote control for AI agents" · "Every agent, from your phone". -->
+
 
 ## Promotional text (170 char max — editable without review)
 Kick off a coding agent on your Mac, then steer it from your phone by voice or text. Claude Code, Cursor, Codex, Copilot and Kiro, all from one app.
