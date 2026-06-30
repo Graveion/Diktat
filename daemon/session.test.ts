@@ -1,5 +1,32 @@
 import { test, expect, beforeEach } from "bun:test";
-import { Session, LineBuffer } from "./session";
+import { Session, LineBuffer, AUTH_FAILURE_RE } from "./session";
+
+// ---------------------------------------------------------------------------
+// Provider auth-failure detection (drives the friendly "run `claude login`"
+// error). Must catch real CLI stderr and ignore benign assistant text.
+// ---------------------------------------------------------------------------
+
+test("AUTH_FAILURE_RE matches real provider auth errors", () => {
+  for (const s of [
+    "Failed to authenticate. API Error: 401 Invalid authentication credentials", // claude
+    "stream error: unexpected status 401 Unauthorized",                          // codex
+    "Error: invalid x-api-key",                                                   // anthropic key
+    "Please run `codex login` to authenticate",                                   // codex
+    "OAuth token has expired",
+  ]) {
+    expect(AUTH_FAILURE_RE.test(s)).toBe(true);
+  }
+});
+
+test("AUTH_FAILURE_RE ignores benign output", () => {
+  for (const s of [
+    "I added an authenticate() helper to your login page.",
+    "Compiled 200 modules successfully.",
+    "Done — tests pass.",
+  ]) {
+    expect(AUTH_FAILURE_RE.test(s)).toBe(false);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

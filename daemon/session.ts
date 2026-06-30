@@ -12,11 +12,23 @@ import {
   summaryToPushData,
   type RunAccumulator,
 } from "./run-summary";
-import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
+import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, AGENT_CONTRACTS, type PermissionModeId } from "./agents";
 import { recordRun } from "./run-stats-store";
 
 /** Kill a CLI that has produced no output for this long. */
 export const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Signatures that mean the agent CLI itself couldn't authenticate with its own
+ * provider (e.g. an expired `claude login`) — NOT a Diktat/relay auth problem.
+ * Matched against the CLI's stderr only, and only on a non-zero exit, so
+ * assistant text that merely mentions "authenticate" can't trip it. When it
+ * matches we send a clear, actionable error naming the CLI's login command
+ * instead of forwarding a raw "401 Invalid authentication credentials" that
+ * reads like the user's own sign-in is broken.
+ */
+export const AUTH_FAILURE_RE =
+  /invalid authentication credentials|failed to authenticate|invalid x-api-key|authentication[_ ]error|\boauth\b.*(expired|invalid)|not (logged in|authenticated|signed in)|please (run|sign in|log\s?in).*(login|auth)|\b401\b|\b403\b|unauthorized/i;
 
 /**
  * Re-assembles complete lines from arbitrary stream chunks — NDJSON events can
@@ -316,6 +328,8 @@ export class Session {
     bumpWatchdog();
 
     let needsRetry = false;
+    // Keep the tail of stderr so we can detect a provider auth failure on exit.
+    let stderrTail = "";
     const streamOutput = async (stream: ReadableStream<Uint8Array>, isStderr: boolean) => {
       const decoder = new TextDecoder();
       const reader = stream.getReader();
@@ -333,6 +347,7 @@ export class Session {
       };
       const handleRaw = (chunk: string) => {
         if (!chunk) return;
+        if (isStderr) stderrTail = (stderrTail + chunk).slice(-4096);
         if (!isStderr && (this.data.cli === "kiro" || this.data.cli === "codex")) {
           // Kiro/Codex print styled text; strip ANSI before forwarding.
           const clean = stripAnsi(chunk);
@@ -382,6 +397,19 @@ export class Session {
 
     const rawExit = await proc.exited;
     const exitCode = timedOut ? -1 : rawExit; // timeout reports like a cancel
+
+    // A non-zero exit whose stderr looks like a provider auth failure means the
+    // agent CLI on this machine isn't logged in — surface a clear, actionable
+    // message instead of leaving the user staring at a raw "401" in the output.
+    if (exitCode !== 0 && !timedOut && AUTH_FAILURE_RE.test(stderrTail)) {
+      const contract = AGENT_CONTRACTS[this.data.cli];
+      const name = contract?.displayName ?? this.data.cli;
+      const login = contract?.login.command ?? "re-authenticate the CLI";
+      this.ws.send(JSON.stringify({
+        type: "error",
+        message: `${name} on this machine isn't authenticated. On the machine, run \`${login}\`, then resend.`,
+      }));
+    }
 
     // Finalize once and reuse for the exit frame, local persistence, and push.
     const summary = finalizeRunSummary(this.run, exitCode);
