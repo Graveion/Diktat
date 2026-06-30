@@ -94,7 +94,31 @@ Options (abridged to what Diktat uses; full help pasted in the PR/history):
 - Output: `--output-format json` (JSONL) → structured events (parser still TODO; we run text + `--silent`).
 - Resume: we own the UUID via `--session-id`.
 - Revised permission tier mapping (from this help): `plan` → `--plan` (read-only, no tool exec) · `auto` → `--allow-all-tools` · `full` → `--allow-all`.
+- Model discovery: **no headless `--list-models`** — the `/model` picker is interactive only. So Copilot models are free-text / `auto`, not enumerable for the dropdown.
 - **Docs (keep this block in sync):** https://docs.github.com/copilot/how-tos/copilot-cli
+
+### Kiro (`kiro-cli chat --help`) — verified 2026-06-30
+
+```
+  --model <MODEL>                 Current model to use
+  --effort <EFFORT>               Initial effort level (e.g. low, medium, high, xhigh, max)
+  --list-models                   List available models and exit
+  -f, --format <FORMAT>           plain | json | json-pretty (for list commands)
+  -a, --trust-all-tools           Allow any tool without confirmation
+  --trust-tools <TOOL_NAMES>      Trust only these (e.g. '--trust-tools=fs_read,fs_write'; '--trust-tools=' = none)
+  --no-interactive                Run headless (no user input)
+  -r, --resume                    Resume most recent conversation in this dir
+  --resume-id <SESSION_ID>        Resume a specific conversation by id
+  -l, --list-sessions             List saved sessions for this dir
+  --agent <AGENT>                 Context profile
+  --mode <MODE>                   KAS agent only: vibe (default) | spec
+```
+
+**Key facts:**
+- **`--effort`**: low | medium | high | xhigh | max (reasoning effort).
+- **`--list-models`** exists (with `--format json`) → models ARE runtime-discoverable for Kiro (unlike Copilot). Follow-up: query at startup to populate the dropdown.
+- **`--resume-id`** + `--list-sessions` → we can pin the exact session instead of "most recent in dir" (current resume is `-r`; upgrade later).
+- Permission tiers map to `--trust-tools=` (plan, none) / `--trust-all-tools` (auto, full — Kiro has no path/URL distinction, so full == auto).
 
 ---
 

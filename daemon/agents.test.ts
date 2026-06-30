@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { KNOWN_CLIS, AGENT_MODELS, PERMISSION_MODES, modelFlags, permissionFlags, agentSelectionData } from "./agents";
+import { KNOWN_CLIS, AGENT_MODELS, PERMISSION_MODES, modelFlags, permissionFlags, effortFlags, agentSelectionData } from "./agents";
 
 test("KNOWN_CLIS covers all five agents", () => {
   expect(Object.keys(KNOWN_CLIS).sort()).toEqual(["claude", "codex", "copilot", "cursor", "kiro"]);
@@ -35,14 +35,30 @@ test("permissionFlags: cursor/copilot/kiro tiers", () => {
   expect(permissionFlags("kiro", "auto")).toEqual(["--trust-all-tools"]);
 });
 
-test("agentSelectionData: every agent ships models + the 3 permission tiers", () => {
+test("effortFlags: only Copilot/Kiro support it; empty/undefined omit it", () => {
+  expect(effortFlags("copilot", "high")).toEqual(["--reasoning-effort", "high"]);
+  expect(effortFlags("kiro", "max")).toEqual(["--effort", "max"]);
+  expect(effortFlags("copilot", "")).toEqual([]);
+  expect(effortFlags("copilot", undefined)).toEqual([]);
+  expect(effortFlags("claude", "high")).toEqual([]); // unsupported → omitted
+  expect(effortFlags("cursor", "high")).toEqual([]);
+  expect(effortFlags("codex", "high")).toEqual([]);
+});
+
+test("agentSelectionData: every agent ships models + the 3 permission tiers + efforts", () => {
   const data = agentSelectionData();
   expect(Object.keys(data).sort()).toEqual(["claude", "codex", "copilot", "cursor", "kiro"]);
   for (const a of Object.values(data)) {
     expect(a.permissionModes).toEqual(PERMISSION_MODES);
     expect(a.models.length).toBeGreaterThan(0);
     expect(a.models[0]!.id).toBe(""); // first option is always the CLI default
+    expect(Array.isArray(a.efforts)).toBe(true);
   }
   expect(data.claude!.models.map((m) => m.id)).toEqual(["", "sonnet", "opus", "haiku"]);
   expect(AGENT_MODELS.claude!.length).toBe(4);
+  // Effort selector only where verified-supported.
+  expect(data.copilot!.efforts.length).toBeGreaterThan(0);
+  expect(data.kiro!.efforts.length).toBeGreaterThan(0);
+  expect(data.claude!.efforts).toEqual([]);
+  expect(data.cursor!.efforts).toEqual([]);
 });

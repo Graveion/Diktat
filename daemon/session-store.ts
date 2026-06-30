@@ -15,6 +15,8 @@ export interface SessionData {
   mode?: string; // legacy (cursor agent/plan/ask) — superseded by permissionMode
   /** Chosen model id (passed as --model); "" / undefined → CLI default. */
   model?: string;
+  /** Reasoning-effort level (Copilot/Kiro); "" / undefined → CLI default. */
+  effort?: string;
   /** Normalized permission tier ("plan" | "auto" | "full"); default "auto". */
   permissionMode?: "plan" | "auto" | "full";
   /** Kiro has no settable session id; once it has run once we resume the most

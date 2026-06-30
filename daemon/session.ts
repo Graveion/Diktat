@@ -12,7 +12,7 @@ import {
   summaryToPushData,
   type RunAccumulator,
 } from "./run-summary";
-import { permissionFlags, modelFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
+import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
 import { recordRun } from "./run-stats-store";
 
 /** Kill a CLI that has produced no output for this long. */
@@ -62,16 +62,18 @@ function buildArgs(
   permissionMode: PermissionModeId = DEFAULT_PERMISSION_MODE,
   model?: string,
   resume?: boolean,
+  effort?: string,
 ): string[] {
   const perm = permissionFlags(cli, permissionMode);
   const mdl = modelFlags(model);
+  const eff = effortFlags(cli, effort); // empty for CLIs that don't support it
   switch (cli) {
     case "claude":
       return [
         cliPath, "-p", text,
         "--output-format", "stream-json",
         "--verbose",
-        ...perm, ...mdl,
+        ...perm, ...mdl, ...eff,
         ...(cliSessionId ? ["--resume", cliSessionId] : []),
       ];
     case "cursor":
@@ -79,7 +81,7 @@ function buildArgs(
         cliPath, "-p", text,
         "--output-format", "stream-json",
         "--stream-partial-output",
-        ...perm, ...mdl,
+        ...perm, ...mdl, ...eff,
         ...(cliSessionId ? [`--resume=${cliSessionId}`] : []),
       ];
     case "copilot":
@@ -89,7 +91,7 @@ function buildArgs(
       return [
         cliPath, "-p", text,
         "--silent", "--no-color",
-        ...perm, ...mdl,
+        ...perm, ...mdl, ...eff,
         ...(cliSessionId ? ["--session-id", cliSessionId] : []),
       ];
     case "kiro":
@@ -98,7 +100,7 @@ function buildArgs(
       // INPUT is positional → last.
       return [
         cliPath, "chat", "--no-interactive",
-        ...perm, ...mdl,
+        ...perm, ...mdl, ...eff,
         ...(resume ? ["--resume"] : []),
         text,
       ];
@@ -107,7 +109,7 @@ function buildArgs(
       // positional. Multi-turn resume not wired (each turn is a fresh exec).
       return [
         cliPath, "exec",
-        ...perm, ...mdl,
+        ...perm, ...mdl, ...eff,
         text,
       ];
     default:
@@ -135,6 +137,7 @@ export class Session {
     project: string,
     model?: string,
     permissionMode?: PermissionModeId,
+    effort?: string,
   ): Session {
     const data: SessionData = {
       id: crypto.randomUUID(),
@@ -145,6 +148,7 @@ export class Session {
       lastActiveAt: new Date().toISOString(),
       ...(model ? { model } : {}),
       ...(permissionMode ? { permissionMode } : {}),
+      ...(effort ? { effort } : {}),
     };
     saveSession(data);
     return new Session(ws, data);
@@ -252,7 +256,7 @@ export class Session {
   }
 
   /** Apply per-turn model / permission overrides before the next run. */
-  applyOptions(opts: { model?: string; permissionMode?: PermissionModeId }): void {
+  applyOptions(opts: { model?: string; permissionMode?: PermissionModeId; effort?: string }): void {
     let changed = false;
     if (opts.model !== undefined && opts.model !== this.data.model) {
       this.data.model = opts.model || undefined;
@@ -260,6 +264,10 @@ export class Session {
     }
     if (opts.permissionMode && opts.permissionMode !== this.data.permissionMode) {
       this.data.permissionMode = opts.permissionMode;
+      changed = true;
+    }
+    if (opts.effort !== undefined && opts.effort !== this.data.effort) {
+      this.data.effort = opts.effort || undefined;
       changed = true;
     }
     if (changed) saveSession(this.data);
@@ -290,7 +298,7 @@ export class Session {
     const sessionId = retry ? undefined : this.data.cliSessionId;
     // Kiro: after the first turn, resume the most recent conversation in this dir.
     const kiroResume = this.data.cli === "kiro" && !!this.data.started && !retry;
-    const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.permissionMode ?? DEFAULT_PERMISSION_MODE, this.data.model, kiroResume);
+    const args = buildArgs(this.data.cli, cliPath, text, sessionId, this.data.permissionMode ?? DEFAULT_PERMISSION_MODE, this.data.model, kiroResume, this.data.effort);
     const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
     this.activeProc = proc;
 

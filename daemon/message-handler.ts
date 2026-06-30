@@ -85,7 +85,7 @@ export function isValidSessionId(id: unknown): id is string {
 }
 
 export interface SessionFactory {
-  create(ws: any, cli: string, cliPath: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full"): Session;
+  create(ws: any, cli: string, cliPath: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full", effort?: string): Session;
   resume(ws: any, sessionId: string): Session | null;
   fromClaudeSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
   fromCursorSession(ws: any, sessionId: string, project: string, cliPath: string): Session;
@@ -95,7 +95,7 @@ export interface SessionFactory {
 }
 
 const defaultSessionFactory: SessionFactory = {
-  create: (ws, cli, cliPath, project, model, permissionMode) => Session.create(ws, cli, cliPath, project, model, permissionMode),
+  create: (ws, cli, cliPath, project, model, permissionMode, effort) => Session.create(ws, cli, cliPath, project, model, permissionMode, effort),
   resume: (ws, id) => Session.resume(ws, id),
   fromClaudeSession: (ws, id, project, cliPath) => Session.fromClaudeSession(ws, id, project, cliPath),
   fromCursorSession: (ws, id, project, cliPath) => Session.fromCursorSession(ws, id, project, cliPath),
@@ -125,7 +125,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
-    const session = factory.create(ws, msg.cli, ctx.availableCLIs[msg.cli]!, msg.project, msg.model, msg.permissionMode);
+    const session = factory.create(ws, msg.cli, ctx.availableCLIs[msg.cli]!, msg.project, msg.model, msg.permissionMode, msg.effort);
     ctx.activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;
@@ -193,9 +193,9 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
       return;
     }
-    // Per-turn model / permission overrides from the composer dropdowns.
-    if (msg.model !== undefined || msg.permissionMode) {
-      session.applyOptions({ model: msg.model, permissionMode: msg.permissionMode });
+    // Per-turn model / permission / effort overrides from the composer dropdowns.
+    if (msg.model !== undefined || msg.permissionMode || msg.effort !== undefined) {
+      session.applyOptions({ model: msg.model, permissionMode: msg.permissionMode, effort: msg.effort });
     }
     const pushToken = ctx.clientPushTokens.get(ws as object);
     try {

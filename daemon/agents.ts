@@ -274,6 +274,39 @@ export function modelFlags(modelId: string | undefined): string[] {
   return modelId ? ["--model", modelId] : [];
 }
 
+// ─── Reasoning effort (where the CLI supports it) ────────────────────────────
+// Verified flags: Copilot `--reasoning-effort` (none|low|medium|high|xhigh|max),
+// Kiro `--effort` (low|medium|high|xhigh|max). Claude has no flag; Cursor folds
+// effort into the model param's bracket syntax; Codex unverified — all omit it.
+export interface EffortOption { id: string; label: string } // "" → CLI default
+export const AGENT_EFFORTS: Record<string, EffortOption[]> = {
+  copilot: [
+    { id: "", label: "Default" },
+    { id: "none", label: "None" },
+    { id: "low", label: "Low" },
+    { id: "medium", label: "Medium" },
+    { id: "high", label: "High" },
+    { id: "xhigh", label: "Extra high" },
+    { id: "max", label: "Max" },
+  ],
+  kiro: [
+    { id: "", label: "Default" },
+    { id: "low", label: "Low" },
+    { id: "medium", label: "Medium" },
+    { id: "high", label: "High" },
+    { id: "xhigh", label: "Extra high" },
+    { id: "max", label: "Max" },
+  ],
+};
+
+/** Reasoning-effort flags for a chosen level ("" / undefined / unsupported → none). */
+export function effortFlags(cli: string, effort: string | undefined): string[] {
+  if (!effort) return [];
+  if (cli === "copilot") return ["--reasoning-effort", effort];
+  if (cli === "kiro") return ["--effort", effort];
+  return [];
+}
+
 /**
  * Map a normalized permission tier → the chosen CLI's real flags. These are the
  * verified per-CLI flags (see each CLI's --help). Tiers:
@@ -310,11 +343,16 @@ export function permissionFlags(cli: string, mode: PermissionModeId): string[] {
 }
 
 /** Per-CLI selection options for the app's dropdowns (shipped in `connected`). */
-export function agentSelectionData(): Record<string, { displayName: string; models: AgentModel[]; permissionModes: PermissionMode[] }> {
+export function agentSelectionData(): Record<string, { displayName: string; models: AgentModel[]; permissionModes: PermissionMode[]; efforts: EffortOption[] }> {
   return Object.fromEntries(
     Object.values(AGENT_CONTRACTS).map((a) => [
       a.id,
-      { displayName: a.displayName, models: AGENT_MODELS[a.id] ?? [{ id: "", label: "Default" }], permissionModes: PERMISSION_MODES },
+      {
+        displayName: a.displayName,
+        models: AGENT_MODELS[a.id] ?? [{ id: "", label: "Default" }],
+        permissionModes: PERMISSION_MODES,
+        efforts: AGENT_EFFORTS[a.id] ?? [], // empty → app hides the effort selector
+      },
     ]),
   );
 }
