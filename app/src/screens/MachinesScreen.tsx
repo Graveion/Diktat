@@ -147,7 +147,7 @@ export function MachinesScreen({
     return <ScanScreen onScanned={handleScanned} onCancel={() => setScanning(false)} />;
   }
 
-  const neverConnected = (m: Machine) => !m.lastSeenAt;
+  const neverConnected = (m: Machine | null) => !m?.lastSeenAt;
 
   return (
     <View style={styles.container}>
@@ -296,7 +296,7 @@ export function MachinesScreen({
 
             <Text style={styles.sheetTitle}>{offlineMachine?.name ?? "Mac"}</Text>
             <Text style={styles.offlineBody}>
-              {neverConnected(offlineMachine!) ? (
+              {neverConnected(offlineMachine) ? (
                 "This Mac has never connected. Complete pairing by running:"
               ) : (
                 "The daemon isn't running on this Mac. Start it with:"
@@ -305,7 +305,7 @@ export function MachinesScreen({
 
             <View style={styles.installCmd}>
               <Text style={styles.installCmdText} selectable>
-                {neverConnected(offlineMachine!) ? "diktat pair" : "diktat start"}
+                {neverConnected(offlineMachine) ? "diktat pair" : "diktat start"}
               </Text>
             </View>
 
