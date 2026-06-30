@@ -49,6 +49,31 @@ First release. Pair your Mac, then run Claude Code, Cursor, Codex, Copilot or Ki
 
 ---
 
+## Screenshots (refresh for the repositioning)
+
+Order matters — frames 1–2 show in search results and must sell the
+differentiator (multi-CLI + your-machine), NOT voice. Add a short text caption
+above each frame (plain, punchy). Suggested sequence:
+
+1. **Sessions list with multiple CLI badges visible** (Claude Code, Cursor, Codex…)
+   Caption: "Every coding agent. One app."
+2. **A live run — streaming output with a file diff on screen**
+   Caption: "Watch it work. Live diffs on your phone."
+3. **Composer / voice review card**
+   Caption: "Say it or type it."
+4. **Last-run stats card or a completion push**
+   Caption: "Get pinged the moment it's done."
+5. **Pairing / machines screen**
+   Caption: "Runs on your Mac. Your code stays yours."
+
+Sizing: capture on an **iPhone 16 Pro Max (6.9", 1320×2868)** — Apple's current
+primary iPhone size; it scales down to the 6.5"/6.7" slots. Confirm the required
+sizes in ASC at upload (Apple changes them). No iPad set needed (supportsTablet
+is false). 3–5 frames is plenty; quality over count.
+
+Tip: real content beats mockups, but stage a clean session (good project name,
+a tidy diff, no half-finished junk) before capturing.
+
 ## Notes for the listing
 - App privacy: code/prompts transit the relay but aren't stored; declare data
   handling accordingly (transit only, encrypted, not used for tracking).
