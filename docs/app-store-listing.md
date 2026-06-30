@@ -6,12 +6,14 @@ Voice is a feature, not the headline. Plain, specific, human — no marketing fl
 ---
 
 ## Name (30 char max)
-Diktat: Remote Coding Agents
-<!-- Plain "Diktat" is taken on the App Store (names must be globally unique).
-     This qualified title clears the conflict AND adds search keywords. The
-     on-device icon label stays "Diktat" via expo.name in app.json — that name
-     does NOT need to be unique. Alternatives: "Diktat: Your Coding Agents",
-     "Diktat — Code From Your Phone". -->
+Diktat — Coding Agents
+<!-- Plain "Diktat" is taken on the App Store (listing names must be globally
+     unique). One clean descriptor clears the conflict, reads as a brand (not a
+     tagline), and still gives the search index "Coding Agents". The on-device
+     icon label stays plain "Diktat" via expo.name in app.json — that name does
+     NOT need to be unique.
+     Minimal alt (most brand-like, may be taken): "Diktat AI".
+     Keyword-heavy alt: "Diktat: Remote Coding Agents". -->
 
 ## Subtitle (30 char max)
 On your Mac, from your phone
