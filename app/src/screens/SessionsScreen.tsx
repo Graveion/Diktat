@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
+  Modal, ScrollView, Alert, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Pressable,
 } from "react-native";
 import { Swipeable, GestureDetector, Gesture, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -405,7 +405,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
         <Pressable style={pickerStyles.overlay} onPress={closePicker}>
           <Reanimated.View style={sheetAnim}>
             <Pressable onPress={() => {}}>
-              <SafeAreaView style={pickerStyles.sheet}>
+              <View style={[pickerStyles.sheet, { paddingBottom: insets.bottom + 20 }]}>
                 <GestureDetector gesture={sheetPan}>
                   <View style={pickerStyles.grabber} accessibilityRole="button" accessibilityLabel="Drag down to dismiss">
                     <View style={pickerStyles.handle} />
@@ -413,8 +413,9 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                 </GestureDetector>
                 <Text style={pickerStyles.title}>New Session</Text>
 
+                <ScrollView style={pickerStyles.body} showsVerticalScrollIndicator={false}>
                 <Text style={pickerStyles.sectionLabel}>Agent</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+            <View style={pickerStyles.chipRow}>
               {clis.map((cli) => (
                 <TouchableOpacity
                   key={cli}
@@ -427,12 +428,12 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                   </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
 
             {selectedCli && (agents[selectedCli]?.models?.length ?? 0) > 1 ? (
               <>
                 <Text style={pickerStyles.sectionLabel}>Model</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                <View style={pickerStyles.chipRow}>
                   {agents[selectedCli]!.models.map((m) => (
                     <TouchableOpacity
                       key={m.id || "default"}
@@ -445,14 +446,14 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
               </>
             ) : null}
 
             {selectedCli ? (
               <>
                 <Text style={pickerStyles.sectionLabel}>Permissions</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                <View style={pickerStyles.chipRow}>
                   {(agents[selectedCli]?.permissionModes ?? [
                     { id: "plan" as PermissionModeId, label: "Plan · read-only" },
                     { id: "auto" as PermissionModeId, label: "Auto-accept edits" },
@@ -469,14 +470,14 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
               </>
             ) : null}
 
             {selectedCli && (agents[selectedCli]?.efforts?.length ?? 0) > 0 ? (
               <>
                 <Text style={pickerStyles.sectionLabel}>Reasoning effort</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                <View style={pickerStyles.chipRow}>
                   {agents[selectedCli]!.efforts!.map((e) => (
                     <TouchableOpacity
                       key={e.id || "default"}
@@ -489,12 +490,12 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
               </>
             ) : null}
 
             <Text style={pickerStyles.sectionLabel}>Project</Text>
-            <ScrollView style={pickerStyles.projectList} showsVerticalScrollIndicator={false}>
+            <View style={pickerStyles.projectList}>
               {projects.map((project) => (
                 <TouchableOpacity
                   key={project}
@@ -505,7 +506,8 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                   <Text style={pickerStyles.projectPath} numberOfLines={1}>{project}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
+                </ScrollView>
 
                 <TouchableOpacity
                   testID="start-session-button"
@@ -515,7 +517,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                 >
                   <Text style={pickerStyles.startText}>Start session</Text>
                 </TouchableOpacity>
-              </SafeAreaView>
+              </View>
             </Pressable>
           </Reanimated.View>
         </Pressable>
@@ -679,26 +681,27 @@ const pickerStyles = StyleSheet.create({
   sheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 22, paddingBottom: 28, maxHeight: "88%",
+    paddingHorizontal: 26, paddingBottom: 28, maxHeight: "88%",
     borderTopWidth: 1, borderColor: colors.border,
   },
   // Generous hit area around the handle so it's an easy drag target.
   grabber: { alignSelf: "stretch", alignItems: "center", paddingTop: 10, paddingBottom: 16 },
   handle: { width: 40, height: 4, backgroundColor: colors.textMuted, borderRadius: 2 },
-  title: { fontFamily: fonts.display, color: colors.text, fontSize: 22, marginBottom: 22, letterSpacing: -0.3 },
+  title: { fontFamily: fonts.display, color: colors.text, fontSize: 22, marginBottom: 16, letterSpacing: -0.3 },
   sectionLabel: {
     fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 10,
-    textTransform: "uppercase", letterSpacing: 1, marginBottom: 10,
+    textTransform: "uppercase", letterSpacing: 1, marginBottom: 8,
   },
-  chipRow: { flexGrow: 0, marginBottom: 20 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
   chip: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: colors.input, marginRight: 8, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
+    backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border,
   },
   chipSelected: { backgroundColor: colors.accentFaint, borderColor: colors.accent },
   chipText: { fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 14 },
   chipTextSelected: { color: colors.accent },
-  projectList: { maxHeight: 220, marginBottom: 20 },
+  body: { flexShrink: 1 },
+  projectList: { marginBottom: 4 },
   projectItem: {
     padding: 12, borderRadius: 10, backgroundColor: colors.input, marginBottom: 6,
     borderWidth: 1, borderColor: "transparent",

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Component } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, LogBox } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
@@ -96,6 +96,11 @@ function AppWithRealDiktat({ auth, onTryDemo }: { auth: AuthApi; onTryDemo: () =
     <AppInner diktat={diktat} auth={auth} connectToMachine={connectToMachine} leaveMachine={leaveMachine} onTryDemo={onTryDemo} />
   );
 }
+
+// Screenshot mode: hide dev-only chrome (the demo banner, LogBox toasts) so
+// App Store captures come out clean. Enable with EXPO_PUBLIC_SCREENSHOT=1.
+export const SCREENSHOT = process.env.EXPO_PUBLIC_SCREENSHOT === "1";
+if (SCREENSHOT) LogBox.ignoreAllLogs();
 
 function AppWithMockDiktat({ auth, onExitDemo }: { auth: AuthApi; onExitDemo?: () => void }) {
   const diktat = useMockDiktat();
@@ -298,7 +303,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
         />
       ) : null}
 
-      {demoMode ? (
+      {demoMode && !SCREENSHOT ? (
         <Banner
           variant="success"
           text="Demo mode — no Mac required"

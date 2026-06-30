@@ -1,0 +1,66 @@
+appId: com.graveion.diktat
+---
+# Captures raw App Store frames in MOCK + SCREENSHOT mode (clean chrome, all
+# five CLI badges). Run the app under `EXPO_PUBLIC_SCREENSHOT=1 expo start`
+# first, then: maestro test maestro/appstore_frames.yaml
+# Raw PNGs land in store/screenshots/raw/; composite with store/make-frames.mjs.
+- launchApp:
+    clearState: false
+- tapOn:
+    point: "27%,64%"
+    optional: true
+- waitForAnimationToEnd
+
+# --- Frame 1: Sessions list (multi-CLI) ---
+- assertVisible: "storefront"
+- waitForAnimationToEnd
+- takeScreenshot: "../store/screenshots/raw/sessions"
+
+# --- Frame 2: Live run with a streamed diff + passing tests ---
+- tapOn:
+    id: "session-card-9f3c1a7042e8"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- tapOn:
+    id: "message-input"
+- eraseText: 200
+- inputText: "Add a unit test for the burst limit"
+- waitForAnimationToEnd
+- tapOn:
+    id: "send-button"
+- extendedWaitUntil:
+    visible:
+      text: ".*25/25 passing.*"
+    timeout: 9000
+- waitForAnimationToEnd
+# Expand the edit tool so its green diff is on screen
+- scrollUntilVisible:
+    element:
+      text: ".*rateLimiter.test.ts.*"
+    direction: UP
+    speed: 40
+    timeout: 6000
+- tapOn:
+    text: ".*rateLimiter.test.ts.*"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: "../store/screenshots/raw/chat"
+
+# --- Frame 3: Composer — typed text + mic (say it or type it) ---
+- tapOn:
+    id: "message-input"
+- eraseText: 200
+- inputText: "Refactor the auth guard so expired sessions re-auth"
+- waitForAnimationToEnd
+- takeScreenshot: "../store/screenshots/raw/composer"
+
+# --- Frame 4: New-session picker (CLIs + model + reasoning effort) ---
+- tapOn:
+    text: "Back to sessions"
+- waitForAnimationToEnd
+- tapOn:
+    id: "new-session-button"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: "../store/screenshots/raw/picker"

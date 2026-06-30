@@ -95,6 +95,55 @@ const MOCK_RECONNECTING_SESSION: DiktatSession = {
   source: "cursor",
 };
 
+// Extra fixtures so the sessions list tells the multi-CLI story — one card per
+// agent, every badge colour represented. Used for the App Store frames.
+const MOCK_EXTRA_SESSIONS: DiktatSession[] = [
+  {
+    id: "a1d4f9027c63",
+    cli: "claude",
+    project: "/Users/you/code/auth-service",
+    projectLabel: "auth-service",
+    firstMessage: "Refactor the token refresh flow so expired sessions re-auth silently",
+    lastActiveAt: new Date(Date.now() - 1000 * 60 * 4).toISOString(), // 4 min ago
+    source: "claude",
+  },
+  {
+    id: "b7e2c10984af",
+    cli: "codex",
+    project: "/Users/you/code/data-pipeline",
+    projectLabel: "data-pipeline",
+    firstMessage: "Add integration tests for the ingestion worker",
+    lastActiveAt: new Date(Date.now() - 1000 * 60 * 26).toISOString(), // 26 min ago
+    source: "codex",
+  },
+  {
+    id: "c3a8d5621e07",
+    cli: "copilot",
+    project: "/Users/you/code/design-system",
+    projectLabel: "design-system",
+    firstMessage: "Migrate the settings screen to the new color tokens",
+    lastActiveAt: new Date(Date.now() - 1000 * 60 * 62).toISOString(), // ~1 h ago
+    source: "copilot",
+  },
+  {
+    id: "d9f1b4730a52",
+    cli: "kiro",
+    project: "/Users/you/code/platform-infra",
+    projectLabel: "platform-infra",
+    firstMessage: "Add a health-check endpoint and wire it into the load balancer",
+    lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), // 3 h ago
+    source: "kiro",
+  },
+];
+
+const STD_EFFORTS = [
+  { id: "", label: "Default" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "max", label: "Max" },
+];
+
 export function useMockDiktat(_host?: string, _port?: number) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DiktatMessage[]>([]);
@@ -176,13 +225,16 @@ export function useMockDiktat(_host?: string, _port?: number) {
     state: "connected" as const,
     reconnecting,
     errorMessage: null,
-    clis: ["cursor", "claude"],
+    clis: ["claude", "cursor", "codex", "copilot", "kiro"],
     agents: {
+      claude: { displayName: "Claude Code", models: [{ id: "", label: "Default" }, { id: "sonnet", label: "Sonnet" }, { id: "opus", label: "Opus" }, { id: "haiku", label: "Haiku" }], permissionModes: MOCK_PERMISSION_MODES, efforts: STD_EFFORTS },
       cursor: { displayName: "Cursor", models: [{ id: "", label: "Default" }, { id: "auto", label: "Auto" }], permissionModes: MOCK_PERMISSION_MODES },
-      claude: { displayName: "Claude Code", models: [{ id: "", label: "Default" }, { id: "sonnet", label: "Sonnet" }, { id: "opus", label: "Opus" }, { id: "haiku", label: "Haiku" }], permissionModes: MOCK_PERMISSION_MODES },
+      codex: { displayName: "Codex", models: [{ id: "", label: "Default" }, { id: "gpt-5.5", label: "gpt-5.5" }, { id: "gpt-5.5-codex", label: "gpt-5.5-codex" }], permissionModes: MOCK_PERMISSION_MODES },
+      copilot: { displayName: "GitHub Copilot", models: [{ id: "", label: "Default" }, { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5" }, { id: "gpt-5", label: "GPT-5" }], permissionModes: MOCK_PERMISSION_MODES, efforts: [{ id: "", label: "Default" }, { id: "none", label: "None" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" }] },
+      kiro: { displayName: "Kiro", models: [{ id: "", label: "Default" }, { id: "auto", label: "Auto" }], permissionModes: MOCK_PERMISSION_MODES, efforts: STD_EFFORTS },
     },
-    projects: ["/Users/you/code/storefront"],
-    sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION],
+    projects: ["/Users/you/code/storefront", "/Users/you/code/auth-service", "/Users/you/code/data-pipeline", "/Users/you/code/design-system", "/Users/you/code/platform-infra"],
+    sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION, ...MOCK_EXTRA_SESSIONS],
     activeSessionId,
     messages,
     streaming,
