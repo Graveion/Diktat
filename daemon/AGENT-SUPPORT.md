@@ -94,8 +94,17 @@ Options (abridged to what Diktat uses; full help pasted in the PR/history):
 - Output: `--output-format json` (JSONL) → structured events (parser still TODO; we run text + `--silent`).
 - Resume: we own the UUID via `--session-id`.
 - Revised permission tier mapping (from this help): `plan` → `--plan` (read-only, no tool exec) · `auto` → `--allow-all-tools` · `full` → `--allow-all`.
-- Model discovery: **no headless `--list-models`** — the `/model` picker is interactive only. So Copilot models are free-text / `auto`, not enumerable for the dropdown.
-- **Docs (keep this block in sync):** https://docs.github.com/copilot/how-tos/copilot-cli
+- Model discovery: **no headless `--list-models`** — the `/model` picker is interactive only. But the set is documented (below); the catch is the docs give display *names*, not the `--model` *slugs* (help example: `--model gpt-5.2`). Slugs UNVERIFIED (no account), so don't hardcode guesses.
+  - Documented models (display name → best-for): **Auto** (system picks); **Claude Opus 4.5** (default; complex/deep reasoning); **Claude Sonnet 4.5** (fast day-to-day); **GPT-5.2 Codex** (codegen/review). Org BYOK models also appear at the bottom of `/model`.
+  - To wire the dropdown: get the real `--model` slugs from someone with an account (run a turn with `--model <slug>` for each, or capture what `/model` selects), then add curated entries. Until then: Default + `auto` only.
+- **Docs (keep this block in sync):** https://docs.github.com/copilot/how-tos/copilot-cli and https://docs.github.com/copilot/concepts/agents/copilot-cli
+
+### Claude (`claude --help`) — NOT YET CAPTURED
+
+We drive Claude Code but have never stored its verified `--help`. Open questions:
+- **Reasoning effort:** is there a CLI flag (e.g. `--effort`/`--thinking`), or is extended thinking triggered by prompt keywords ("think"/"ultrathink") / config only? If a flag exists, add Claude to `AGENT_EFFORTS` + `effortFlags`. **Do not add until verified** — guessing a flag is what broke Cursor before.
+- Confirm the model aliases (`sonnet`/`opus`/`haiku`) and whether `--model` accepts dated ids.
+Action: paste `claude --help` to capture it here.
 
 ### Kiro (`kiro-cli chat --help`) — verified 2026-06-30
 
