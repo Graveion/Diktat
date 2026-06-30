@@ -65,6 +65,37 @@ Commands:
 - `--force` / `--yolo` = force-allow all commands unless explicitly denied.
 - Permission tier mapping: `plan` → `--mode plan` · `auto` → `--trust` · `full` → `--yolo --trust`
 
+### GitHub Copilot (`copilot --help`) — verified 2026-06-30
+
+```
+Options (abridged to what Diktat uses; full help pasted in the PR/history):
+  --effort, --reasoning-effort <level>  none | low | medium | high | xhigh | max
+  --model <model>                       Set the AI model (use 'auto' to let Copilot pick). Example: gpt-5.2
+  --mode <mode>                         interactive | plan | autopilot
+  --plan                                Start in plan mode
+  --allow-all-tools                     Allow all tools without confirmation; REQUIRED for non-interactive (-p) tool use (env: COPILOT_ALLOW_ALL)
+  --allow-all                           = --allow-all-tools --allow-all-paths --allow-all-urls
+  --yolo                                Alias for --allow-all
+  --allow-tool / --deny-tool            Fine-grained tool allow/deny (e.g. 'shell(git:*)', 'write')
+  --allow-url / --deny-url / --add-dir  Fine-grained network/path grants
+  --output-format <format>             text (default) | json (JSONL, one object per line)
+  -p, --prompt <text>                   Non-interactive mode (exits after completion)
+  -s, --silent                          Output only the agent response (no stats)
+  --session-id <id>                     Resume an existing session/task by ID, or set the UUID for a new session
+  -r, --resume[=value] / --continue     Resume previous / most-recent session
+  --no-remote / --remote                Copilot's OWN web/mobile remote control of the session
+  --no-color                            Disable color
+```
+
+**Key facts:**
+- `--model` is **open-ended** (`auto` = Copilot picks; example `gpt-5.2`). No model-list flag in help; available models are account/provider dependent (see the `providers` help topic for BYOK).
+- New dimension we don't surface yet: **`--reasoning-effort`** (none…max).
+- Permission flags: `--allow-all-tools` is **required** for headless tool use; `--allow-all`/`--yolo` additionally open all paths + URLs; fine-grained `--allow-tool`/`--deny-tool` exist.
+- Output: `--output-format json` (JSONL) → structured events (parser still TODO; we run text + `--silent`).
+- Resume: we own the UUID via `--session-id`.
+- Revised permission tier mapping (from this help): `plan` → `--plan` (read-only, no tool exec) · `auto` → `--allow-all-tools` · `full` → `--allow-all`.
+- **Docs (keep this block in sync):** https://docs.github.com/copilot/how-tos/copilot-cli
+
 ---
 
 **Status:** planned · post-release task. Today Diktat supports **Claude Code**,

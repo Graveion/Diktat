@@ -290,8 +290,14 @@ export function permissionFlags(cli: string, mode: PermissionModeId): string[] {
       if (mode === "full") return ["--yolo", "--trust"];
       return ["--trust"]; // auto: trust workspace, default headless = full tool access
     case "copilot":
-      // Headless can't prompt; plan = no auto-grant (limited), else allow all.
-      return mode === "plan" ? [] : ["--allow-all-tools"];
+      // Verified via `copilot --help` (2026-06-30, see AGENT-SUPPORT.md).
+      // --allow-all-tools is REQUIRED for headless tool use (or it hangs on a
+      // permission prompt); --plan keeps it read-only/planning; --allow-all adds
+      // all paths + URLs on top of all tools.
+      if (mode === "plan") return ["--plan", "--allow-all-tools"];
+      if (mode === "full") return ["--allow-all"];
+      return ["--allow-all-tools"]; // auto: edits + shell, auto-approved
+
     case "kiro":
       return mode === "plan" ? ["--trust-tools="] : ["--trust-all-tools"];
     case "codex":
