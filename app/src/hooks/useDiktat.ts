@@ -128,6 +128,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
   const [stats, setStats] = useState<AggregatedStats | null>(null);
+  const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   // Authoritative summary of the most recent run (from the exit frame). Cleared
   // when a new run starts so the chat's last-run card reflects the latest run.
   const [lastRunSummary, setLastRunSummary] = useState<RunSummary | null>(null);
@@ -263,6 +264,7 @@ export function useDiktat(relay?: RelayDescriptor) {
         });
         setSessions(all);
         if (msg.stats) setStats(msg.stats as AggregatedStats);
+        if (typeof msg.daemonVersion === "string") setDaemonVersion(msg.daemonVersion);
         const countBy = (src: string) => all.filter((s) => s.source === src).length;
         info("MSG", `connected: clis=[${(msg.clis ?? []).join(",")}] sessions=${all.length} (claude=${countBy("claude")} cursor=${countBy("cursor")} codex=${countBy("codex")} copilot=${countBy("copilot")} kiro=${countBy("kiro")} daemon=${countBy("daemon")})`);
         track("app_connected", { clis: (msg.clis ?? []).length, sessions: all.length });
@@ -563,7 +565,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
   return {
     state, reconnecting, errorMessage, clis, agents, projects, sessions, activeSessionId,
-    messages, streaming, currentTool, historyLoading, stats, lastRunSummary, connect, disconnect,
+    messages, streaming, currentTool, historyLoading, stats, lastRunSummary, daemonVersion, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
   };

@@ -193,6 +193,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
       perSession: { [MOCK_SESSION.id]: { runs: 6, edits: 21, linesAdded: 318, linesRemoved: 95, commandsRun: 14, filesChanged: 9, testsPassed: 4, testsFailed: 1, durationMs: 1_320_000, lastRunAt: undefined } },
     },
     lastRunSummary: null,
+    daemonVersion: null,
     connect,
     disconnect: () => {},
     spawnSession,
