@@ -56,6 +56,17 @@
       "googleIosClientId": "194173396831-4toso43fmm94ej5vivv116oodes336fo.apps.googleusercontent.com"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              { "name": "GoogleUtilities", "modular_headers": true },
+              { "name": "RecaptchaInterop", "modular_headers": true }
+            ]
+          }
+        }
+      ],
       "expo-font",
       "expo-localization",
       [
