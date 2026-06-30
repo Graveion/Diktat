@@ -6,10 +6,15 @@ Voice is a feature, not the headline. Plain, specific, human — no marketing fl
 ---
 
 ## Name (30 char max)
-Diktat
+Diktat: Remote Coding Agents
+<!-- Plain "Diktat" is taken on the App Store (names must be globally unique).
+     This qualified title clears the conflict AND adds search keywords. The
+     on-device icon label stays "Diktat" via expo.name in app.json — that name
+     does NOT need to be unique. Alternatives: "Diktat: Your Coding Agents",
+     "Diktat — Code From Your Phone". -->
 
 ## Subtitle (30 char max)
-Your AI coding agents, remote
+On your Mac, from your phone
 
 ## Promotional text (170 char max — editable without review)
 Kick off a coding agent on your Mac, then steer it from your phone by voice or text. Claude Code, Cursor, Codex, Copilot and Kiro, all from one app.
