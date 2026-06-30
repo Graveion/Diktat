@@ -3,47 +3,42 @@
 # Diktat daemon installer.
 #   curl -fsSL https://graveion.github.io/Diktat/install.sh | bash
 #
-# Installs Bun (if needed), fetches the Diktat source, installs the daemon's
-# deps, and puts a `diktat` command on your PATH. Re-run anytime to update.
+# Downloads the prebuilt, standalone daemon binary (no Bun, no source checkout)
+# and puts a `diktat` command on your PATH. Re-run anytime to update, or use
+# `diktat update`.
 set -euo pipefail
 
-REPO="${DIKTAT_REPO:-https://github.com/Graveion/Diktat.git}"
-SRC="${DIKTAT_HOME:-$HOME/.diktat/src}"
+REPO="${DIKTAT_REPO:-Graveion/Diktat}"
 BIN_DIR="${DIKTAT_BIN_DIR:-$HOME/.local/bin}"
+ASSET="diktat-arm64"
+BASE="https://github.com/$REPO/releases/latest/download"
 
-say() { printf '\033[1;35m▸\033[0m %s\n' "$1"; }
+say()  { printf '\033[1;35m▸\033[0m %s\n' "$1"; }
+fail() { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
-# 1. Bun
-if ! command -v bun >/dev/null 2>&1; then
-  say "Installing Bun…"
-  curl -fsSL https://bun.sh/install | bash
-  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-  export PATH="$BUN_INSTALL/bin:$PATH"
-fi
+# 1. Apple Silicon only (for now).
+[ "$(uname -s)" = "Darwin" ] || fail "Diktat's daemon runs on macOS."
+[ "$(uname -m)" = "arm64" ] || fail "Only Apple Silicon (arm64) Macs are supported right now."
 
-# 2. Source (clone or update)
-if [ -d "$SRC/.git" ]; then
-  say "Updating Diktat…"
-  git -C "$SRC" pull --ff-only
-else
-  say "Fetching Diktat…"
-  mkdir -p "$(dirname "$SRC")"
-  git clone --depth 1 "$REPO" "$SRC"
-fi
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
-# 3. Daemon dependencies
-say "Installing daemon dependencies…"
-( cd "$SRC/daemon" && bun install )
+# 2. Download the binary + checksum, then verify before installing.
+say "Downloading the Diktat daemon…"
+curl -fsSL "$BASE/$ASSET" -o "$tmp/$ASSET" || fail "Download failed ($BASE/$ASSET)."
+curl -fsSL "$BASE/$ASSET.sha256" -o "$tmp/$ASSET.sha256" || fail "Checksum download failed."
 
-# 4. `diktat` command (a tiny wrapper, no PATH assumptions about ~/.bun/bin)
+say "Verifying checksum…"
+expected="$(awk '{print $1}' "$tmp/$ASSET.sha256")"
+actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{print $1}')"
+[ "$expected" = "$actual" ] || fail "Checksum mismatch — refusing to install."
+
+# 3. Install to PATH.
 mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/diktat" <<EOF
-#!/usr/bin/env bash
-exec bun "$SRC/daemon/diktat.ts" "\$@"
-EOF
+mv "$tmp/$ASSET" "$BIN_DIR/diktat"
 chmod +x "$BIN_DIR/diktat"
+say "Installed to $BIN_DIR/diktat"
 
-say "Installed."
 if ! echo ":$PATH:" | grep -q ":$BIN_DIR:"; then
   echo
   echo "  Add this to your shell profile (~/.zshrc), then restart your terminal:"

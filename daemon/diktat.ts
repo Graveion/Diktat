@@ -13,7 +13,7 @@
  *
  * Install once:  cd daemon && bun link    (then `diktat` is on your PATH)
  */
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import * as service from "./service";
@@ -153,7 +153,52 @@ async function restart(): Promise<never> {
  * source, reinstall deps, restart. This is the stable user-facing verb; its
  * internals get swapped for a signed-binary self-update once that ships.
  */
-async function update(): Promise<never> {
+const RELEASE_BASE = "https://github.com/Graveion/Diktat/releases/latest/download";
+const RELEASE_ASSET = "diktat-arm64";
+
+function sha256(data: Uint8Array): string {
+  const h = new Bun.CryptoHasher("sha256");
+  h.update(data);
+  return h.digest("hex");
+}
+
+/** Binary install: download the latest release, verify, atomic-swap, restart. */
+async function updateBinary(): Promise<never> {
+  console.log("Checking for updates…");
+  let expected: string;
+  try {
+    const res = await fetch(`${RELEASE_BASE}/${RELEASE_ASSET}.sha256`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    expected = (await res.text()).trim().split(/\s+/)[0] ?? "";
+  } catch (e) {
+    console.log(`Couldn't reach the release server (${(e as Error).message}).`);
+    process.exit(1);
+  }
+  // Compare against the running binary — no version math needed.
+  if (sha256(readFileSync(process.execPath)) === expected) {
+    console.log("Already up to date.");
+    process.exit(0);
+  }
+
+  console.log("Downloading the latest daemon…");
+  const res = await fetch(`${RELEASE_BASE}/${RELEASE_ASSET}`);
+  if (!res.ok) { console.log(`Download failed (HTTP ${res.status}).`); process.exit(1); }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (sha256(bytes) !== expected) { console.log("Checksum mismatch — aborting."); process.exit(1); }
+
+  // Write next to the binary (same filesystem) then atomic-rename over it. The
+  // running process keeps its open inode; the new file is used on next launch.
+  const tmp = `${process.execPath}.new`;
+  await Bun.write(tmp, bytes);
+  chmodSync(tmp, 0o755);
+  renameSync(tmp, process.execPath);
+  console.log("✓ Updated. Restarting daemon…");
+  await startDaemon({ restart: true });
+  process.exit(0);
+}
+
+/** Dev/source install: pull latest source, reinstall deps, restart. */
+async function updateFromGit(): Promise<never> {
   const root = (() => {
     try {
       const r = Bun.spawnSync(["git", "-C", DIR, "rev-parse", "--show-toplevel"]);
@@ -177,6 +222,11 @@ async function update(): Promise<never> {
   await startDaemon({ restart: true });
   console.log("✓ Updated and restarted.");
   process.exit(0);
+}
+
+/** `diktat update` — self-update a binary install, or git-pull a dev checkout. */
+async function update(): Promise<never> {
+  return COMPILED ? updateBinary() : updateFromGit();
 }
 
 /** `diktat pair` — pair, then (re)start the daemon so it's immediately live. */

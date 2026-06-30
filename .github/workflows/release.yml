@@ -1,0 +1,45 @@
+name: Release daemon
+
+# Tag a release (e.g. `git tag v0.1.1 && git push --tags`) to build the
+# standalone arm64 daemon binary and attach it to a GitHub Release. No code
+# signing / notarization: the binary installs via `curl | bash` (terminal
+# downloads aren't Gatekeeper-quarantined), and bun --compile ad-hoc signs it
+# so it runs on Apple Silicon. Add a notarized .pkg later for browser installs.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  build:
+    runs-on: macos-14 # Apple Silicon runner → native arm64 binary
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install daemon deps
+        working-directory: daemon
+        run: bun install --frozen-lockfile
+
+      - name: Compile arm64 binary
+        working-directory: daemon
+        run: bun build --compile --target=bun-darwin-arm64 ./diktat.ts --outfile dist/diktat-arm64
+
+      - name: Checksum
+        working-directory: daemon/dist
+        run: shasum -a 256 diktat-arm64 | tee diktat-arm64.sha256
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            daemon/dist/diktat-arm64
+            daemon/dist/diktat-arm64.sha256
+          generate_release_notes: true
