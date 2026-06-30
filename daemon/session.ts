@@ -13,6 +13,7 @@ import {
   type RunAccumulator,
 } from "./run-summary";
 import { permissionFlags, modelFlags, DEFAULT_PERMISSION_MODE, type PermissionModeId } from "./agents";
+import { recordRun } from "./run-stats-store";
 
 /** Kill a CLI that has produced no output for this long. */
 export const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
@@ -373,14 +374,23 @@ export class Session {
 
     const rawExit = await proc.exited;
     const exitCode = timedOut ? -1 : rawExit; // timeout reports like a cancel
-    this.ws.send(JSON.stringify({ type: "exit", code: exitCode }));
+
+    // Finalize once and reuse for the exit frame, local persistence, and push.
+    const summary = finalizeRunSummary(this.run, exitCode);
+    this.ws.send(JSON.stringify({ type: "exit", code: exitCode, summary }));
+
+    // Persist the run locally (daemon-only) for usage aggregates. Best-effort.
+    recordRun(
+      { id: crypto.randomUUID(), sessionId: this.data.id, cli: this.data.cli, project: this.data.project },
+      summary,
+      new Date(),
+    );
 
     // Only push if the WebSocket has since closed — if it's still open the app
     // is in the foreground and already received the exit message directly.
     const wsStillOpen = (this.ws as any).readyState === 1;
     if (pushToken && exitCode === 0 && !wsStillOpen) {
       const project = this.data.project.split("/").pop() ?? this.data.project;
-      const summary = finalizeRunSummary(this.run, exitCode);
       const title = formatPushTitle(project, exitCode);
       const body = formatPushBody(summary);
       const data = summaryToPushData(this.data.id, summary);

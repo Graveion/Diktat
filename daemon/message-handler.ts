@@ -6,6 +6,7 @@ import { readCopilotHistory, listCopilotSessions } from "./copilot-sessions";
 import { readKiroHistory, listKiroSessions } from "./kiro-sessions";
 import { agentSelectionData } from "./agents";
 import { listSessions } from "./session-store";
+import { aggregate } from "./run-stats-store";
 
 /**
  * Everything the message router needs, injected so it can be tested in
@@ -56,6 +57,8 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
       codexSessions: listCodexSessions(),
       copilotSessions: listCopilotSessions(),
       kiroSessions: listKiroSessions(),
+      // Locally-persisted usage aggregates (overall + per session).
+      stats: aggregate(),
     };
   } catch (e) {
     console.error("Error building connected message:", e);
