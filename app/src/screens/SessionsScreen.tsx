@@ -22,7 +22,7 @@ type Props = {
   connectionState?: string;
   loading: boolean;
   onResume: (session: DiktatSession) => void;
-  onNew: (cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => void;
+  onNew: (cli: string, project: string, model?: string, permissionMode?: PermissionModeId, effort?: string) => void;
   onDisconnect: () => void;
   onOpenDebug?: () => void;
   /** Locally-persisted overall usage totals from the daemon. */
@@ -136,6 +136,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>(""); // "" = CLI default
   const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
+  const [selectedEffort, setSelectedEffort] = useState<string>(""); // "" = CLI default
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [renameTarget, setRenameTarget] = useState<DiktatSession | null>(null);
@@ -173,20 +174,22 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
     setSelectedProject(projects[0] ?? null);
     setSelectedModel("");
     setSelectedPermission("auto");
+    setSelectedEffort("");
     setShowPicker(true);
   };
 
-  // Reset model/permission to defaults whenever the chosen CLI changes.
+  // Reset model/permission/effort to defaults whenever the chosen CLI changes.
   const pickCli = (cli: string) => {
     setSelectedCli(cli);
     setSelectedModel("");
     setSelectedPermission("auto");
+    setSelectedEffort("");
   };
 
   const handleStart = () => {
     if (selectedCli && selectedProject) {
       setShowPicker(false);
-      onNew(selectedCli, selectedProject, selectedModel || undefined, selectedPermission);
+      onNew(selectedCli, selectedProject, selectedModel || undefined, selectedPermission, selectedEffort || undefined);
     }
   };
 
@@ -463,6 +466,26 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                     >
                       <Text style={[pickerStyles.chipText, selectedPermission === p.id && pickerStyles.chipTextSelected]}>
                         {p.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
+
+            {selectedCli && (agents[selectedCli]?.efforts?.length ?? 0) > 0 ? (
+              <>
+                <Text style={pickerStyles.sectionLabel}>Reasoning effort</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
+                  {agents[selectedCli]!.efforts!.map((e) => (
+                    <TouchableOpacity
+                      key={e.id || "default"}
+                      testID={`effort-${e.id || "default"}`}
+                      style={[pickerStyles.chip, selectedEffort === e.id && pickerStyles.chipSelected]}
+                      onPress={() => setSelectedEffort(e.id)}
+                    >
+                      <Text style={[pickerStyles.chipText, selectedEffort === e.id && pickerStyles.chipTextSelected]}>
+                        {e.label}
                       </Text>
                     </TouchableOpacity>
                   ))}

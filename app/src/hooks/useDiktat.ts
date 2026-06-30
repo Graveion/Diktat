@@ -17,10 +17,12 @@ export type DiktatSession = {
 
 export type PermissionModeId = "plan" | "auto" | "full";
 export type AgentModel = { id: string; label: string };
+export type AgentEffort = { id: string; label: string };
 export type AgentSelection = {
   displayName: string;
   models: AgentModel[];
   permissionModes: { id: PermissionModeId; label: string }[];
+  efforts?: AgentEffort[]; // empty/absent → CLI has no reasoning-effort control
 };
 /** Per-CLI model + permission options, from the daemon's `connected` payload. */
 export type AgentSelectionMap = Record<string, AgentSelection>;
@@ -489,8 +491,8 @@ export function useDiktat(relay?: RelayDescriptor) {
     setStreaming(false);
   }, []);
 
-  const spawnSession = useCallback((cli: string, project: string, model?: string, permissionMode?: PermissionModeId) => {
-    info("SESSION", `spawn: cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""}`);
+  const spawnSession = useCallback((cli: string, project: string, model?: string, permissionMode?: PermissionModeId, effort?: string) => {
+    info("SESSION", `spawn: cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""}${effort ? ` effort=${effort}` : ""}`);
     track("session_started", { cli, model: model ?? "", permissionMode: permissionMode ?? "auto" });
     ws.current?.send(JSON.stringify({
       type: "spawn",
@@ -498,6 +500,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       project,
       ...(model ? { model } : {}),
       ...(permissionMode ? { permissionMode } : {}),
+      ...(effort ? { effort } : {}),
     }));
   }, []);
 

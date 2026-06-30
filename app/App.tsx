@@ -266,11 +266,11 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
     diktat.resumeSession(session);
   };
 
-  const handleNew = async (cli: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full") => {
+  const handleNew = async (cli: string, project: string, model?: string, permissionMode?: "plan" | "auto" | "full", effort?: string) => {
     if (!(await ent.gateAccess())) { setPaywallVisible(true); return; }
-    info("NAV", `sessions → chat (new session cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""})`);
+    info("NAV", `sessions → chat (new session cli=${cli} project=${project}${model ? ` model=${model}` : ""}${permissionMode ? ` perm=${permissionMode}` : ""}${effort ? ` effort=${effort}` : ""})`);
     setActiveSession(null);
-    diktat.spawnSession(cli, project, model, permissionMode);
+    diktat.spawnSession(cli, project, model, permissionMode, effort);
   };
 
   const openDebug = useCallback(() => {
