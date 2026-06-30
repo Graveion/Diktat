@@ -1,5 +1,5 @@
 {
-  "latest": "0.1.0",
+  "latest": "0.1.1",
   "min": "0.1.0",
-  "notes": "Initial public daemon version."
+  "notes": "Reasoning-effort support (Claude/Copilot/Kiro), Copilot permission-tier fix, new-session sheet UX."
 }
