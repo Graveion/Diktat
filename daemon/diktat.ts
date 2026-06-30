@@ -5,6 +5,8 @@
  *   diktat pair <code>     redeem a pairing code from the phone app
  *   diktat start           start the daemon in the background
  *   diktat start -f        run the daemon in the foreground (Ctrl-C to stop)
+ *   diktat restart         reload the daemon (e.g. after updating)
+ *   diktat update          update to the latest version, then restart
  *   diktat stop            stop the background daemon
  *   diktat status          is the daemon running?
  *   diktat setup           interactive setup
@@ -15,8 +17,18 @@ import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } 
 import { homedir } from "os";
 import { join } from "path";
 import * as service from "./service";
+import { COMPILED, DATA_DIR } from "./paths";
+import { runDaemon } from "./index";
+import { runPair } from "./pair";
+import { runSetup } from "./setup";
 
 const DIR = import.meta.dir; // the daemon directory (where index.ts etc. live)
+
+// How launchd / nohup should (re)launch the daemon, and from where:
+//  - compiled binary: re-exec ourselves in daemon mode, working dir = data dir
+//  - source/dev:      `bun index.ts`, working dir = the daemon source dir
+const DAEMON_ARGV = COMPILED ? [process.execPath, "__daemon"] : [process.execPath, join(DIR, "index.ts")];
+const DAEMON_WORKDIR = COMPILED ? DATA_DIR : DIR;
 const STATE = join(homedir(), ".diktat");
 const PID_FILE = join(STATE, "daemon.pid");
 const LOG_FILE = join(STATE, "daemon.log");
@@ -30,6 +42,8 @@ function usage(): never {
       "",
       "  pair <code>     Pair this Mac with your phone (code shown in the app)",
       "  start [-f]      Start the daemon (background; -f for foreground)",
+      "  restart         Reload the daemon (e.g. after updating)",
+      "  update          Update to the latest version, then restart",
       "  stop            Stop the background daemon",
       "  status          Show whether the daemon is running",
       "  logs            Follow the daemon logs",
@@ -37,23 +51,6 @@ function usage(): never {
     ].join("\n"),
   );
   process.exit(cmd ? 1 : 0);
-}
-
-/** Run a daemon script attached to this terminal; resolve with its exit code. */
-async function spawnAttached(script: string, args: string[] = []): Promise<number> {
-  const proc = Bun.spawn(["bun", join(DIR, script), ...args], {
-    cwd: DIR,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  await proc.exited;
-  return proc.exitCode ?? 0;
-}
-
-/** Run a daemon script attached to this terminal; exit with its code. */
-async function runAttached(script: string, args: string[] = []): Promise<never> {
-  process.exit(await spawnAttached(script, args));
 }
 
 function readPid(): number | null {
@@ -99,7 +96,7 @@ async function startDaemon(opts: { restart: boolean }): Promise<void> {
     }
     stopLegacyPid(); // avoid two daemons if upgrading from a nohup install
     // installAndLoad unloads any existing instance first, so this also restarts.
-    const r = service.installAndLoad(DIR, LOG_FILE);
+    const r = service.installAndLoad(DAEMON_ARGV, DAEMON_WORKDIR, LOG_FILE);
     if (r.ok) {
       console.log(opts.restart
         ? "Daemon (re)started via launchd — it will connect with the new pairing."
@@ -123,8 +120,8 @@ async function startDaemon(opts: { restart: boolean }): Promise<void> {
   // nohup keeps it alive after the terminal closes; unref lets us exit now.
   // NOTE: this fallback does NOT survive a reboot (no launchd) — re-run
   // `diktat start` after restarting, or use the launchd path on macOS.
-  const proc = Bun.spawn(["nohup", "bun", join(DIR, "index.ts")], {
-    cwd: DIR,
+  const proc = Bun.spawn(["nohup", ...DAEMON_ARGV], {
+    cwd: DAEMON_WORKDIR,
     stdin: "ignore",
     stdout: out,
     stderr: out,
@@ -134,17 +131,57 @@ async function startDaemon(opts: { restart: boolean }): Promise<void> {
   console.log(`Diktat daemon started (pid ${proc.pid}).  Logs: ${displayLog}`);
 }
 
-async function start(): Promise<never> {
+async function start(): Promise<void> {
   const foreground = rest.includes("-f") || rest.includes("--foreground");
-  if (foreground) return runAttached("index.ts");
+  if (foreground) {
+    // Run the daemon in this process; it stays alive on the relay socket.
+    await runDaemon();
+    return;
+  }
   await startDaemon({ restart: false });
+  process.exit(0);
+}
+
+/** `diktat restart` — reload the daemon (e.g. after updating the code). */
+async function restart(): Promise<never> {
+  await startDaemon({ restart: true });
+  process.exit(0);
+}
+
+/**
+ * `diktat update` — interim updater for the git-checkout install: pull latest
+ * source, reinstall deps, restart. This is the stable user-facing verb; its
+ * internals get swapped for a signed-binary self-update once that ships.
+ */
+async function update(): Promise<never> {
+  const root = (() => {
+    try {
+      const r = Bun.spawnSync(["git", "-C", DIR, "rev-parse", "--show-toplevel"]);
+      const top = r.stdout.toString().trim();
+      return r.exitCode === 0 && top ? top : null;
+    } catch { return null; }
+  })();
+  if (!root) {
+    console.log("This install isn't a git checkout — re-run the installer to update:");
+    console.log("  curl -fsSL https://graveion.github.io/Diktat/install.sh | bash");
+    process.exit(1);
+  }
+  console.log("Updating Diktat…");
+  const pull = Bun.spawnSync(["git", "-C", root, "pull", "--ff-only"], { stdout: "inherit", stderr: "inherit" });
+  if (pull.exitCode !== 0) {
+    console.log("git pull failed (local changes?). Resolve, then re-run `diktat update`.");
+    process.exit(pull.exitCode ?? 1);
+  }
+  const install = Bun.spawnSync(["bun", "install"], { cwd: DIR, stdout: "inherit", stderr: "inherit" });
+  if (install.exitCode !== 0) process.exit(install.exitCode ?? 1);
+  await startDaemon({ restart: true });
+  console.log("✓ Updated and restarted.");
   process.exit(0);
 }
 
 /** `diktat pair` — pair, then (re)start the daemon so it's immediately live. */
 async function pair(): Promise<never> {
-  const code = await spawnAttached("pair.ts", rest);
-  if (code !== 0) process.exit(code); // pairing failed/cancelled; pair.ts already explained
+  await runPair(rest); // pairing failures exit the process from within runPair
   await startDaemon({ restart: true });
   // The daemon connects to the relay asynchronously in its own process, so we
   // can't assert it's online here — point at the real signals instead of
@@ -197,11 +234,22 @@ async function logs(): Promise<never> {
 }
 
 switch (cmd) {
+  // Internal: launchd / the nohup fallback invoke the binary in daemon mode.
+  // runDaemon() resolves after connecting; the process then stays alive.
+  case "__daemon":
+    await runDaemon();
+    break;
   case "pair":
     await pair();
     break;
   case "start":
     await start();
+    break;
+  case "restart":
+    await restart();
+    break;
+  case "update":
+    await update();
     break;
   case "stop":
     stop();
@@ -213,7 +261,8 @@ switch (cmd) {
     await logs();
     break;
   case "setup":
-    await runAttached("setup.ts", rest);
+    await runSetup();
+    process.exit(0);
     break;
   default:
     usage();

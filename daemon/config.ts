@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
+import { dataPath } from "./paths";
 
 interface Config {
   port: number;
@@ -11,7 +12,7 @@ interface Config {
   daemonToken?: string;
 }
 
-const CONFIG_PATH = "./config.json";
+const CONFIG_PATH = dataPath("config.json");
 
 export function loadConfig(configPath = CONFIG_PATH): Config {
   if (!existsSync(configPath)) {

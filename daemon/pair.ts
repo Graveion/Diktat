@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { hostname } from "os";
 import qrcode from "qrcode-terminal";
+import { dataPath, ensureDataDir } from "./paths";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,7 +34,7 @@ function defaultMachineName(): string {
  * (so re-pairing keeps the same identity), otherwise a fresh UUID is minted.
  */
 
-const CONFIG_PATH = "./config.json";
+const CONFIG_PATH = dataPath("config.json");
 
 // Hosted relay. Overridable via --relay or $DIKTAT_RELAY_URL (e.g. a dev tunnel).
 const DEFAULT_RELAY_URL = "wss://diktat-relay.fly.dev";
@@ -90,10 +91,10 @@ interface PairResponse {
   error?: string;
 }
 
-async function main() {
+export async function runPair(argv: string[]): Promise<void> {
   // `diktat pair`         → QR flow (default): show a QR, the app scans it.
   // `diktat pair <code>`  → typed-code redemption (code shown in the app).
-  const args = parsePairArgs(process.argv.slice(2));
+  const args = parsePairArgs(argv);
 
   const existing: Record<string, unknown> = existsSync(CONFIG_PATH)
     ? JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
@@ -114,10 +115,11 @@ async function main() {
     : await pairWithQr(base, machineId, name);
 
   const config = buildPairedConfig(existing, { relayUrl, machineId, daemonToken: token });
+  ensureDataDir();
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
   chmodSync(CONFIG_PATH, 0o600); // mode option only applies on create
 
-  console.log(`\n✓ Paired. Wrote relay config to daemon/config.json`);
+  console.log(`\n✓ Paired. Wrote relay config to ${CONFIG_PATH}`);
   console.log(`  Machine: ${name} (${machineId})`);
   // The `diktat` CLI (re)starts the daemon after this returns; when pair.ts is
   // run directly via `bun pair.ts`, start the daemon yourself with `diktat start`.
@@ -190,5 +192,5 @@ async function pairWithQr(base: string, machineId: string, name: string): Promis
 
 // Only run when invoked directly, not when imported by tests.
 if (import.meta.main) {
-  main();
+  runPair(process.argv.slice(2));
 }

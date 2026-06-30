@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import type { RunSummary } from "./run-summary";
+import { dataPath, ensureDataDir } from "./paths";
 
-// One JSON line per completed run, alongside ./sessions. Capped to the most
-// recent MAX_RECORDS so the file can't grow without bound on a busy machine.
-const STORE_PATH = "./run-stats.jsonl";
+// One JSON line per completed run, in the data dir. Capped to the most recent
+// MAX_RECORDS so the file can't grow without bound on a busy machine.
+const STORE_PATH = dataPath("run-stats.jsonl");
 const MAX_RECORDS = 5000;
 // Per-run cap on stored file paths — keeps lines small while still allowing
 // accurate unique-file aggregation for normal runs.
@@ -84,6 +85,7 @@ export function recordRun(
     const records = readRunRecords(storePath);
     records.push(record);
     const kept = records.slice(-MAX_RECORDS);
+    if (storePath === STORE_PATH) ensureDataDir();
     writeFileSync(storePath, kept.map((r) => JSON.stringify(r)).join("\n") + "\n");
   } catch {
     /* best-effort persistence */

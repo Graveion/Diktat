@@ -38,3 +38,7 @@ config.json
 
 # Session data (machine-specific)
 sessions/
+
+# Persisted run stats (machine-specific)
+run-stats.jsonl
+run-stats*.jsonl

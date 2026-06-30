@@ -4,6 +4,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { detectCLIs } from "./cli-detector";
 import { cursorShellPermissionGranted, grantCursorShellPermission } from "./cursor-shell-permissions";
+import { dataPath, ensureDataDir } from "./paths";
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -159,7 +160,7 @@ async function selectProjects(): Promise<string[]> {
   return selected;
 }
 
-async function main() {
+export async function runSetup(): Promise<void> {
   print("╔════════════════════════════╗");
   print("║      Diktat Setup          ║");
   print("╚════════════════════════════╝");
@@ -260,7 +261,7 @@ async function main() {
   }
 
   // --- Write config ---
-  const CONFIG_PATH = "./config.json";
+  const CONFIG_PATH = dataPath("config.json");
   const existing = existsSync(CONFIG_PATH)
     ? JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
     : {};
@@ -272,9 +273,10 @@ async function main() {
     projects: projects.length > 0 ? projects : (existing.projects ?? []),
   };
 
+  ensureDataDir();
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
   chmodSync(CONFIG_PATH, 0o600); // mode option only applies on create
-  section("Config written to daemon/config.json");
+  section(`Config written to ${CONFIG_PATH}`);
 
   // --- Done ---
   print("\n╔════════════════════════════╗");
@@ -291,4 +293,6 @@ async function main() {
   rl.close();
 }
 
-main();
+if (import.meta.main) {
+  runSetup();
+}

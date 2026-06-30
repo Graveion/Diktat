@@ -7,6 +7,7 @@ import { readKiroHistory, listKiroSessions } from "./kiro-sessions";
 import { agentSelectionData } from "./agents";
 import { listSessions } from "./session-store";
 import { aggregate } from "./run-stats-store";
+import { DAEMON_VERSION } from "./version";
 
 /**
  * Everything the message router needs, injected so it can be tested in
@@ -44,6 +45,8 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
     projects: ctx.projects,
     // Per-CLI model + permission options for the app's dropdowns.
     agents: agentSelectionData(),
+    // So the app can detect an out-of-date daemon and prompt to update.
+    daemonVersion: DAEMON_VERSION,
   };
   try {
     return {

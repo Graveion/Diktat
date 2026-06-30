@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { dataPath } from "./paths";
 
-const SESSIONS_DIR = "./sessions";
+const SESSIONS_DIR = dataPath("sessions");
 
 export interface SessionData {
   id: string;
@@ -22,7 +23,7 @@ export interface SessionData {
 }
 
 function ensureSessionsDir() {
-  if (!existsSync(SESSIONS_DIR)) mkdirSync(SESSIONS_DIR);
+  if (!existsSync(SESSIONS_DIR)) mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
 export function saveSession(session: SessionData): void {
