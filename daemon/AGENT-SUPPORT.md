@@ -99,12 +99,25 @@ Options (abridged to what Diktat uses; full help pasted in the PR/history):
   - To wire the dropdown: get the real `--model` slugs from someone with an account (run a turn with `--model <slug>` for each, or capture what `/model` selects), then add curated entries. Until then: Default + `auto` only.
 - **Docs (keep this block in sync):** https://docs.github.com/copilot/how-tos/copilot-cli and https://docs.github.com/copilot/concepts/agents/copilot-cli
 
-### Claude (`claude --help`) — NOT YET CAPTURED
+### Claude (`claude --help`) — verified 2026-06-30
 
-We drive Claude Code but have never stored its verified `--help`. Open questions:
-- **Reasoning effort:** is there a CLI flag (e.g. `--effort`/`--thinking`), or is extended thinking triggered by prompt keywords ("think"/"ultrathink") / config only? If a flag exists, add Claude to `AGENT_EFFORTS` + `effortFlags`. **Do not add until verified** — guessing a flag is what broke Cursor before.
-- Confirm the model aliases (`sonnet`/`opus`/`haiku`) and whether `--model` accepts dated ids.
-Action: paste `claude --help` to capture it here.
+```
+  -p, --print                     Non-interactive (print response and exit)
+  --output-format <format>        text | json | stream-json (only with --print)
+  --model <model>                 Alias (sonnet|opus) or full name (e.g. claude-sonnet-4-6)
+  --effort <level>                low | medium | high | xhigh | max   ← reasoning effort
+  --permission-mode <mode>        acceptEdits | auto | bypassPermissions | default | dontAsk | plan
+  --dangerously-skip-permissions  Bypass all permission checks
+  --allowedTools / --disallowedTools / --tools   Fine-grained tool control
+  -r, --resume [id] / -c, --continue / --session-id <uuid> / --fork-session
+  --add-dir <dirs...>             Extra tool-access dirs
+```
+
+**Key facts:**
+- **`--effort` IS a flag** — low|medium|high|xhigh|max. Wired (`effortFlags("claude", …)` → `--effort`).
+- Confirms Diktat's permission mapping: `plan` → `--permission-mode plan` · `auto` → `--permission-mode acceptEdits` · `full` → `--permission-mode bypassPermissions`. (`--permission-mode` also offers `auto`/`dontAsk`/`default` we don't surface.)
+- `--model` takes aliases (`sonnet`/`opus`) or full dated names (`claude-sonnet-4-6`) — our alias list is correct.
+- Claude has its OWN `--remote-control` (interactive) — separate from Diktat.
 
 ### Kiro (`kiro-cli chat --help`) — verified 2026-06-30
 

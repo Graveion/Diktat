@@ -275,35 +275,31 @@ export function modelFlags(modelId: string | undefined): string[] {
 }
 
 // ─── Reasoning effort (where the CLI supports it) ────────────────────────────
-// Verified flags: Copilot `--reasoning-effort` (none|low|medium|high|xhigh|max),
-// Kiro `--effort` (low|medium|high|xhigh|max). Claude has no flag; Cursor folds
-// effort into the model param's bracket syntax; Codex unverified — all omit it.
+// Verified flags (see AGENT-SUPPORT.md): Claude `--effort` (low|medium|high|
+// xhigh|max), Copilot `--reasoning-effort` (none|low|medium|high|xhigh|max),
+// Kiro `--effort` (low|medium|high|xhigh|max). Cursor folds effort into the
+// model param's bracket syntax; Codex uses a config key (unverified) — both omit.
 export interface EffortOption { id: string; label: string } // "" → CLI default
+const STD_EFFORTS: EffortOption[] = [
+  { id: "", label: "Default" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "Extra high" },
+  { id: "max", label: "Max" },
+];
 export const AGENT_EFFORTS: Record<string, EffortOption[]> = {
-  copilot: [
-    { id: "", label: "Default" },
-    { id: "none", label: "None" },
-    { id: "low", label: "Low" },
-    { id: "medium", label: "Medium" },
-    { id: "high", label: "High" },
-    { id: "xhigh", label: "Extra high" },
-    { id: "max", label: "Max" },
-  ],
-  kiro: [
-    { id: "", label: "Default" },
-    { id: "low", label: "Low" },
-    { id: "medium", label: "Medium" },
-    { id: "high", label: "High" },
-    { id: "xhigh", label: "Extra high" },
-    { id: "max", label: "Max" },
-  ],
+  claude: STD_EFFORTS,
+  kiro: STD_EFFORTS,
+  // Copilot additionally accepts "none".
+  copilot: [{ id: "", label: "Default" }, { id: "none", label: "None" }, ...STD_EFFORTS.slice(1)],
 };
 
 /** Reasoning-effort flags for a chosen level ("" / undefined / unsupported → none). */
 export function effortFlags(cli: string, effort: string | undefined): string[] {
   if (!effort) return [];
+  if (cli === "claude" || cli === "kiro") return ["--effort", effort];
   if (cli === "copilot") return ["--reasoning-effort", effort];
-  if (cli === "kiro") return ["--effort", effort];
   return [];
 }
 

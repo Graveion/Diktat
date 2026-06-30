@@ -36,13 +36,13 @@ test("permissionFlags: cursor/copilot/kiro tiers", () => {
 });
 
 test("effortFlags: only Copilot/Kiro support it; empty/undefined omit it", () => {
-  expect(effortFlags("copilot", "high")).toEqual(["--reasoning-effort", "high"]);
+  expect(effortFlags("claude", "high")).toEqual(["--effort", "high"]);
   expect(effortFlags("kiro", "max")).toEqual(["--effort", "max"]);
+  expect(effortFlags("copilot", "high")).toEqual(["--reasoning-effort", "high"]);
   expect(effortFlags("copilot", "")).toEqual([]);
   expect(effortFlags("copilot", undefined)).toEqual([]);
-  expect(effortFlags("claude", "high")).toEqual([]); // unsupported → omitted
-  expect(effortFlags("cursor", "high")).toEqual([]);
-  expect(effortFlags("codex", "high")).toEqual([]);
+  expect(effortFlags("cursor", "high")).toEqual([]); // effort via model brackets, not a flag
+  expect(effortFlags("codex", "high")).toEqual([]); // config key, unverified → omitted
 });
 
 test("agentSelectionData: every agent ships models + the 3 permission tiers + efforts", () => {
@@ -56,9 +56,10 @@ test("agentSelectionData: every agent ships models + the 3 permission tiers + ef
   }
   expect(data.claude!.models.map((m) => m.id)).toEqual(["", "sonnet", "opus", "haiku"]);
   expect(AGENT_MODELS.claude!.length).toBe(4);
-  // Effort selector only where verified-supported.
+  // Effort selector only where verified-supported (Claude/Copilot/Kiro).
+  expect(data.claude!.efforts.length).toBeGreaterThan(0);
   expect(data.copilot!.efforts.length).toBeGreaterThan(0);
   expect(data.kiro!.efforts.length).toBeGreaterThan(0);
-  expect(data.claude!.efforts).toEqual([]);
   expect(data.cursor!.efforts).toEqual([]);
+  expect(data.codex!.efforts).toEqual([]);
 });
