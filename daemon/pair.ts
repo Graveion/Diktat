@@ -5,6 +5,23 @@ import qrcode from "qrcode-terminal";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Friendly default name for this machine. Prefers macOS's user-facing
+ * ComputerName ("Tim's MacBook Pro") over the kebab-cased network hostname,
+ * falling back to hostname() with the mDNS ".local" suffix stripped.
+ */
+function defaultMachineName(): string {
+  if (process.platform === "darwin") {
+    try {
+      const out = Bun.spawnSync(["scutil", "--get", "ComputerName"]).stdout.toString().trim();
+      if (out) return out;
+    } catch {
+      /* fall through to hostname */
+    }
+  }
+  return hostname().replace(/\.local$/i, "");
+}
+
+/**
  * `diktat pair <code>` — redeem a pairing code shown in the phone app for a
  * per-machine daemon token, and write a relay-mode config.json.
  *
@@ -89,7 +106,7 @@ async function main() {
     DEFAULT_RELAY_URL;
 
   const machineId = (existing.machineId as string | undefined) ?? crypto.randomUUID();
-  const name = args.name ?? hostname();
+  const name = args.name ?? defaultMachineName();
 
   const base = relayHttpBase(relayUrl);
   const token = args.code
