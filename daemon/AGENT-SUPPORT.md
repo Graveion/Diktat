@@ -160,7 +160,7 @@ Subcommands: exec [e] (non-interactive runner), review, resume, fork, archive,
 
 **Key facts:**
 - Confirms Diktat's permission mapping is correct: `plan` → `--ask-for-approval never --sandbox read-only` · `auto` → `--ask-for-approval never --sandbox workspace-write` · `full` → `--dangerously-bypass-approvals-and-sandbox`.
-- `--model` is **open-ended** (no `--list-models` in this help). Models are free-text (o3, gpt-5-codex, …); keep "Default" + free-text later.
+- `--model`/`-m` is **open-ended** and works for `codex exec` (we already emit `--model`). Example: `codex -m gpt-5.5`. No headless list — `/model` is interactive only (like Copilot). Models are free-text (o3, gpt-5-codex, gpt-5.5, …); keep "Default" + free-text entry later.
 - **Reasoning effort is NOT a flag** — Codex sets it via a config override, almost certainly `-c model_reasoning_effort=<low|medium|high>`. **Unverified key/values from this help**, so the effort selector stays OFF for Codex until confirmed (run `codex exec -h` or check the config docs, then wire `effortFlags("codex", …)` to `["-c", "model_reasoning_effort=<level>"]`).
 - `exec` is the non-interactive runner we use; `--json` (exec-level, not shown here) is the JSONL event stream — structured-event parser still TODO.
 - Resume/fork/archive subcommands exist (interactive); our Codex resume is still stateless (each turn a fresh `exec`).
