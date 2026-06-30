@@ -4,7 +4,8 @@ import {
   Modal, ScrollView, SafeAreaView, Alert, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Pressable,
 } from "react-native";
-import { Swipeable } from "react-native-gesture-handler";
+import { Swipeable, GestureDetector, Gesture, GestureHandlerRootView } from "react-native-gesture-handler";
+import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { DiktatSession, AgentSelectionMap, PermissionModeId, StatsTotals } from "../hooks/useDiktat";
@@ -147,6 +148,23 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
     loadHiddenSessions().then(setHiddenIds);
     loadSessionTitles().then(setTitles);
   }, []);
+
+  // New-session sheet: drag the handle down to dismiss (preferred exit, alongside
+  // tapping the backdrop). Reset the offset each time the sheet opens.
+  const sheetY = useSharedValue(0);
+  useEffect(() => { if (showPicker) sheetY.value = 0; }, [showPicker, sheetY]);
+  const closePicker = () => setShowPicker(false);
+  const sheetPan = Gesture.Pan()
+    .onUpdate((e) => { sheetY.value = Math.max(0, e.translationY); })
+    .onEnd((e) => {
+      if (e.translationY > 110 || e.velocityY > 800) {
+        sheetY.value = withTiming(0, { duration: 150 });
+        runOnJS(closePicker)();
+      } else {
+        sheetY.value = withSpring(0, { damping: 18, stiffness: 200 });
+      }
+    });
+  const sheetAnim = useAnimatedStyle(() => ({ transform: [{ translateY: sheetY.value }] }));
 
   const visibleSessions = sessions.filter((s) => !hiddenIds.has(s.id));
 
@@ -378,13 +396,21 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
         );
       })()}
 
-      <Modal visible={showPicker} animationType="slide" transparent>
-        <View style={pickerStyles.overlay}>
-          <SafeAreaView style={pickerStyles.sheet}>
-            <View style={pickerStyles.handle} />
-            <Text style={pickerStyles.title}>New Session</Text>
+      <Modal visible={showPicker} animationType="slide" transparent onRequestClose={closePicker}>
+        {/* RNGH gestures need their own root inside a Modal's separate view tree. */}
+        <GestureHandlerRootView style={{ flex: 1 }}>
+        <Pressable style={pickerStyles.overlay} onPress={closePicker}>
+          <Reanimated.View style={sheetAnim}>
+            <Pressable onPress={() => {}}>
+              <SafeAreaView style={pickerStyles.sheet}>
+                <GestureDetector gesture={sheetPan}>
+                  <View style={pickerStyles.grabber} accessibilityRole="button" accessibilityLabel="Drag down to dismiss">
+                    <View style={pickerStyles.handle} />
+                  </View>
+                </GestureDetector>
+                <Text style={pickerStyles.title}>New Session</Text>
 
-            <Text style={pickerStyles.sectionLabel}>Agent</Text>
+                <Text style={pickerStyles.sectionLabel}>Agent</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={pickerStyles.chipRow}>
               {clis.map((cli) => (
                 <TouchableOpacity
@@ -458,21 +484,19 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
               ))}
             </ScrollView>
 
-            <View style={pickerStyles.actions}>
-              <TouchableOpacity testID="cancel-new-session-button" style={pickerStyles.cancelButton} onPress={() => setShowPicker(false)}>
-                <Text style={pickerStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="start-session-button"
-                style={[pickerStyles.startButton, (!selectedCli || !selectedProject) && pickerStyles.startButtonDisabled]}
-                onPress={handleStart}
-                disabled={!selectedCli || !selectedProject}
-              >
-                <Text style={pickerStyles.startText}>Start</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-        </View>
+                <TouchableOpacity
+                  testID="start-session-button"
+                  style={[pickerStyles.startButton, pickerStyles.startButtonBlock, (!selectedCli || !selectedProject) && pickerStyles.startButtonDisabled]}
+                  onPress={handleStart}
+                  disabled={!selectedCli || !selectedProject}
+                >
+                  <Text style={pickerStyles.startText}>Start session</Text>
+                </TouchableOpacity>
+              </SafeAreaView>
+            </Pressable>
+          </Reanimated.View>
+        </Pressable>
+        </GestureHandlerRootView>
       </Modal>
 
       <Modal visible={!!renameTarget} animationType="fade" transparent onRequestClose={() => setRenameTarget(null)}>
@@ -632,13 +656,12 @@ const pickerStyles = StyleSheet.create({
   sheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingBottom: 24, maxHeight: "85%",
+    paddingHorizontal: 22, paddingBottom: 28, maxHeight: "88%",
     borderTopWidth: 1, borderColor: colors.border,
   },
-  handle: {
-    width: 32, height: 3, backgroundColor: colors.border, borderRadius: 2,
-    alignSelf: "center", marginTop: 12, marginBottom: 22,
-  },
+  // Generous hit area around the handle so it's an easy drag target.
+  grabber: { alignSelf: "stretch", alignItems: "center", paddingTop: 10, paddingBottom: 16 },
+  handle: { width: 40, height: 4, backgroundColor: colors.textMuted, borderRadius: 2 },
   title: { fontFamily: fonts.display, color: colors.text, fontSize: 22, marginBottom: 22, letterSpacing: -0.3 },
   sectionLabel: {
     fontFamily: fonts.bodyMedium, color: colors.textSub, fontSize: 10,
@@ -668,5 +691,6 @@ const pickerStyles = StyleSheet.create({
     backgroundColor: colors.accent, alignItems: "center", overflow: "hidden",
   },
   startButtonDisabled: { opacity: 0.35 },
+  startButtonBlock: { flex: 0, marginTop: 4 }, // full-width, content-height (picker has no Cancel)
   startText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 15 },
 });
