@@ -118,6 +118,37 @@ test("parseCursorChunk: text delta forwarded correctly", () => {
   expect(sent[0]).toMatchObject({ type: "output", text: "Hello world" });
 });
 
+test("parseCursorChunk: incremental deltas concatenate without losing boundary spaces", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // Cursor streams one message as fragments (--stream-partial-output). The app
+  // concatenates the output frames, so the space at a fragment boundary must be
+  // preserved verbatim — trimming each delta used to fuse words ("theauth").
+  feedCursorLines(
+    session,
+    { type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "I'll update the " }] } },
+    { type: "assistant", timestamp_ms: 2, message: { content: [{ type: "text", text: "auth module and " }] } },
+    { type: "assistant", timestamp_ms: 3, message: { content: [{ type: "text", text: "run the tests." }] } },
+  );
+
+  const streamed = sent.filter((m) => m.type === "output").map((m) => m.text).join("");
+  expect(streamed).toBe("I'll update the auth module and run the tests.");
+});
+
+test("parseCursorChunk: a lone-space delta is preserved (not dropped)", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  feedCursorLines(
+    session,
+    { type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "word" }] } },
+    { type: "assistant", timestamp_ms: 2, message: { content: [{ type: "text", text: " " }] } },
+    { type: "assistant", timestamp_ms: 3, message: { content: [{ type: "text", text: "next" }] } },
+  );
+  const streamed = sent.filter((m) => m.type === "output").map((m) => m.text).join("");
+  expect(streamed).toBe("word next");
+});
+
 test("parseCursorChunk: [redacted] stripped from text before send", () => {
   const { ws, sent } = mockWs();
   const session = makeSession(ws);

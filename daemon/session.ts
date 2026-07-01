@@ -515,8 +515,11 @@ export class Session {
           const content = json.message?.content ?? [];
           for (const block of content) {
             if (block.type === "text" && block.text) {
-              // Strip Cursor's [redacted] markers and send the cleaned text.
-              const text = block.text.replace(/\[redacted\]/gi, "").trim();
+              // These are *incremental* stream deltas the app concatenates, so
+              // never trim: a delta of "the " or a lone " " carries the space
+              // between words, and trimming each fragment fused them ("theauth").
+              // Strip [redacted] markers only; skip a delta that's empty after.
+              const text = block.text.replace(/\[redacted\]/gi, "");
               if (text) this.ws.send(JSON.stringify({ type: "output", text }));
             }
           }
