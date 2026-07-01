@@ -108,6 +108,12 @@ const defaultSessionFactory: SessionFactory = {
  * Route a single already-parsed client message. Returns nothing — all output
  * goes through `ws.send`. This is the testable core of the websocket handler.
  */
+// Messages loaded on the initial resume, and per "scroll up" page thereafter.
+// The initial load is intentionally ~2x a single page so a freshly-opened
+// session shows plenty of context before the user ever scrolls.
+export const INITIAL_HISTORY_LIMIT = 40;
+export const HISTORY_PAGE_SIZE = 40;
+
 export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any): Promise<void> {
   const factory = ctx.sessionFactory ?? defaultSessionFactory;
   const readClaude = ctx.readClaudeHistory ?? readHistory;
@@ -115,6 +121,15 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
   const readCodex = ctx.readCodexHistory ?? readCodexHistory;
   const readCopilot = ctx.readCopilotHistory ?? readCopilotHistory;
   const readKiro = ctx.readKiroHistory ?? readKiroHistory;
+  // cli name → reader. All readers share the (sessionId, limit) prefix, so
+  // paging can pick one uniformly without caring about the tail params.
+  const readerByCli: Record<string, (id: string, limit?: number) => any[]> = {
+    claude: readClaude,
+    cursor: readCursor,
+    codex: readCodex,
+    copilot: readCopilot,
+    kiro: readKiro,
+  };
 
   if (msg.type === "spawn") {
     if (!ctx.availableCLIs[msg.cli]) {
@@ -164,22 +179,65 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       setImmediate(async () => {
         try {
           const history = msg.isCursorSession
-            ? readCursor(historyId)
+            ? readCursor(historyId, INITIAL_HISTORY_LIMIT)
             : msg.isCodexSession
-              ? readCodex(historyId)
+              ? readCodex(historyId, INITIAL_HISTORY_LIMIT)
               : msg.isCopilotSession
-                ? readCopilot(historyId)
+                ? readCopilot(historyId, INITIAL_HISTORY_LIMIT)
                 : msg.isKiroSession
-                  ? readKiro(historyId)
-                  : readClaude(historyId);
+                  ? readKiro(historyId, INITIAL_HISTORY_LIMIT)
+                  : readClaude(historyId, INITIAL_HISTORY_LIMIT);
           if (history.length > 0) {
-            ws.send(JSON.stringify({ type: "history", messages: history }));
+            // A full window implies older messages exist → let the app page back.
+            ws.send(JSON.stringify({
+              type: "history",
+              messages: history,
+              hasMore: history.length >= INITIAL_HISTORY_LIMIT,
+            }));
           }
         } catch (e) {
           console.error("Error loading history:", e);
         }
       });
     }
+    return;
+  }
+
+  // "Scroll up to load older messages." The app tells us how many messages it
+  // already shows (`loaded`); we over-fetch `loaded + PAGE` from the file tail
+  // and return only the older slice the app is missing. No reader/offset plumbing
+  // is needed — the readers already slice the last N from a byte-capped tail, so
+  // asking for a bigger N and dropping the newest `loaded` yields the prior page.
+  if (msg.type === "load_history") {
+    if (!isValidSessionId(msg.sessionId)) {
+      ws.send(JSON.stringify({ type: "error", message: `No active session: ${msg.sessionId}` }));
+      return;
+    }
+    const session = ctx.activeSessions.get(msg.sessionId);
+    const historyId = session?.summary.cliSessionId;
+    const reader = session ? readerByCli[session.summary.cli] : undefined;
+    const loaded = Math.max(0, Math.floor(Number(msg.loaded) || 0));
+    // Kiro has no per-conversation id (cliSessionId is undefined), so paging
+    // no-ops there; everyone else resolves cleanly from the active session.
+    if (!session || !historyId || !reader) {
+      ws.send(JSON.stringify({ type: "history_page", messages: [], hasMore: false }));
+      return;
+    }
+    setImmediate(async () => {
+      try {
+        const want = loaded + HISTORY_PAGE_SIZE;
+        const full = reader(historyId, want);
+        // full = the newest `want` messages; the app already has the newest
+        // `loaded`, so the page it lacks is everything before those.
+        const older = full.slice(0, Math.max(0, full.length - loaded));
+        // We filled the whole over-fetch window → the tail likely holds more.
+        const hasMore = full.length >= want;
+        ws.send(JSON.stringify({ type: "history_page", messages: older, hasMore }));
+      } catch (e) {
+        console.error("Error paging history:", e);
+        ws.send(JSON.stringify({ type: "history_page", messages: [], hasMore: false }));
+      }
+    });
     return;
   }
 

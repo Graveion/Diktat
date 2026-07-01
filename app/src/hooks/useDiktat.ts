@@ -129,11 +129,26 @@ export function useDiktat(relay?: RelayDescriptor) {
   // True between spawned/resumed and the first history (or output) event.
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Older-message paging ("scroll up to load more"). hasMore reflects whether
+  // the daemon believes older messages exist; paging guards against overlapping
+  // requests. messagesRef gives loadMoreHistory the current count without
+  // re-creating the callback on every message.
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyPaging, setHistoryPaging] = useState(false);
+  // Ref mirrors so loadMoreHistory can guard synchronously without depending on
+  // (and re-binding to) the state values.
+  const historyHasMoreRef = useRef(false);
+  const historyPagingRef = useRef(false);
+  const messagesRef = useRef<DiktatMessage[]>([]);
   const [stats, setStats] = useState<AggregatedStats | null>(null);
   const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   // Authoritative summary of the most recent run (from the exit frame). Cleared
   // when a new run starts so the chat's last-run card reflects the latest run.
   const [lastRunSummary, setLastRunSummary] = useState<RunSummary | null>(null);
+
+  // Mirror messages into a ref so loadMoreHistory reads the live count without
+  // being re-created (and re-bound in ChatScreen) on every streamed chunk.
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const connect = useCallback(async () => {
     const relayCfg = relayRef.current;
@@ -324,6 +339,10 @@ export function useDiktat(relay?: RelayDescriptor) {
           setMessages([]);
           setStreaming(false);
           setHistoryLoading(true);
+          historyHasMoreRef.current = false;
+          historyPagingRef.current = false;
+          setHistoryHasMore(false);
+          setHistoryPaging(false);
           info("SESSION", `${msg.type}: sessionId=${msg.session.id} cli=${msg.session.cli} project=${msg.session.project}`);
         }
         return;
@@ -339,7 +358,21 @@ export function useDiktat(relay?: RelayDescriptor) {
           return;
         }
         setMessages(msgs);
-        info("SESSION", `history: ${msgs.length} messages loaded`);
+        historyHasMoreRef.current = msg.hasMore === true;
+        setHistoryHasMore(msg.hasMore === true);
+        info("SESSION", `history: ${msgs.length} messages loaded (hasMore=${msg.hasMore === true})`);
+        return;
+      }
+
+      if (msg.type === "history_page") {
+        const older = (msg.messages ?? []) as DiktatMessage[];
+        historyPagingRef.current = false;
+        historyHasMoreRef.current = msg.hasMore === true;
+        setHistoryPaging(false);
+        setHistoryHasMore(msg.hasMore === true);
+        // Prepend older messages. Ignore an empty page (nothing older after all).
+        if (older.length > 0) setMessages((prev) => [...older, ...prev]);
+        info("SESSION", `history_page: +${older.length} older (hasMore=${msg.hasMore === true})`);
         return;
       }
 
@@ -483,6 +516,10 @@ export function useDiktat(relay?: RelayDescriptor) {
     setStreaming(false);
     setCurrentTool(null);
     setHistoryLoading(false);
+    historyHasMoreRef.current = false;
+    historyPagingRef.current = false;
+    setHistoryHasMore(false);
+    setHistoryPaging(false);
   }, []);
 
   const cancelMessage = useCallback((sessionId: string) => {
@@ -545,6 +582,23 @@ export function useDiktat(relay?: RelayDescriptor) {
     return true;
   }, [activeSessionId]);
 
+  // Fetch the page of messages just before the ones currently shown. The daemon
+  // over-fetches from the session-file tail and returns only the older slice.
+  // Guarded so overlapping scroll events don't fire duplicate requests.
+  const loadMoreHistory = useCallback(() => {
+    if (!activeSessionId) return;
+    if (!historyHasMoreRef.current || historyPagingRef.current) return;
+    if (ws.current?.readyState !== WebSocket.OPEN) return;
+    historyPagingRef.current = true;
+    setHistoryPaging(true);
+    info("SESSION", `load_history: loaded=${messagesRef.current.length}`);
+    ws.current.send(JSON.stringify({
+      type: "load_history",
+      sessionId: activeSessionId,
+      loaded: messagesRef.current.length,
+    }));
+  }, [activeSessionId]);
+
   const registerPushToken = useCallback((token: string) => {
     pushTokenRef.current = token;
     info("PUSH", `Push token registered: ${token.slice(0, 30)}…`);
@@ -571,5 +625,6 @@ export function useDiktat(relay?: RelayDescriptor) {
     messages, streaming, currentTool, historyLoading, stats, lastRunSummary, daemonVersion, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
+    historyHasMore, historyPaging, loadMoreHistory,
   };
 }

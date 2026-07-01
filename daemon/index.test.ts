@@ -137,6 +137,77 @@ test("resume: claude session → resumed + async history sent", async () => {
   expect(hist.messages).toHaveLength(1);
 });
 
+test("resume: initial history is capped at 40 with hasMore when the window fills", async () => {
+  const { ws, sent } = mockWs();
+  // A reader that returns the last `limit` of a 100-message conversation.
+  const total = 100;
+  const reader = (_id: string, limit = 20) => {
+    const n = Math.min(limit, total);
+    return Array.from({ length: n }, (_, i) => ({ role: "user", text: `m${total - n + i}` })) as any;
+  };
+  const ctx = makeCtx({ sessionFactory: recordingFactory([]), readClaudeHistory: reader });
+  await handleClientMessage(ctx, ws, { type: "resume", sessionId: "sess-1", isClaudeSession: true, project: "/p" });
+  await new Promise((r) => setTimeout(r, 5));
+  const hist = sent.find((m) => m.type === "history");
+  expect(hist.messages).toHaveLength(40);
+  expect(hist.hasMore).toBe(true);
+  expect(hist.messages[0].text).toBe("m60"); // last 40 of 100
+});
+
+// ---------------------------------------------------------------------------
+// load_history (scroll-up paging)
+// ---------------------------------------------------------------------------
+
+/** Reader over a `total`-message conversation: returns the last `limit`. */
+function pagingReader(total: number) {
+  return (_id: string, limit = 20) => {
+    const n = Math.min(limit, total);
+    return Array.from({ length: n }, (_, i) => ({ role: "user", text: `m${total - n + i}` })) as any;
+  };
+}
+
+test("load_history: returns the older page before the loaded messages", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx({ readClaudeHistory: pagingReader(100) });
+  ctx.activeSessions.set("s1", fakeSession("s1", "cli-1"));
+  await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "s1", loaded: 40 });
+  await new Promise((r) => setTimeout(r, 5));
+  const page = sent.find((m) => m.type === "history_page");
+  expect(page.messages).toHaveLength(40);      // want=80, minus 40 loaded
+  expect(page.messages[0].text).toBe("m20");   // page = m20..m59
+  expect(page.messages[39].text).toBe("m59");
+  expect(page.hasMore).toBe(true);
+});
+
+test("load_history: at the top, returns the remainder and hasMore=false", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx({ readClaudeHistory: pagingReader(100) });
+  ctx.activeSessions.set("s1", fakeSession("s1", "cli-1"));
+  await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "s1", loaded: 80 });
+  await new Promise((r) => setTimeout(r, 5));
+  const page = sent.find((m) => m.type === "history_page");
+  expect(page.messages).toHaveLength(20);      // want=120 but only 100 exist
+  expect(page.messages[0].text).toBe("m0");
+  expect(page.hasMore).toBe(false);
+});
+
+test("load_history: unknown session → empty page, hasMore=false", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx({ readClaudeHistory: pagingReader(100) });
+  await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "ghost", loaded: 40 });
+  expect(sent[0]).toEqual({ type: "history_page", messages: [], hasMore: false });
+});
+
+test("load_history: kiro session (no cliSessionId) → empty page (paging unsupported)", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx({ readKiroHistory: pagingReader(100) });
+  const s = fakeSession("k1");
+  s.summary = { id: "k1", cli: "kiro", project: "/p", cliSessionId: undefined, lastActiveAt: "t" };
+  ctx.activeSessions.set("k1", s);
+  await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "k1", loaded: 40 });
+  expect(sent[0]).toEqual({ type: "history_page", messages: [], hasMore: false });
+});
+
 // ---------------------------------------------------------------------------
 // input
 // ---------------------------------------------------------------------------

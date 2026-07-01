@@ -370,6 +370,12 @@ type Props = {
   currentTool: string | null;
   reconnecting: boolean;
   historyLoading: boolean;
+  /** True while older messages exist to page in ("scroll up to load more"). */
+  historyHasMore?: boolean;
+  /** True while a page request is in flight. */
+  historyPaging?: boolean;
+  /** Request the page of messages just before the ones currently shown. */
+  onLoadMore?: () => void;
   activeSessionId: string | null;
   sessionCli?: string;
   agents?: AgentSelectionMap;
@@ -390,6 +396,7 @@ type Props = {
 
 export function ChatScreen({
   messages, streaming, currentTool, reconnecting, historyLoading,
+  historyHasMore, historyPaging, onLoadMore,
   activeSessionId, sessionCli, agents, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
   lastRunSummary, sessionStats,
 }: Props) {
@@ -445,6 +452,11 @@ export function ChatScreen({
     }, 500);
   }, []);
   const listRef = useRef<ScrollView>(null);
+  // When paging in older messages we prepend content, which grows the list at
+  // the top and would visually jump the viewport. Capture the pre-prepend
+  // height + offset here so onContentSizeChange can re-anchor to what the user
+  // was reading (new scrollY = oldOffset + heightDelta).
+  const pendingAnchorRef = useRef<{ prevHeight: number; prevOffset: number } | null>(null);
   const inputRef = useRef<TextInput>(null);
   const prevStreaming = useRef(streaming);
   const inputHistory = useRef<string[]>([]);
@@ -841,18 +853,39 @@ export function ChatScreen({
           stale zero-height measurements. ScrollView (not FlatList) avoids a
           new-arch crash where FlatList internally accesses .scrollView on ref. */}
       <View style={{ flex: 1 }}>
+        {historyPaging ? (
+          <View style={styles.pagingSpinner} pointerEvents="none">
+            <ActivityIndicator color={colors.textMuted} size="small" />
+          </View>
+        ) : null}
         <ScrollView
           ref={listRef}
           style={styles.messageList}
           contentContainerStyle={styles.messagesContent}
           keyboardDismissMode="on-drag"
-          onContentSizeChange={(_w, _h) => {
+          onContentSizeChange={(_w, h) => {
+            // A pending page just prepended older messages — restore the read
+            // position instead of scrolling to the bottom.
+            const anchor = pendingAnchorRef.current;
+            if (anchor) {
+              pendingAnchorRef.current = null;
+              const delta = h - anchor.prevHeight;
+              if (delta > 0) listRef.current?.scrollTo({ y: anchor.prevOffset + delta, animated: false });
+              return;
+            }
             if (!userScrolledAwayRef.current) {
               listRef.current?.scrollToEnd({ animated: false });
             }
           }}
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
             const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            // Near the top with older messages available → page back. Capture the
+            // anchor first so the prepend doesn't jump the viewport. historyPaging
+            // (and the hook's own guard) stop this firing repeatedly.
+            if (contentOffset.y < 120 && historyHasMore && !historyPaging && onLoadMore) {
+              pendingAnchorRef.current = { prevHeight: contentSize.height, prevOffset: contentOffset.y };
+              onLoadMore();
+            }
             // Show the scroll-to-bottom button when > 60px from bottom.
             // Only commit state when the value flips — onScroll fires
             // continuously and each set re-renders the whole screen.
@@ -1287,6 +1320,7 @@ const styles = StyleSheet.create({
   // scrollToEnd (called from the useEffect below) jumps to the correct end.
   messagesContent: { padding: 14, paddingBottom: 8 },
   historyLoadingContainer: { alignItems: "center", marginTop: 100 },
+  pagingSpinner: { position: "absolute", top: 8, left: 0, right: 0, alignItems: "center", zIndex: 10 },
   emptyContainer: { alignItems: "center", marginTop: 100, paddingHorizontal: 48 },
   emptyTitle: { fontFamily: fonts.bodySemi, color: colors.textSub, fontSize: 15, marginBottom: 8 },
   emptyHint: { fontFamily: fonts.body, color: colors.textSub, fontSize: 13, textAlign: "center", lineHeight: 20 },
