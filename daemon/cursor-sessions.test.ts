@@ -82,6 +82,24 @@ test("readFirstUserMessage: strips <user_query> and <timestamp> wrappers", () =>
   ).toBe("Fix the bug please");
 });
 
+test("readFirstUserMessage: extracts <user_query>, drops Cursor's injected preamble", () => {
+  // The "Briefly inform…" preamble sits OUTSIDE the tags; only the query inside
+  // is user-authored and should survive.
+  expect(
+    firstMessage([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Briefly inform the user of what you are about to do.\n<user_query>\nAdd a dark mode toggle\n</user_query>",
+          },
+        ],
+      },
+    ]),
+  ).toBe("Add a dark mode toggle");
+});
+
 test("readFirstUserMessage: handles array content with text block", () => {
   expect(
     firstMessage([{ role: "user", content: [{ type: "text", text: "Hello from array content" }] }]),
@@ -175,6 +193,42 @@ test("readCursorHistory: handles entry.message?.content ?? entry.content fallbac
   const wrapped = history([{ role: "user", message: { content: [{ type: "text", text: "Wrapped content" }] } }]);
   expect(wrapped).toHaveLength(1);
   expect(wrapped[0]!.text).toBe("Wrapped content");
+});
+
+test("readCursorHistory: user turn shows <user_query> content, not injected preamble", () => {
+  const messages = history([
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "<timestamp>2024-01-01T00:00:00Z</timestamp>\nBriefly inform the user of what you are about to do.\n<user_query>\nRefactor the auth module\n</user_query>",
+        },
+      ],
+    },
+    { role: "assistant", content: [{ type: "text", text: "On it." }] },
+  ]);
+  expect(messages).toHaveLength(2);
+  expect(messages[0]!.role).toBe("user");
+  expect(messages[0]!.text).toBe("Refactor the auth module");
+  expect(messages[0]!.text).not.toContain("Briefly inform");
+  expect(messages[0]!.text).not.toContain("user_query");
+});
+
+test("readCursorHistory: streamed text fragments concatenate seamlessly (no lost spaces / stray newlines)", () => {
+  const messages = history([
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "I'll update the " },
+        { type: "text", text: "[REDACTED]" }, // interleaved reasoning — dropped, no gap
+        { type: "text", text: "auth module and run the tests." },
+      ],
+    },
+  ]);
+  expect(messages).toHaveLength(1);
+  expect(messages[0]!.text).toBe("I'll update the auth module and run the tests.");
+  expect(messages[0]!.text).not.toContain("\n\n");
 });
 
 test("readCursorHistory: limit applied correctly (returns last N messages)", () => {

@@ -29,6 +29,22 @@ function projectLabel(projectPath: string): string {
   return parts[parts.length - 1] ?? projectPath;
 }
 
+/**
+ * Cursor wraps the real user turn in <user_query>…</user_query> and prepends
+ * its own injected preamble — timestamps, plus agent instructions like
+ * "Briefly inform the user…" — *outside* those tags. When the tags are present
+ * the only user-authored text is inside them, so extract that and drop the rest
+ * (else the injected preamble displays in place of the actual question). Falls
+ * back to stripping bare <timestamp> wrappers when there is no <user_query>.
+ */
+export function stripCursorWrappers(text: string): string {
+  const matches = [...text.matchAll(/<user_query>([\s\S]*?)<\/user_query>/g)];
+  if (matches.length > 0) {
+    return matches.map((m) => m[1]!).join("\n\n").trim();
+  }
+  return text.replace(/<timestamp>[^<]*<\/timestamp>\s*/g, "").trim();
+}
+
 export function readFirstUserMessage(filePath: string): string {
     const chunk = readHead(filePath);
     for (const line of chunk.split("\n").filter(Boolean)) {
@@ -40,10 +56,8 @@ export function readFirstUserMessage(filePath: string): string {
             ? content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
             : typeof content === "string" ? content : "";
           if (text) {
-            // Strip Cursor's <timestamp> and <user_query> wrapper tags
-            const clean = text.replace(/<timestamp>[^<]*<\/timestamp>\s*/g, "")
-              .replace(/<user_query>\s*/g, "").replace(/<\/user_query>/g, "").trim();
-            return clean.slice(0, 120);
+            const clean = stripCursorWrappers(text);
+            if (clean) return clean.slice(0, 120);
           }
         }
       } catch { /* incomplete line at chunk boundary */ }
@@ -139,15 +153,25 @@ export function readCursorHistory(sessionId: string, limit = 20, projectsDir = C
             }
           }
 
-          const text = Array.isArray(content)
+          // Cursor streams a single assistant message as consecutive `text`
+          // fragments within one entry. Concatenate them seamlessly ("") — the
+          // model's own newlines are already inside the fragments, so trimming
+          // each and joining with "\n\n" (the old behaviour) both dropped the
+          // space at a mid-word split and injected spurious blank lines. Strip
+          // [REDACTED] reasoning inline; trim only the final assembled text.
+          let text = Array.isArray(content)
             ? content
                 .filter((c: any) => c.type === "text")
-                .map((c: any) => ((c.text ?? "") as string).replace(/\[REDACTED\]/gi, "").trim())
-                .filter(Boolean)
-                .join("\n\n")
+                .map((c: any) => ((c.text ?? "") as string).replace(/\[REDACTED\]/gi, ""))
+                .join("")
+                .trim()
             : typeof content === "string"
               ? content.replace(/\[REDACTED\]/g, "").trim()
               : "";
+
+          // User turns carry Cursor's <user_query> wrapper + injected preamble;
+          // show only the user-authored text (same as the session-list preview).
+          if (role === "user") text = stripCursorWrappers(text);
 
           if (text.trim()) messages.push({ role, text });
         } catch {
