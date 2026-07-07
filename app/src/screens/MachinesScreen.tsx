@@ -30,6 +30,11 @@ type Props = {
   onUnpair: (id: string) => Promise<void>;
   onSignOut: () => void;
   onDeleteAccount: () => Promise<void>;
+  /** Open the paywall / subscription options. Persistent entry point so plans
+   *  are reachable without an active session (App Store review requirement). */
+  onManageSubscription?: () => void;
+  /** Whether the user currently has the Pro entitlement (labels the row). */
+  isPro?: boolean;
   /** Enter demo mode without pairing a Mac (used for App Store review). */
   onTryDemo?: () => void;
 };
@@ -53,6 +58,8 @@ export function MachinesScreen({
   onUnpair,
   onSignOut,
   onDeleteAccount,
+  onManageSubscription,
+  isPro,
   onTryDemo,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
@@ -266,6 +273,24 @@ export function MachinesScreen({
           <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Account</Text>
+
+            {onManageSubscription ? (
+              <>
+                <TouchableOpacity
+                  testID="manage-subscription"
+                  style={styles.sheetRow}
+                  onPress={() => { setSettingsOpen(false); onManageSubscription(); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isPro ? "Manage subscription" : "View plans and subscribe"}
+                >
+                  <Ionicons name="pricetag-outline" size={20} color={colors.accent} />
+                  <Text style={[styles.sheetRowText, { color: colors.text }]}>
+                    {isPro ? "Manage subscription" : "View plans & subscribe"}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.sheetDivider} />
+              </>
+            ) : null}
 
             <TouchableOpacity style={styles.sheetRow} onPress={() => { setSettingsOpen(false); onSignOut(); }} accessibilityRole="button">
               <Ionicons name="log-out-outline" size={20} color={colors.textSub} />

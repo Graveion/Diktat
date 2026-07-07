@@ -336,6 +336,8 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           onUnpair={machines.unpair}
           onSignOut={auth.signOut}
           onDeleteAccount={auth.deleteAccount}
+          onManageSubscription={() => setPaywallVisible(true)}
+          isPro={ent.isPro}
           onTryDemo={onTryDemo}
         />
       ) : screen === "sessions" ? (
