@@ -4,6 +4,9 @@ import * as Updates from "expo-updates";
 // Hosted legal/support pages (GitHub Pages — see /docs).
 export const PRIVACY_URL = "https://graveion.github.io/Diktat/privacy.html";
 export const SUPPORT_URL = "https://graveion.github.io/Diktat/support.html";
+// Apple's standard EULA (Terms of Use). Required for auto-renewable subscriptions
+// — linked from the paywall and repeated in the App Store description metadata.
+export const TERMS_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
 // Daemon install one-liner, shown on the machines empty state.
 export const INSTALL_COMMAND = "curl -fsSL https://graveion.github.io/Diktat/install.sh | bash";

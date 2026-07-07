@@ -7,7 +7,9 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  Linking,
 } from "react-native";
+import { PRIVACY_URL, TERMS_URL } from "../constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import type { PurchasesPackage } from "react-native-purchases";
@@ -178,6 +180,18 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
             <Text style={styles.footerLink}>Restore</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Auto-renewable subscription — Apple requires functional Terms (EULA)
+            and Privacy links at the point of purchase (App Store 3.1.2). */}
+        <View style={styles.legalRow}>
+          <TouchableOpacity onPress={() => Linking.openURL(TERMS_URL)} accessibilityRole="link">
+            <Text style={styles.legalLink}>Terms of Use</Text>
+          </TouchableOpacity>
+          <Text style={styles.footerDot}>·</Text>
+          <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
+            <Text style={styles.legalLink}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -253,4 +267,7 @@ const styles = StyleSheet.create({
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 28 },
   footerLink: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.accent },
   footerDot: { color: colors.textMuted },
+
+  legalRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 14 },
+  legalLink: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, textDecorationLine: "underline" },
 });
