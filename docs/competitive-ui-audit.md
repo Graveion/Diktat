@@ -13,6 +13,26 @@ the phone"; Cursor pushes "needs input." Diktat only has *pre-flight* modes
 command/diff + Allow / Deny / Allow-for-session, with haptic + push. Unlocks
 safer default permission modes. (code.claude.com/docs/en/remote-control)
 
+> **DEFERRED (spiked 2026-07-08).** No portable path across Diktat's 5 CLIs.
+> Findings:
+> - Claude 2.x headless (`claude -p`) has **no in-turn approval round-trip**.
+>   `--permission-prompt-tool` (the 1.x hook) is **removed**; default-mode
+>   headless just auto-*denies* and continues (emits `permission_denials`),
+>   even under bidirectional `--input-format stream-json` (no `control_request`
+>   is emitted without the Agent SDK control handshake).
+> - The real round-trip is the **Agent SDK `canUseTool` callback** — but that's
+>   **Claude-only**, and would mean a second execution path (SDK) alongside the
+>   CLI-spawn model used for Cursor/Codex/Copilot/Kiro, each of which has its own
+>   (non-standard) approval model. Five different round-trips for one feature.
+> - Agent SDK *can* reuse the local `~/.claude` subscription session (no API key)
+>   and shares the same monthly Agent-SDK credit `claude -p` already spends, so
+>   billing/auth isn't the blocker — the multi-CLI fragmentation is.
+> - **Remote Control** is a first-party Anthropic bridge to *their* web/mobile
+>   clients (outbound HTTPS to Anthropic's API); not embeddable by a third-party
+>   app, and Claude-only. Not a fit.
+> Revisit if/when a cross-CLI approval story exists, or accept Claude-only via
+> the Agent SDK as a deliberate exception.
+
 **H2 — Live Activities / Dynamic Island for the running turn.**
 Cursor + Copilot put agent status on the lock screen / Dynamic Island. Diktat
 has fire-on-finish push only. Add a Live Activity: session label + elapsed +
