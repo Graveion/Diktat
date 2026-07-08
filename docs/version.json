@@ -1,5 +1,5 @@
 {
-  "latest": "0.1.4",
+  "latest": "0.1.5",
   "min": "0.1.0",
-  "notes": "Broadcast running-session ids for the app's live 'running' dot; Cursor live-stream + history text fixes; scroll-up history paging; clearer agent-CLI auth errors; keep-alive reconnect fix."
+  "notes": "Tag session frames with sessionId for concurrent sessions (switch without losing state); live running-session dot; Cursor live-stream + history text fixes; scroll-up history paging; clearer agent-CLI auth errors."
 }

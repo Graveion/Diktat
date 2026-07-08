@@ -159,6 +159,59 @@ export function useDiktat(relay?: RelayDescriptor) {
   // being re-created (and re-bound in ChatScreen) on every streamed chunk.
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
+  // ── Concurrent sessions (M2) ──────────────────────────────────────────────
+  // A session the phone has switched away from keeps running on the daemon and
+  // still streams frames (now stamped with sessionId). We fold those into a
+  // per-session buffer so switching back is instant and lossless — no reload.
+  // The *active* session keeps using the top-level state above unchanged.
+  type SessionBuffer = { messages: DiktatMessage[]; streaming: boolean; lastRunSummary: RunSummary | null; hasMore: boolean };
+  const sessionBuffers = useRef<Map<string, SessionBuffer>>(new Map());
+  // Ref mirror of activeSessionId — the ws onmessage closure is long-lived, so
+  // it must not read the state variable directly (it would be stale).
+  const activeSessionIdRef = useRef<string | null>(null);
+  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+  // Ref mirrors so leaveSession (a []-dep callback) can snapshot the live view.
+  const streamingRef = useRef(false);
+  const lastRunSummaryRef = useRef<RunSummary | null>(null);
+  useEffect(() => { streamingRef.current = streaming; }, [streaming]);
+  useEffect(() => { lastRunSummaryRef.current = lastRunSummary; }, [lastRunSummary]);
+
+  // Apply a background session's frame to its buffer (mirrors the active-path
+  // reducers below, but on a plain array). Returns the next buffer.
+  const foldIntoBuffer = (buf: SessionBuffer, msg: any): SessionBuffer => {
+    switch (msg.type) {
+      case "history":
+        return { ...buf, messages: (msg.messages ?? []) as DiktatMessage[], hasMore: msg.hasMore === true };
+      case "history_page":
+        return { ...buf, messages: [...((msg.messages ?? []) as DiktatMessage[]), ...buf.messages], hasMore: msg.hasMore === true };
+      case "output":
+        return { ...buf, streaming: true, messages: appendOutput(buf.messages, msg.text) };
+      case "tool_use":
+        return {
+          ...buf,
+          messages: [...buf.messages, {
+            role: "tool", text: "",
+            toolName: toolDisplayString(msg.name, msg.path) ?? msg.name,
+            toolPath: msg.path, toolId: msg.id, toolDiff: msg.diff, toolPreview: msg.preview,
+            toolCommand: msg.command, toolTruncated: msg.truncated, toolFullSize: msg.fullSize,
+          }],
+        };
+      case "tool_result": {
+        if (!msg.toolUseId) return buf;
+        const idx = [...buf.messages].reverse().findIndex((m) => m.role === "tool" && m.toolId === msg.toolUseId);
+        if (idx === -1) return buf;
+        const realIdx = buf.messages.length - 1 - idx;
+        const next = buf.messages.slice();
+        next[realIdx] = { ...next[realIdx], toolResult: msg.preview, toolResultTruncated: msg.truncated, toolFullSize: next[realIdx].toolFullSize ?? msg.fullSize };
+        return { ...buf, messages: next };
+      }
+      case "exit":
+        return { ...buf, streaming: false, lastRunSummary: (msg.summary as RunSummary) ?? buf.lastRunSummary };
+      default:
+        return buf;
+    }
+  };
+
   const connect = useCallback(async () => {
     const relayCfg = relayRef.current;
     if (!relayCfg) { warn("WS", "connect() called with no relay descriptor — skipping"); return; }
@@ -281,6 +334,19 @@ export function useDiktat(relay?: RelayDescriptor) {
         return;
       }
 
+      // Frames stamped for a session other than the one on screen belong to a
+      // backgrounded concurrent session — fold them into its buffer and stop,
+      // so they never touch the active view. (Untagged frames from an older
+      // daemon have no sessionId and fall through to the active handlers.)
+      const fid: string | null = typeof msg.sessionId === "string" ? msg.sessionId : null;
+      if (fid && fid !== activeSessionIdRef.current &&
+          (msg.type === "output" || msg.type === "tool_use" || msg.type === "tool_result" ||
+           msg.type === "exit" || msg.type === "history" || msg.type === "history_page")) {
+        const prev = sessionBuffers.current.get(fid) ?? { messages: [], streaming: false, lastRunSummary: null, hasMore: false };
+        sessionBuffers.current.set(fid, foldIntoBuffer(prev, msg));
+        return;
+      }
+
       if (msg.type === "connected") {
         setState("connected");
         setConnIssue(null); // fully healthy: relay up + daemon handshaked
@@ -335,6 +401,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
       if (msg.type === "spawned" || msg.type === "resumed") {
         discardOutput.current = false;
+        activeSessionIdRef.current = msg.session.id; // sync — closures read this
         setActiveSessionId(msg.session.id);
         // Register spawned sessions for auto-resume too — without this, a WS
         // drop after spawn leaves the new session unattached on reconnect.
@@ -526,6 +593,8 @@ export function useDiktat(relay?: RelayDescriptor) {
     intentionalDisconnect.current = true;
     if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
     ws.current?.close();
+    sessionBuffers.current.clear();
+    activeSessionIdRef.current = null;
     setState("disconnected");
     setReconnecting(false);
     setConnIssue(null);
@@ -533,7 +602,21 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   const leaveSession = useCallback(() => {
-    info("SESSION", "leaveSession() — discarding further output from current session");
+    info("SESSION", "leaveSession() — snapshotting session, returning to list");
+    // Snapshot the current view so returning to this session is instant and
+    // lossless; the daemon keeps it running and streams into its buffer.
+    const id = activeSessionIdRef.current;
+    if (id) {
+      sessionBuffers.current.set(id, {
+        messages: messagesRef.current,
+        streaming: streamingRef.current,
+        lastRunSummary: lastRunSummaryRef.current,
+        hasMore: historyHasMoreRef.current,
+      });
+    }
+    activeSessionIdRef.current = null;
+    // Untagged frames (older daemon) can't be routed by id, so still discard
+    // them; tagged frames are captured by the background router instead.
     discardOutput.current = true;
     pendingResumeRef.current = null;
     isAutoResumingRef.current = false;
@@ -568,6 +651,29 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   const resumeSession = useCallback((session: DiktatSession) => {
+    // Fast path: we already hold this session's buffer (switched away while it
+    // kept running). Restore it instantly — the daemon session is still live,
+    // so no resume round-trip / history reload is needed.
+    const buffered = sessionBuffers.current.get(session.id);
+    if (buffered) {
+      info("SESSION", `resume (restore from buffer): id=${session.id}`);
+      sessionBuffers.current.delete(session.id); // now the active view again
+      discardOutput.current = false;
+      hasReceivedOutput.current = true; // skip the trailing history load
+      isAutoResumingRef.current = false;
+      activeSessionIdRef.current = session.id;
+      pendingResumeRef.current = { session };
+      setActiveSessionId(session.id);
+      setMessages(buffered.messages);
+      setStreaming(buffered.streaming);
+      setLastRunSummary(buffered.lastRunSummary);
+      setHistoryLoading(false);
+      historyPagingRef.current = false;
+      historyHasMoreRef.current = buffered.hasMore;
+      setHistoryPaging(false);
+      setHistoryHasMore(buffered.hasMore);
+      return;
+    }
     info("SESSION", `resume: id=${session.id} source=${session.source} cli=${session.cli} project=${session.project}`);
     track("session_resumed", { source: session.source, cli: session.cli ?? "" });
     pendingResumeRef.current = { session };

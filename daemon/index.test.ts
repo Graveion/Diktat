@@ -195,7 +195,7 @@ test("load_history: unknown session → empty page, hasMore=false", async () => 
   const { ws, sent } = mockWs();
   const ctx = makeCtx({ readClaudeHistory: pagingReader(100) });
   await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "ghost", loaded: 40 });
-  expect(sent[0]).toEqual({ type: "history_page", messages: [], hasMore: false });
+  expect(sent[0]).toEqual({ type: "history_page", sessionId: "ghost", messages: [], hasMore: false });
 });
 
 test("load_history: kiro session (no cliSessionId) → empty page (paging unsupported)", async () => {
@@ -205,7 +205,7 @@ test("load_history: kiro session (no cliSessionId) → empty page (paging unsupp
   s.summary = { id: "k1", cli: "kiro", project: "/p", cliSessionId: undefined, lastActiveAt: "t" };
   ctx.activeSessions.set("k1", s);
   await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "k1", loaded: 40 });
-  expect(sent[0]).toEqual({ type: "history_page", messages: [], hasMore: false });
+  expect(sent[0]).toEqual({ type: "history_page", sessionId: "k1", messages: [], hasMore: false });
 });
 
 // ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ test("spawn wires onRunningChange → broadcasts sessions_running", async () => 
   const { ws, sent } = mockWs();
   const ctx = makeCtx({ sessionFactory: recordingFactory([]) });
   await handleClientMessage(ctx, ws, { type: "spawn", cli: "claude", project: "/allowed/project" });
-  const session = ctx.activeSessions.get("new-session-id");
+  const session = ctx.activeSessions.get("new-session-id") as any;
   expect(typeof session.onRunningChange).toBe("function");
   // Simulate a run starting: flip the flag and fire the callback.
   session.isRunning = true;

@@ -153,6 +153,13 @@ export class Session {
     this.onRunningChange?.();
   }
 
+  /** Send a frame to the phone, stamped with this session's id so the app can
+   *  route it to the right per-session buffer (concurrent sessions share the
+   *  one phone connection). */
+  private emit(frame: Record<string, unknown>): void {
+    this.ws.send(JSON.stringify({ ...frame, sessionId: this.data.id }));
+  }
+
   constructor(ws: ServerWebSocket<unknown>, data: SessionData) {
     this.ws = ws;
     this.data = data;
@@ -372,9 +379,9 @@ export class Session {
         if (!isStderr && (this.data.cli === "kiro" || this.data.cli === "codex")) {
           // Kiro/Codex print styled text; strip ANSI before forwarding.
           const clean = stripAnsi(chunk);
-          if (clean) this.ws.send(JSON.stringify({ type: "output", text: clean }));
+          if (clean) this.emit({ type: "output", text: clean });
         } else {
-          this.ws.send(JSON.stringify({ type: "output", text: chunk }));
+          this.emit({ type: "output", text: chunk });
         }
       };
       while (true) {
@@ -426,15 +433,15 @@ export class Session {
       const contract = AGENT_CONTRACTS[this.data.cli];
       const name = contract?.displayName ?? this.data.cli;
       const login = contract?.login.command ?? "re-authenticate the CLI";
-      this.ws.send(JSON.stringify({
+      this.emit({
         type: "error",
         message: `${name} on this machine isn't authenticated. On the machine, run \`${login}\`, then resend.`,
-      }));
+      });
     }
 
     // Finalize once and reuse for the exit frame, local persistence, and push.
     const summary = finalizeRunSummary(this.run, exitCode);
-    this.ws.send(JSON.stringify({ type: "exit", code: exitCode, summary }));
+    this.emit({ type: "exit", code: exitCode, summary });
 
     // Persist the run locally (daemon-only) for usage aggregates. Best-effort.
     recordRun(
@@ -465,7 +472,7 @@ export class Session {
         if (json.type === "assistant") {
           for (const block of json.message?.content ?? []) {
             if (block.type === "text") {
-              this.ws.send(JSON.stringify({ type: "output", text: block.text }));
+              this.emit({ type: "output", text: block.text });
             } else if (block.type === "tool_use") {
               const preview = buildToolUsePreview(block.name, block.input);
               const path = pickToolPath(block.input);
@@ -478,7 +485,7 @@ export class Session {
                 content: typeof block.input?.content === "string" ? block.input.content : undefined,
                 command: preview.command,
               });
-              this.ws.send(JSON.stringify({
+              this.emit({
                 type: "tool_use",
                 id: block.id,
                 name: block.name,
@@ -488,7 +495,7 @@ export class Session {
                 ...(preview.command ? { command: preview.command } : {}),
                 ...(preview.truncated ? { truncated: true } : {}),
                 ...(preview.fullSize ? { fullSize: preview.fullSize } : {}),
-              }));
+              });
             }
           }
         } else if (json.type === "user" && Array.isArray(json.message?.content)) {
@@ -502,13 +509,13 @@ export class Session {
               id: block.tool_use_id,
               preview: result.preview,
             });
-            this.ws.send(JSON.stringify({
+            this.emit({
               type: "tool_result",
               toolUseId: block.tool_use_id,
               preview: result.preview,
               truncated: result.truncated,
               fullSize: result.fullSize,
-            }));
+            });
           }
         }
       } catch {
@@ -516,7 +523,7 @@ export class Session {
         if (/no conversation found/i.test(line)) {
           return true; // signal: needs retry without --resume
         }
-        this.ws.send(JSON.stringify({ type: "output", text: line }));
+        this.emit({ type: "output", text: line });
       }
     }
     return false;
@@ -541,7 +548,7 @@ export class Session {
               // between words, and trimming each fragment fused them ("theauth").
               // Strip [redacted] markers only; skip a delta that's empty after.
               const text = block.text.replace(/\[redacted\]/gi, "");
-              if (text) this.ws.send(JSON.stringify({ type: "output", text }));
+              if (text) this.emit({ type: "output", text });
             }
           }
         }
@@ -645,7 +652,7 @@ export class Session {
         content: typeof anthropicInput?.content === "string" ? anthropicInput.content : undefined,
         command: preview.command,
       });
-      this.ws.send(JSON.stringify({
+      this.emit({
         type: "tool_use",
         ...(callId ? { id: callId } : {}),
         name,
@@ -655,7 +662,7 @@ export class Session {
         ...(preview.command ? { command: preview.command } : {}),
         ...(preview.truncated ? { truncated: true } : {}),
         ...(preview.fullSize ? { fullSize: preview.fullSize } : {}),
-      }));
+      });
       return;
     }
 
@@ -671,13 +678,13 @@ export class Session {
         id: callId,
         preview: result.preview,
       });
-      this.ws.send(JSON.stringify({
+      this.emit({
         type: "tool_result",
         toolUseId: callId,
         preview: result.preview,
         truncated: result.truncated,
         fullSize: result.fullSize,
-      }));
+      });
     }
   }
 }

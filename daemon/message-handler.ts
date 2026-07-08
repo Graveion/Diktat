@@ -211,6 +211,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
             // A full window implies older messages exist → let the app page back.
             ws.send(JSON.stringify({
               type: "history",
+              sessionId: session.id,
               messages: history,
               hasMore: history.length >= INITIAL_HISTORY_LIMIT,
             }));
@@ -240,7 +241,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
     // Kiro has no per-conversation id (cliSessionId is undefined), so paging
     // no-ops there; everyone else resolves cleanly from the active session.
     if (!session || !historyId || !reader) {
-      ws.send(JSON.stringify({ type: "history_page", messages: [], hasMore: false }));
+      ws.send(JSON.stringify({ type: "history_page", sessionId: msg.sessionId, messages: [], hasMore: false }));
       return;
     }
     setImmediate(async () => {
@@ -252,10 +253,10 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
         const older = full.slice(0, Math.max(0, full.length - loaded));
         // We filled the whole over-fetch window → the tail likely holds more.
         const hasMore = full.length >= want;
-        ws.send(JSON.stringify({ type: "history_page", messages: older, hasMore }));
+        ws.send(JSON.stringify({ type: "history_page", sessionId: session.id, messages: older, hasMore }));
       } catch (e) {
         console.error("Error paging history:", e);
-        ws.send(JSON.stringify({ type: "history_page", messages: [], hasMore: false }));
+        ws.send(JSON.stringify({ type: "history_page", sessionId: session.id, messages: [], hasMore: false }));
       }
     });
     return;
