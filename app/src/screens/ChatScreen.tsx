@@ -21,6 +21,7 @@ import {
 } from "../utils/voice";
 import { formatToolLabel } from "../utils/tools";
 import { computeRunStats, formatRunDuration, type RunStats } from "../utils/runStats";
+import { parseDiff, diffCounts, showLeadingWhitespace } from "../utils/diff";
 import { SettingsSheet } from "../components/SettingsSheet";
 import { colors, fonts } from "../theme";
 
@@ -201,12 +202,24 @@ function ToolPreviewDrawer({
       {blocks.map((b, i) => (
         <View key={i} style={toolDrawerStyles.block}>
           <View style={toolDrawerStyles.header}>
-            <Text style={toolDrawerStyles.headerLabel}>{
-              b.kind === "diff" ? "diff" :
-              b.kind === "preview" ? "preview" :
-              b.kind === "command" ? "command" :
-              "output"
-            }</Text>
+            {b.kind === "diff" ? (
+              (() => {
+                const c = diffCounts(parseDiff(b.text));
+                return (
+                  <View style={toolDrawerStyles.headerLeft}>
+                    <Text style={toolDrawerStyles.headerLabel}>diff</Text>
+                    {c.added > 0 ? <Text style={toolDrawerStyles.addCount}>+{c.added}</Text> : null}
+                    {c.removed > 0 ? <Text style={toolDrawerStyles.delCount}>−{c.removed}</Text> : null}
+                  </View>
+                );
+              })()
+            ) : (
+              <Text style={toolDrawerStyles.headerLabel}>{
+                b.kind === "preview" ? "preview" :
+                b.kind === "command" ? "command" :
+                "output"
+              }</Text>
+            )}
             <TouchableOpacity
               onPress={() => { Clipboard.setStringAsync(b.text); onCopy(); }}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -221,24 +234,29 @@ function ToolPreviewDrawer({
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={toolDrawerStyles.bodyContent}
+              contentContainerStyle={b.kind === "diff" ? undefined : toolDrawerStyles.bodyContent}
             >
               {b.kind === "diff" ? (
-                <Text style={toolDrawerStyles.line}>
-                  {b.text.split("\n").map((line, li, arr) => (
-                    <Text
-                      key={li}
-                      style={
-                        line.startsWith("+") ? toolDrawerStyles.lineAdd :
-                        line.startsWith("-") ? toolDrawerStyles.lineDel :
-                        line.startsWith("@@") ? toolDrawerStyles.lineHunk :
-                        toolDrawerStyles.lineCtx
-                      }
-                    >
-                      {line}{li < arr.length - 1 ? "\n" : ""}
-                    </Text>
-                  ))}
-                </Text>
+                <View>
+                  {parseDiff(b.text).map((row, li) => {
+                    if (row.kind === "sep") {
+                      return <Text key={li} style={toolDrawerStyles.diffSep}>{row.text}</Text>;
+                    }
+                    const rowStyle =
+                      row.kind === "add" ? toolDrawerStyles.rowAdd :
+                      row.kind === "del" ? toolDrawerStyles.rowDel : null;
+                    const marker = row.kind === "add" ? "+" : row.kind === "del" ? "−" : " ";
+                    const markerStyle =
+                      row.kind === "add" ? toolDrawerStyles.markAdd :
+                      row.kind === "del" ? toolDrawerStyles.markDel : toolDrawerStyles.markCtx;
+                    return (
+                      <View key={li} style={[toolDrawerStyles.diffRow, rowStyle]}>
+                        <Text style={[toolDrawerStyles.gutter, markerStyle]}>{marker}</Text>
+                        <Text style={toolDrawerStyles.diffText}>{showLeadingWhitespace(row.text) || " "}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
               ) : (
                 <Text style={[toolDrawerStyles.line, toolDrawerStyles.lineCtx]}>
                   {b.text}
@@ -1735,9 +1753,29 @@ const toolDrawerStyles = StyleSheet.create({
     lineHeight: 16,
   },
   lineCtx: { color: colors.codeText },
-  lineAdd: { color: colors.success, backgroundColor: "rgba(52,211,153,0.10)" },
-  lineDel: { color: colors.error, backgroundColor: "rgba(248,113,113,0.10)" },
-  lineHunk: { color: colors.textSub },
+
+  // Structured diff (H4): marker gutter + full-width tinted rows.
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  addCount: { fontFamily: fonts.mono, fontSize: 10, color: colors.success },
+  delCount: { fontFamily: fonts.mono, fontSize: 10, color: colors.error },
+  diffRow: { flexDirection: "row", alignItems: "flex-start", paddingRight: 12, minWidth: "100%" },
+  rowAdd: { backgroundColor: "rgba(52,211,153,0.12)" },
+  rowDel: { backgroundColor: "rgba(248,113,113,0.12)" },
+  gutter: {
+    fontFamily: fonts.mono, fontSize: 11, lineHeight: 16,
+    width: 18, textAlign: "center", paddingVertical: 1,
+  },
+  markAdd: { color: colors.success },
+  markDel: { color: colors.error },
+  markCtx: { color: colors.textFaint },
+  diffText: {
+    fontFamily: fonts.mono, fontSize: 11, lineHeight: 16,
+    color: colors.codeText, paddingVertical: 1, paddingLeft: 2,
+  },
+  diffSep: {
+    fontFamily: fonts.mono, fontSize: 10, color: colors.textSub,
+    backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 3,
+  },
   truncated: {
     fontFamily: fonts.body,
     fontSize: 10,
