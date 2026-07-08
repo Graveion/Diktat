@@ -136,6 +136,22 @@ export class Session {
   // Per-run accumulator of what the agent actually did (files/lines/tests/etc.).
   // Reset at the top of each runCLI; consumed when building the completion push.
   private run: RunAccumulator = newRunAccumulator();
+  // True while a CLI turn is executing (spans the retry recursion). Drives the
+  // "running now" dot on the app's session list — a session can keep running
+  // after the phone switches away, so the app needs to be told when this flips.
+  private _running = false;
+  /** Set by the daemon so a run start/stop can broadcast the running-set. */
+  onRunningChange?: () => void;
+
+  get isRunning(): boolean {
+    return this._running;
+  }
+
+  private setRunning(v: boolean): void {
+    if (this._running === v) return;
+    this._running = v;
+    this.onRunningChange?.();
+  }
 
   constructor(ws: ServerWebSocket<unknown>, data: SessionData) {
     this.ws = ws;
@@ -294,7 +310,12 @@ export class Session {
     const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent", copilot: "copilot", kiro: "kiro-cli", codex: "codex" };
     const cliPath = this.data.cliPath ?? CLI_FALLBACK[this.data.cli] ?? this.data.cli;
     const cwd = existsSync(this.data.project) ? this.data.project : process.env.HOME ?? process.cwd();
-    await this.runCLI(cliPath, cwd, text, pushToken);
+    this.setRunning(true);
+    try {
+      await this.runCLI(cliPath, cwd, text, pushToken);
+    } finally {
+      this.setRunning(false);
+    }
   }
 
   private async runCLI(cliPath: string, cwd: string, text: string, pushToken?: string, retry = false): Promise<void> {

@@ -27,6 +27,8 @@ type Props = {
   onOpenDebug?: () => void;
   /** Locally-persisted overall usage totals from the daemon. */
   overallStats?: StatsTotals | null;
+  /** Daemon session ids currently executing a turn — shows a "running" dot. */
+  runningSessionIds?: string[];
 };
 
 const CLI_LABELS: Record<string, string> = {
@@ -56,8 +58,8 @@ function cleanPreview(raw?: string): string | null {
   return t || null;
 }
 
-function SessionCard({ session: s, customTitle, showProject, onPress, onHide, onRename, formatDate }: {
-  session: DiktatSession; customTitle?: string; showProject?: string;
+function SessionCard({ session: s, customTitle, showProject, running, onPress, onHide, onRename, formatDate }: {
+  session: DiktatSession; customTitle?: string; showProject?: string; running?: boolean;
   onPress: () => void; onHide: () => void; onRename: () => void;
   formatDate: (iso: string) => string;
 }) {
@@ -85,9 +87,12 @@ function SessionCard({ session: s, customTitle, showProject, onPress, onHide, on
       >
         <View style={styles.sessionCardInner}>
           <View style={styles.sessionTop}>
-            <Text style={[styles.sessionTitle, !preview && styles.sessionTitleEmpty]} numberOfLines={2}>
-              {preview ?? "Empty session"}
-            </Text>
+            <View style={styles.sessionTopLeft}>
+              {running ? <View style={styles.runningDot} accessibilityLabel="Running" /> : null}
+              <Text style={[styles.sessionTitle, !preview && styles.sessionTitleEmpty]} numberOfLines={2}>
+                {preview ?? "Empty session"}
+              </Text>
+            </View>
             <View style={[styles.cliBadge, { borderColor: CLI_COLOR[s.cli] ?? colors.border }]}>
               <Text style={[styles.cliBadgeText, { color: CLI_COLOR[s.cli] ?? colors.textSub }]}>
                 {CLI_LABELS[s.cli] ?? s.cli}
@@ -129,7 +134,8 @@ function bestProjectName(path: string) {
   return last;
 }
 
-export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug, overallStats }: Props) {
+export function SessionsScreen({ sessions, clis, agents = {}, projects, connectedHost, connectionState, loading, onResume, onNew, onDisconnect, onOpenDebug, overallStats, runningSessionIds = [] }: Props) {
+  const runningSet = new Set(runningSessionIds);
   const insets = useSafeAreaInsets();
   const [showPicker, setShowPicker] = useState(false);
   const [selectedCli, setSelectedCli] = useState<string | null>(null);
@@ -329,6 +335,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                     session={item}
                     customTitle={titles[item.id]}
                     showProject={projectLabel}
+                    running={runningSet.has(item.id)}
                     onPress={() => onResume(item)}
                     onHide={() => handleHide(item)}
                     onRename={() => openRename(item)}
@@ -382,6 +389,7 @@ export function SessionsScreen({ sessions, clis, agents = {}, projects, connecte
                 <SessionCard
                   session={s}
                   customTitle={titles[s.id]}
+                  running={runningSet.has(s.id)}
                   onPress={() => onResume(s)}
                   onHide={() => handleHide(s)}
                   onRename={() => openRename(s)}
@@ -626,6 +634,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   sessionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
+  sessionTopLeft: { flexDirection: "row", alignItems: "center", gap: 7, flex: 1, marginRight: 8 },
+  runningDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success,
+    shadowColor: colors.success, shadowRadius: 5, shadowOpacity: 0.9, shadowOffset: { width: 0, height: 0 },
+  },
   sessionTitle: { fontFamily: fonts.bodySemi, color: colors.text, fontSize: 14, flex: 1, marginRight: 8, lineHeight: 20 },
   sessionTitleEmpty: { color: colors.textMuted, fontFamily: fonts.body, fontStyle: "italic" },
   sessionProjectLabel: { fontFamily: fonts.body, color: colors.textSub, fontSize: 12, marginBottom: 5 },

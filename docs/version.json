@@ -1,5 +1,5 @@
 {
-  "latest": "0.1.3",
+  "latest": "0.1.4",
   "min": "0.1.0",
-  "notes": "Fix Cursor live-stream spacing (deltas no longer trimmed), Cursor history fixes (user_query wrapper, fragment spacing), scroll-up history paging, clearer agent-CLI auth errors, keep-alive reconnect fix."
+  "notes": "Broadcast running-session ids for the app's live 'running' dot; Cursor live-stream + history text fixes; scroll-up history paging; clearer agent-CLI auth errors; keep-alive reconnect fix."
 }

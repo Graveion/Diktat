@@ -135,6 +135,9 @@ export function useDiktat(relay?: RelayDescriptor) {
   // True between spawned/resumed and the first history (or output) event.
   // Lets the UI show a loading state instead of the empty-session placeholder.
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Ids of sessions the daemon is actively running (may include background
+  // sessions the phone has switched away from). Drives the session-list dot.
+  const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
   // Older-message paging ("scroll up to load more"). hasMore reflects whether
   // the daemon believes older messages exist; paging guards against overlapping
   // requests. messagesRef gives loadMoreHistory the current count without
@@ -281,6 +284,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       if (msg.type === "connected") {
         setState("connected");
         setConnIssue(null); // fully healthy: relay up + daemon handshaked
+        setRunningSessionIds(Array.isArray(msg.runningSessionIds) ? msg.runningSessionIds : []);
         setClis(msg.clis ?? []);
         setAgents(msg.agents ?? {});
         setProjects(msg.projects ?? []);
@@ -386,6 +390,11 @@ export function useDiktat(relay?: RelayDescriptor) {
         // Prepend older messages. Ignore an empty page (nothing older after all).
         if (older.length > 0) setMessages((prev) => [...older, ...prev]);
         info("SESSION", `history_page: +${older.length} older (hasMore=${msg.hasMore === true})`);
+        return;
+      }
+
+      if (msg.type === "sessions_running") {
+        setRunningSessionIds(Array.isArray(msg.ids) ? msg.ids : []);
         return;
       }
 
@@ -638,7 +647,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   return {
-    state, reconnecting, connIssue, errorMessage, clis, agents, projects, sessions, activeSessionId,
+    state, reconnecting, connIssue, errorMessage, clis, agents, projects, sessions, activeSessionId, runningSessionIds,
     messages, streaming, currentTool, historyLoading, stats, lastRunSummary, daemonVersion, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,

@@ -62,6 +62,8 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
       kiroSessions: listKiroSessions(),
       // Locally-persisted usage aggregates (overall + per session).
       stats: aggregate(),
+      // Sessions with a live CLI turn right now — drives the "running" dot.
+      runningSessionIds: runningSessionIds(ctx),
     };
   } catch (e) {
     console.error("Error building connected message:", e);
@@ -72,6 +74,22 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
 // Phone-supplied session ids flow into filesystem path joins in the history
 // readers. All real ids are UUIDs (Claude/Cursor/Codex/Copilot/Kiro), but allow
 // the slightly wider [A-Za-z0-9._-] charset; never path separators or "..".
+/** Ids of active sessions currently executing a CLI turn. */
+export function runningSessionIds(ctx: MessageContext): string[] {
+  const ids: string[] = [];
+  for (const [id, s] of ctx.activeSessions) if (s.isRunning) ids.push(id);
+  return ids;
+}
+
+/** Broadcast the current running-set so the app can update its list dots. */
+function broadcastRunning(ctx: MessageContext, ws: any): void {
+  try {
+    ws.send(JSON.stringify({ type: "sessions_running", ids: runningSessionIds(ctx) }));
+  } catch {
+    /* best-effort */
+  }
+}
+
 const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
 export function isValidSessionId(id: unknown): id is string {
   return (
@@ -141,6 +159,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       return;
     }
     const session = factory.create(ws, msg.cli, ctx.availableCLIs[msg.cli]!, msg.project, msg.model, msg.permissionMode, msg.effort);
+    session.onRunningChange = () => broadcastRunning(ctx, ws);
     ctx.activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "spawned", session: session.summary }));
     return;
@@ -166,6 +185,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `Session not found: ${msg.sessionId}` }));
       return;
     }
+    session.onRunningChange = () => broadcastRunning(ctx, ws);
     ctx.activeSessions.set(session.id, session);
     ws.send(JSON.stringify({ type: "resumed", session: session.summary }));
     // Read history async — don't block the event loop on large files.

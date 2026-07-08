@@ -237,6 +237,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     projects: ["/Users/you/code/storefront", "/Users/you/code/auth-service", "/Users/you/code/data-pipeline", "/Users/you/code/design-system", "/Users/you/code/platform-infra"],
     sessions: [MOCK_SESSION, MOCK_RECONNECTING_SESSION, ...MOCK_EXTRA_SESSIONS],
     activeSessionId,
+    runningSessionIds: [] as string[],
     messages,
     streaming,
     currentTool: null,

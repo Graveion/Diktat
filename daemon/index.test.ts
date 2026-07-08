@@ -6,7 +6,7 @@
  * ws (collects sent JSON), a stub session factory, and stub history readers.
  */
 import { test, expect } from "bun:test";
-import { handleClientMessage, type MessageContext, type SessionFactory } from "./message-handler";
+import { handleClientMessage, runningSessionIds, type MessageContext, type SessionFactory } from "./message-handler";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,6 +206,35 @@ test("load_history: kiro session (no cliSessionId) → empty page (paging unsupp
   ctx.activeSessions.set("k1", s);
   await handleClientMessage(ctx, ws, { type: "load_history", sessionId: "k1", loaded: 40 });
   expect(sent[0]).toEqual({ type: "history_page", messages: [], hasMore: false });
+});
+
+// ---------------------------------------------------------------------------
+// running-session tracking (M4)
+// ---------------------------------------------------------------------------
+
+test("runningSessionIds: returns only sessions whose isRunning is true", () => {
+  const ctx = makeCtx();
+  const a = fakeSession("a"); a.isRunning = true;
+  const b = fakeSession("b"); b.isRunning = false;
+  const c = fakeSession("c"); c.isRunning = true;
+  ctx.activeSessions.set("a", a);
+  ctx.activeSessions.set("b", b);
+  ctx.activeSessions.set("c", c);
+  expect(runningSessionIds(ctx).sort()).toEqual(["a", "c"]);
+});
+
+test("spawn wires onRunningChange → broadcasts sessions_running", async () => {
+  const { ws, sent } = mockWs();
+  const ctx = makeCtx({ sessionFactory: recordingFactory([]) });
+  await handleClientMessage(ctx, ws, { type: "spawn", cli: "claude", project: "/allowed/project" });
+  const session = ctx.activeSessions.get("new-session-id");
+  expect(typeof session.onRunningChange).toBe("function");
+  // Simulate a run starting: flip the flag and fire the callback.
+  session.isRunning = true;
+  session.onRunningChange();
+  const frame = sent.find((m) => m.type === "sessions_running");
+  expect(frame).toBeDefined();
+  expect(frame.ids).toEqual(["new-session-id"]);
 });
 
 // ---------------------------------------------------------------------------

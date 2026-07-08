@@ -353,6 +353,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           onNew={handleNew}
           onDisconnect={() => { leaveMachine(); setSelectedMachine(null); setScreen("machines"); }}
           overallStats={diktat.stats?.overall}
+          runningSessionIds={diktat.runningSessionIds}
         />
       ) : (
         <ChatScreen
