@@ -36,9 +36,19 @@ safer default permission modes. (code.claude.com/docs/en/remote-control)
 **H2 — Live Activities / Dynamic Island for the running turn.**
 Cursor + Copilot put agent status on the lock screen / Dynamic Island. Diktat
 has fire-on-finish push only. Add a Live Activity: session label + elapsed +
-current tool + files/±lines, ending with pass/fail. Native lift (expo-live-activity
-or a Swift widget extension), not OTA. Biggest perceived-polish gap.
-(github.blog changelog 2026-02-26; cursor.com/blog/ios-mobile-app)
+current tool + files/±lines, ending with pass/fail. Native lift, not OTA.
+Biggest perceived-polish gap. (github.blog changelog 2026-02-26;
+cursor.com/blog/ios-mobile-app)
+
+> **DEFERRED to a device session (assessed 2026-07-08).** The drop-in module
+> `software-mansion-labs/expo-live-activity` is **deprecated** (SM *labs* org).
+> Remaining path is hand-rolled: `@bacons/apple-targets` config plugin → a
+> SwiftUI Widget Extension (lock-screen + Dynamic Island) + a small local Expo
+> native module bridging ActivityKit start/update/end to JS, driven from the
+> turn lifecycle (reuse the H3 progress data). Entitlement `NSSupportsLiveActivities`,
+> iOS 16.2+. **Not verifiable without a physical device + dev-client build loop**
+> (not Expo Go, not OTA) — do it hands-on at a Mac, not blind. Push-to-update
+> optional (needs APNs Live Activity token plumbing on the relay).
 
 **H3 — Make the active turn legible ("working now" header).**
 Today a run is a flat vertical stream + typing indicator. Add a sticky header
