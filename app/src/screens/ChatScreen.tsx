@@ -505,6 +505,22 @@ export function ChatScreen({
     prevStreaming.current = streaming;
   }, [streaming]);
 
+  // Live "working now" clock: tick once a second while streaming so the header
+  // shows elapsed time. Declared after the run-boundary effect so runStartAt is
+  // already set for the current commit. Reset to 0 when the turn ends.
+  const [liveElapsed, setLiveElapsed] = useState(0);
+  useEffect(() => {
+    if (!streaming) { setLiveElapsed(0); return; }
+    const started = runStartAt.current || Date.now();
+    setLiveElapsed(Date.now() - started);
+    const id = setInterval(() => setLiveElapsed(Date.now() - started), 1000);
+    return () => clearInterval(id);
+  }, [streaming]);
+
+  // Running tally for the header, derived live from this turn's messages via the
+  // same helper the last-run card uses (null until an edit/command lands).
+  const liveStats = streaming ? computeRunStats(messages.slice(runStartIdx.current)) : null;
+
   // Use refs to avoid stale closures — handlers reference *current* state
   const inputRef2 = useRef(input);
   inputRef2.current = input;
@@ -843,6 +859,35 @@ export function ChatScreen({
               <Text style={styles.reconnectingRetryText}>Retry</Text>
             </TouchableOpacity>
           ) : null}
+        </Reanimated.View>
+      ) : null}
+
+      {/* "Working now" header — a legible view of the active turn: current tool
+          + live spinner + elapsed + running tally. Becomes the last-run card on
+          completion (below). Shown only while streaming and connected. */}
+      {streaming && !reconnecting ? (
+        <Reanimated.View
+          style={styles.workingBar}
+          testID="working-now"
+          entering={reducedMotion ? undefined : FadeIn.duration(180)}
+          exiting={reducedMotion ? undefined : FadeOut.duration(140)}
+        >
+          <PulsingDot reducedMotion={reducedMotion} />
+          <Text style={styles.workingTool} numberOfLines={1}>
+            {currentTool ? formatToolLabel(currentTool).label : "Working…"}
+          </Text>
+          <View style={styles.workingRight}>
+            {liveStats ? (
+              <Text style={styles.workingStats} numberOfLines={1}>
+                {[
+                  liveStats.files > 0 ? `${liveStats.files}f` : null,
+                  liveStats.added > 0 || liveStats.removed > 0 ? `+${liveStats.added}/−${liveStats.removed}` : null,
+                  liveStats.commands > 0 ? `${liveStats.commands} cmd` : null,
+                ].filter(Boolean).join(" · ")}
+              </Text>
+            ) : null}
+            <Text style={styles.workingElapsed}>{formatRunDuration(liveElapsed)}</Text>
+          </View>
         </Reanimated.View>
       ) : null}
 
@@ -1305,6 +1350,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentFaint, paddingVertical: 5, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
+
+  // "Working now" header
+  workingBar: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: colors.accentFaint, paddingVertical: 7, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  workingTool: { flex: 1, fontFamily: fonts.bodyMedium, color: colors.accent, fontSize: 12 },
+  workingRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  workingStats: { fontFamily: fonts.mono, color: colors.textSub, fontSize: 11 },
+  workingElapsed: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 11 },
   reconnectingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
   reconnectingText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11 },
   reconnectingRetry: {
