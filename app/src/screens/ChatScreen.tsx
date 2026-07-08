@@ -664,6 +664,7 @@ export function ChatScreen({
   }, [activeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startInitialListening = useCallback(() => {
+    if (!settings.voiceCoachSeen) updateSettings({ voiceCoachSeen: true });
     setInput("");
     setMode("listening");
     const locale = Localization.getLocales()[0]?.languageTag ?? "en-US";
@@ -1216,6 +1217,31 @@ export function ChatScreen({
             ) : null}
           </View>
 
+          {/* First-run voice coach-mark: teaches the mic gesture (adapts to the
+              tap/hold setting). One-time, persisted; also dismissed the moment
+              dictation first starts. */}
+          {!settings.voiceCoachSeen && mode === "idle" && !streaming && !input.trim() ? (
+            <Reanimated.View
+              entering={reducedMotion ? undefined : FadeInUp.duration(220)}
+              style={styles.voiceCoach}
+            >
+              <TouchableOpacity
+                testID="voice-coach"
+                style={styles.voiceCoachBubble}
+                activeOpacity={0.8}
+                onPress={() => updateSettings({ voiceCoachSeen: true })}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss voice tip"
+              >
+                <Ionicons name="mic" size={14} color={colors.accent} />
+                <Text style={styles.voiceCoachText}>
+                  {settings.micMode === "hold" ? "Hold the mic and speak" : "Tap the mic and speak"}
+                </Text>
+                <Ionicons name="close" size={13} color={colors.textMuted} />
+              </TouchableOpacity>
+            </Reanimated.View>
+          ) : null}
+
           {/* Input area. One primary control: the accent button is the mic when
               the draft is empty (voice is the product) and morphs into the
               send arrow once text exists; while listening it becomes stop. */}
@@ -1224,7 +1250,12 @@ export function ChatScreen({
               {listening ? (
                 <View style={styles.listeningBox}>
                   <VoiceWaveform />
-                  {input ? <Text style={styles.listeningText} numberOfLines={1}>{input}</Text> : null}
+                  <Text
+                    style={[styles.listeningText, !input && styles.listeningPlaceholder]}
+                    numberOfLines={3}
+                  >
+                    {input || "Listening…"}
+                  </Text>
                 </View>
               ) : (
                 <TextInput
@@ -1581,7 +1612,16 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.accentDim,
     minHeight: 44, flexDirection: "row", alignItems: "center", gap: 10,
   },
-  listeningText: { fontFamily: fonts.body, color: colors.accent, fontSize: 14, flex: 1 },
+  listeningText: { fontFamily: fonts.body, color: colors.text, fontSize: 17, lineHeight: 23, flex: 1 },
+  listeningPlaceholder: { color: colors.accent, fontStyle: "italic" },
+
+  voiceCoach: { alignItems: "flex-end", paddingHorizontal: 16, marginBottom: 8 },
+  voiceCoachBubble: {
+    flexDirection: "row", alignItems: "center", gap: 7,
+    backgroundColor: colors.accentFaint, borderColor: colors.accentDim, borderWidth: 1,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  voiceCoachText: { fontFamily: fonts.bodyMedium, color: colors.text, fontSize: 12.5 },
 
   primaryBtn: {
     width: 46, height: 46, borderRadius: 23,

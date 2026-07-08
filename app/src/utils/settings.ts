@@ -4,6 +4,8 @@ export type MicMode = "toggle" | "hold";
 
 export interface Settings {
   micMode: MicMode;
+  /** Set once the first-run voice coach-mark has been shown/dismissed. */
+  voiceCoachSeen?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
