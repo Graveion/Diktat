@@ -44,6 +44,7 @@ export type DiktatMessage = {
 };
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
+export type ConnIssue = "relay-unreachable" | "daemon-offline";
 
 // Authoritative run summary from the daemon (sent on the `exit` frame). Mirrors
 // the daemon's RunSummary; richer than the client-side derivation (true
@@ -117,6 +118,11 @@ export function useDiktat(relay?: RelayDescriptor) {
 
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [reconnecting, setReconnecting] = useState(false);
+  // Classifies *why* we're disconnected so the UI can show the right guidance:
+  //   relay-unreachable — the relay socket itself dropped (network/relay down)
+  //   daemon-offline    — relay is fine, the Mac's daemon is away (soft)
+  // auth-expired is surfaced separately via errorMessage (needs re-sign-in).
+  const [connIssue, setConnIssue] = useState<ConnIssue | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clis, setClis] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentSelectionMap>({});
@@ -161,6 +167,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     ws.current = null;
     setState("connecting");
     setErrorMessage(null);
+    setConnIssue(null);
 
     // Supabase access tokens expire (~1h) and the descriptor's copy is frozen
     // at connect-to-machine time, so every dial — especially reconnects — must
@@ -198,6 +205,9 @@ export function useDiktat(relay?: RelayDescriptor) {
       authFailures.current = 0;
       hasConnected.current = true;
       setReconnecting(false);
+      // Relay transport is back; a daemon-offline issue (if any) is resolved by
+      // the machine_online/offline frames that follow, not here.
+      setConnIssue((c) => (c === "relay-unreachable" ? null : c));
       setState("connected");
       info("WS", `Connected via relay to machine ${relayCfg.machineId}`);
       if (pushTokenRef.current) {
@@ -232,6 +242,7 @@ export function useDiktat(relay?: RelayDescriptor) {
             // existing handler processes and auto-resumes from.
             info("RELAY", "machine_online: daemon connected");
             setReconnecting(false);
+            setConnIssue(null);
             break;
           case "machine_offline":
             // SOFT state: the relay socket is healthy, only the daemon is away.
@@ -239,6 +250,7 @@ export function useDiktat(relay?: RelayDescriptor) {
             // keep the relay socket and wait for machine_online.
             info("RELAY", "machine_offline: daemon away (soft) — keeping relay socket");
             setReconnecting(true);
+            setConnIssue("daemon-offline");
             break;
           case "relay_error": {
             const code = msg.code as string | undefined;
@@ -268,6 +280,7 @@ export function useDiktat(relay?: RelayDescriptor) {
 
       if (msg.type === "connected") {
         setState("connected");
+        setConnIssue(null); // fully healthy: relay up + daemon handshaked
         setClis(msg.clis ?? []);
         setAgents(msg.agents ?? {});
         setProjects(msg.projects ?? []);
@@ -487,8 +500,11 @@ export function useDiktat(relay?: RelayDescriptor) {
         return;
       }
       // Only surface the reconnecting banner if an established connection
-      // dropped; stay quiet during the initial connect.
+      // dropped; stay quiet during the initial connect. The relay socket itself
+      // closed, so this is a transport problem (distinct from daemon-offline,
+      // where the relay stays up and only machine_offline fires).
       setReconnecting(hasConnected.current);
+      if (hasConnected.current) setConnIssue("relay-unreachable");
       const delay = reconnectDelay.current;
       reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS);
       info("WS", `Scheduling reconnect in ${delay}ms`);
@@ -503,6 +519,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     ws.current?.close();
     setState("disconnected");
     setReconnecting(false);
+    setConnIssue(null);
     setErrorMessage(null);
   }, []);
 
@@ -621,7 +638,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   return {
-    state, reconnecting, errorMessage, clis, agents, projects, sessions, activeSessionId,
+    state, reconnecting, connIssue, errorMessage, clis, agents, projects, sessions, activeSessionId,
     messages, streaming, currentTool, historyLoading, stats, lastRunSummary, daemonVersion, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,

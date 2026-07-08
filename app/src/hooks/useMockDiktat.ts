@@ -224,6 +224,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
   return {
     state: "connected" as const,
     reconnecting,
+    connIssue: null as null | "relay-unreachable" | "daemon-offline",
     errorMessage: null,
     clis: ["claude", "cursor", "codex", "copilot", "kiro"],
     agents: {

@@ -360,6 +360,7 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           streaming={diktat.streaming}
           currentTool={diktat.currentTool}
           reconnecting={diktat.reconnecting}
+          connIssue={diktat.connIssue}
           historyLoading={diktat.historyLoading}
           historyHasMore={diktat.historyHasMore}
           historyPaging={diktat.historyPaging}

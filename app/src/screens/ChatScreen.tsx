@@ -387,6 +387,8 @@ type Props = {
   streaming: boolean;
   currentTool: string | null;
   reconnecting: boolean;
+  /** Why we're disconnected, so the banner can give the right guidance. */
+  connIssue?: "relay-unreachable" | "daemon-offline" | null;
   historyLoading: boolean;
   /** True while older messages exist to page in ("scroll up to load more"). */
   historyHasMore?: boolean;
@@ -413,7 +415,7 @@ type Props = {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function ChatScreen({
-  messages, streaming, currentTool, reconnecting, historyLoading,
+  messages, streaming, currentTool, reconnecting, connIssue, historyLoading,
   historyHasMore, historyPaging, onLoadMore,
   activeSessionId, sessionCli, agents, onSend, onCancel, onBack, onRetryConnect, sessionLabel,
   lastRunSummary, sessionStats,
@@ -865,18 +867,28 @@ export function ChatScreen({
           exiting={reducedMotion ? undefined : FadeOut.duration(160)}
         >
           <PulsingDot reducedMotion={reducedMotion} />
-          <Text style={styles.reconnectingText}>Reconnecting…</Text>
-          {onRetryConnect ? (
-            <TouchableOpacity
-              testID="reconnect-retry-button"
-              onPress={() => { Haptics.selectionAsync(); onRetryConnect(); }}
-              style={styles.reconnectingRetry}
-              activeOpacity={0.7}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.reconnectingRetryText}>Retry</Text>
-            </TouchableOpacity>
-          ) : null}
+          {connIssue === "daemon-offline" ? (
+            // Relay is fine — the Mac's daemon is away. Retry won't help; the
+            // banner clears itself when the daemon reconnects (machine_online).
+            <Text style={styles.reconnectingText} numberOfLines={1}>
+              Mac offline — run <Text style={styles.reconnectingMono}>diktat start</Text>
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.reconnectingText}>Reconnecting…</Text>
+              {onRetryConnect ? (
+                <TouchableOpacity
+                  testID="reconnect-retry-button"
+                  onPress={() => { Haptics.selectionAsync(); onRetryConnect(); }}
+                  style={styles.reconnectingRetry}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={styles.reconnectingRetryText}>Retry</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
         </Reanimated.View>
       ) : null}
 
@@ -1381,6 +1393,7 @@ const styles = StyleSheet.create({
   workingElapsed: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 11 },
   reconnectingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
   reconnectingText: { fontFamily: fonts.body, color: colors.accent, fontSize: 11 },
+  reconnectingMono: { fontFamily: fonts.mono, color: colors.accentBright, fontSize: 11 },
   reconnectingRetry: {
     borderWidth: 1, borderColor: colors.accent, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 1,
