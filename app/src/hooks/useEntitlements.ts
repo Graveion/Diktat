@@ -15,11 +15,14 @@ const MOCK_MODE = __DEV__ && !FORCE_IAP;
 const PRO_ENTITLEMENT = "pro";
 // Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
 export const FREE_TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of free usage
-// Production uses the live App Store key. A forced-IAP dev/preview build prefers
-// the RevenueCat *Test Store* key (test_…) so the full purchase flow works with
-// no Apple sandbox account and no submission. Live builds never use the test key.
+// Production uses the live App Store key (must ship in the binary — it's a
+// public client key). A forced-IAP dev/preview build prefers the RevenueCat
+// *Test Store* key so the full purchase flow works with no Apple sandbox
+// account and no submission. The test key is injected via env at test time
+// (EXPO_PUBLIC_RC_TEST_KEY) and is NOT committed, so it never ships in a
+// production bundle.
 const RC_LIVE_KEY = (EXTRA.revenueCatIosKey as string) ?? "";
-const RC_TEST_KEY = (EXTRA.revenueCatTestKey as string) ?? "";
+const RC_TEST_KEY = process.env.EXPO_PUBLIC_RC_TEST_KEY ?? "";
 const RC_IOS_KEY = FORCE_IAP && RC_TEST_KEY ? RC_TEST_KEY : RC_LIVE_KEY;
 
 let rcConfigured = false;

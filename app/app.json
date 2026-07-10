@@ -52,7 +52,6 @@
       "supabasePublishableKey": "sb_publishable_ZiQTn9qGtfJLUyeFwD-F4A_27RpLh4P",
       "relayUrl": "wss://diktat-relay.fly.dev",
       "revenueCatIosKey": "appl_klPdtPXpnEkGUDJnnaYOAkBtyLS",
-      "revenueCatTestKey": "test_nIieRVmTKyslhocYjuSAztipEYN",
       "googleWebClientId": "194173396831-pa3jme56di96crfpojllhb38he832deh.apps.googleusercontent.com",
       "googleIosClientId": "194173396831-4toso43fmm94ej5vivv116oodes336fo.apps.googleusercontent.com"
     },
