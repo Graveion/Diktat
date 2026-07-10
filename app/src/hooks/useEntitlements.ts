@@ -8,15 +8,19 @@ import { supabase } from "../store/supabase";
 // explicitly want to exercise the real RevenueCat/StoreKit path in a dev or
 // preview build (sandbox account or an Xcode .storekit config) without an App
 // Store submission. Set extra.forceIap: true (app.json) or EXPO_PUBLIC_FORCE_IAP=1.
-const FORCE_IAP =
-  ((Constants.expoConfig?.extra ?? {}) as Record<string, unknown>).forceIap === true ||
-  process.env.EXPO_PUBLIC_FORCE_IAP === "1";
+const EXTRA = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
+const FORCE_IAP = EXTRA.forceIap === true || process.env.EXPO_PUBLIC_FORCE_IAP === "1";
 const MOCK_MODE = __DEV__ && !FORCE_IAP;
 
 const PRO_ENTITLEMENT = "pro";
 // Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
 export const FREE_TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of free usage
-const RC_IOS_KEY = ((Constants.expoConfig?.extra ?? {}) as Record<string, string>).revenueCatIosKey ?? "";
+// Production uses the live App Store key. A forced-IAP dev/preview build prefers
+// the RevenueCat *Test Store* key (test_…) so the full purchase flow works with
+// no Apple sandbox account and no submission. Live builds never use the test key.
+const RC_LIVE_KEY = (EXTRA.revenueCatIosKey as string) ?? "";
+const RC_TEST_KEY = (EXTRA.revenueCatTestKey as string) ?? "";
+const RC_IOS_KEY = FORCE_IAP && RC_TEST_KEY ? RC_TEST_KEY : RC_LIVE_KEY;
 
 let rcConfigured = false;
 
