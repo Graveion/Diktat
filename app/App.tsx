@@ -385,7 +385,6 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
             packages={ent.packages}
             onPurchase={ent.purchase}
             onRestore={ent.restore}
-            onRedeem={ent.redeemCode}
             onClose={() => setPaywallVisible(false)}
             onUnlocked={() => { track("paywall_converted"); setPaywallVisible(false); }}
           />

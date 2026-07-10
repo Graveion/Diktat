@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { colors, fonts, radii } from "../theme";
 
@@ -19,21 +19,37 @@ export function extractNonce(data: string): string | null {
 export function ScanScreen({ onScanned, onCancel }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [handled, setHandled] = useState(false);
+  const asked = useRef(false);
 
-  if (!permission) {
+  // Go straight to the system permission prompt the first time (its explanation
+  // comes from the Info.plist usage string — no custom pre-prompt with an
+  // "Allow"/exit button, per App Store guideline 5.1.1(iv)).
+  useEffect(() => {
+    if (permission && permission.status === "undetermined" && !asked.current) {
+      asked.current = true;
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
+
+  // Waiting on the permission object, or the OS prompt is up — show nothing.
+  if (!permission || permission.status === "undetermined") {
     return <View style={styles.container} />;
   }
 
+  // Denied: we can't re-prompt, so point the user to Settings (a Settings link
+  // for a feature that needs the camera is explicitly allowed).
   if (!permission.granted) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permDesc}>Diktat uses the camera to scan the pairing QR on your Mac.</Text>
-        <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
-          <Text style={styles.permBtnText}>Allow camera</Text>
+        <Text style={styles.permTitle}>Camera access is off</Text>
+        <Text style={styles.permDesc}>
+          Diktat scans the pairing QR on your Mac with the camera. Turn it on in Settings to continue.
+        </Text>
+        <TouchableOpacity style={styles.permBtn} onPress={() => Linking.openSettings()}>
+          <Text style={styles.permBtnText}>Open Settings</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onCancel} style={{ marginTop: 16 }}>
-          <Text style={styles.cancel}>Cancel</Text>
+          <Text style={styles.cancel}>Go back</Text>
         </TouchableOpacity>
       </View>
     );

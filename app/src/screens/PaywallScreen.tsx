@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  TextInput,
   Alert,
   Linking,
 } from "react-native";
@@ -21,7 +20,6 @@ type Props = {
   packages: PurchasesPackage[];
   onPurchase: (pkg: PurchasesPackage) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
-  onRedeem: (code: string) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
   onUnlocked: () => void;
 };
@@ -33,12 +31,9 @@ function periodLabel(pkg: PurchasesPackage): string {
   return pkg.product.title;
 }
 
-export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClose, onUnlocked }: Props) {
+export function PaywallScreen({ packages, onPurchase, onRestore, onClose, onUnlocked }: Props) {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<string | null>(null);
-  const [showRedeem, setShowRedeem] = useState(false);
-  const [code, setCode] = useState("");
-  const [redeemError, setRedeemError] = useState<string | null>(null);
 
   const buy = async (pkg: PurchasesPackage) => {
     if (busy) return;
@@ -60,19 +55,6 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
       else Alert.alert("Nothing to restore", "No active subscription found for this account.");
     } catch (e: any) {
       Alert.alert("Restore failed", e?.message ?? "Please try again.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const redeem = async () => {
-    if (busy || !code.trim()) return;
-    setBusy("redeem");
-    setRedeemError(null);
-    try {
-      const res = await onRedeem(code);
-      if (res.ok) onUnlocked();
-      else setRedeemError(res.error ?? "Invalid code");
     } finally {
       setBusy(null);
     }
@@ -149,35 +131,9 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onRedeem, onClo
           <Text style={styles.reassure}>Cancel anytime · less than a coffee a month</Text>
         ) : null}
 
-        {showRedeem ? (
-          <View style={styles.redeemBox}>
-            <TextInput
-              style={styles.redeemInput}
-              value={code}
-              onChangeText={setCode}
-              placeholder="Enter code"
-              placeholderTextColor={colors.textSub}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={styles.redeemBtn} onPress={redeem} disabled={!!busy}>
-              {busy === "redeem" ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.redeemBtnText}>Redeem</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
-        {redeemError ? <Text style={styles.redeemError}>{redeemError}</Text> : null}
-
         <View style={styles.footer}>
-          <TouchableOpacity onPress={() => setShowRedeem((s) => !s)} disabled={!!busy}>
-            <Text style={styles.footerLink}>Have a code?</Text>
-          </TouchableOpacity>
-          <Text style={styles.footerDot}>·</Text>
           <TouchableOpacity onPress={restore} disabled={!!busy}>
-            <Text style={styles.footerLink}>Restore</Text>
+            <Text style={styles.footerLink}>Restore purchases</Text>
           </TouchableOpacity>
         </View>
 
@@ -240,29 +196,6 @@ const styles = StyleSheet.create({
   pkgPeriod: { fontFamily: fonts.body, fontSize: 13, color: colors.textSub, marginTop: 2 },
   unavailable: { fontFamily: fonts.body, fontSize: 14, color: colors.textSub, textAlign: "center" },
   reassure: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 14 },
-
-  redeemBox: { flexDirection: "row", gap: 8, marginTop: 20 },
-  redeemInput: {
-    flex: 1,
-    backgroundColor: colors.input,
-    color: colors.text,
-    borderRadius: radii.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontFamily: fonts.mono,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  redeemBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radii.md,
-    paddingHorizontal: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  redeemBtnText: { fontFamily: fonts.bodySemi, color: "#fff", fontSize: 15 },
-  redeemError: { fontFamily: fonts.body, fontSize: 13, color: colors.error, textAlign: "center", marginTop: 10 },
 
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 28 },
   footerLink: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.accent },
