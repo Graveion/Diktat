@@ -4,8 +4,14 @@ import Constants from "expo-constants";
 import Purchases, { type CustomerInfo, type PurchasesPackage } from "react-native-purchases";
 import { supabase } from "../store/supabase";
 
-// Simulator dev: everything unlocked so we're never blocked.
-const MOCK_MODE = __DEV__;
+// Simulator dev: everything unlocked so we're never blocked — EXCEPT when we
+// explicitly want to exercise the real RevenueCat/StoreKit path in a dev or
+// preview build (sandbox account or an Xcode .storekit config) without an App
+// Store submission. Set extra.forceIap: true (app.json) or EXPO_PUBLIC_FORCE_IAP=1.
+const FORCE_IAP =
+  ((Constants.expoConfig?.extra ?? {}) as Record<string, unknown>).forceIap === true ||
+  process.env.EXPO_PUBLIC_FORCE_IAP === "1";
+const MOCK_MODE = __DEV__ && !FORCE_IAP;
 
 const PRO_ENTITLEMENT = "pro";
 // Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
