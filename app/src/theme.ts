@@ -1,43 +1,48 @@
 import { Platform } from "react-native";
 
 // ─── Palette ────────────────────────────────────────────────────────────────
-// "Violet terminal": layered violet-blacks, electric violet as the single
-// accent, semantic colors doing the rest. Code/diff surfaces use the same
-// family (codeBg/codeText below) — never import another palette (e.g. GitHub
-// grays) next to this one.
+// "Neutral terminal": true neutral near-blacks and greys (no colour tint in the
+// surfaces), with a single teal accent doing all the pointing. Reads like a
+// serious developer tool, not a purple AI product. Code/diff surfaces use the
+// same neutral family (codeBg/codeText below) — never import another palette
+// (e.g. GitHub grays or a second accent) next to this one.
+//
+// To retint the accent, change `accent`/`accentBright`/`accentDim`/`accentFaint`
+// (and `userBubble`) only — everything else is neutral and stays put. Blue
+// alternative: accent #3b82f6, bright #60a5fa, dim #1e40af, faint #0d1526.
 
 export const colors = {
-  // Backgrounds — layered violet-blacks, lifted a notch for daylight legibility
-  // (was #07060a..#1c1927). Keeps the violet identity, just less of a void.
-  bg:          "#0c0a12",   // canvas
-  surface:     "#16131d",   // cards / screen bg
-  card:        "#211c2e",   // elevated cards
-  input:       "#272233",   // inputs
-  border:      "#38324a",   // standard border (stronger, clearly visible)
-  borderFaint: "#1d1a28",   // very subtle divider
+  // Backgrounds — layered neutral near-blacks, lifted enough for daylight
+  // legibility. No violet tint: pure cool greys.
+  bg:          "#0b0b0d",   // canvas
+  surface:     "#141417",   // cards / screen bg
+  card:        "#1c1c21",   // elevated cards
+  input:       "#212127",   // inputs
+  border:      "#33333d",   // standard border (clearly visible)
+  borderFaint: "#1c1c22",   // very subtle divider
 
-  // Primary accent — electric violet
-  accent:       "#a78bfa",  // violet
-  accentBright: "#c4b5fd",  // hover / highlight
-  accentDim:    "#4c1d95",  // muted variant
-  accentFaint:  "#1a1230",  // tinted surface
+  // Primary accent — teal
+  accent:       "#2dd4bf",  // teal
+  accentBright: "#5eead4",  // hover / highlight
+  accentDim:    "#0f766e",  // muted variant
+  accentFaint:  "#0c1a18",  // tinted surface
   // Dark ink for glyphs sitting ON an accent-filled control
-  onAccent:     "#1a1033",
+  onAccent:     "#04211d",
 
-  // User message bubble
-  userBubble:   "#5b21b6",  // deep violet
+  // User message bubble — deep teal (ties to accent, no purple)
+  userBubble:   "#115e59",
 
   // Text scale. textSub is the readable secondary (~7:1 on bg) — use it for any
   // copy a user is meant to read. textMuted (~4.5:1) is for decoration:
-  // chevrons, dividers, timestamps — now bright enough to not vanish.
-  text:         "#f4f2fb",  // primary — slightly warm white
-  textSub:      "#a59fbd",  // secondary (readable)
-  textMuted:    "#7b7397",  // decorative
-  textFaint:    "#2a2640",  // barely-there
+  // chevrons, dividers, timestamps — bright enough to not vanish.
+  text:         "#f2f2f4",  // primary — cool white
+  textSub:      "#a1a1ac",  // secondary (readable)
+  textMuted:    "#71717f",  // decorative
+  textFaint:    "#2a2a32",  // barely-there
 
-  // Code / tool-output surfaces (violet-tinted, NOT GitHub gray)
-  codeBg:    "#181423",
-  codeText:  "#e2def0",
+  // Code / tool-output surfaces (neutral, NOT tinted)
+  codeBg:    "#141418",
+  codeText:  "#e4e4ea",
 
   // Semantic
   success:  "#34d399",
@@ -47,15 +52,16 @@ export const colors = {
 };
 
 // ─── Typography ─────────────────────────────────────────────────────────────
-// Space Grotesk (display) — technical, geometric, terminal-adjacent
-// Outfit (body) — clean but distinctive, not Inter
+// IBM Plex Sans — a developer-tool typeface (neutral, engineered, not the
+// trendy-AI geometric look and deliberately not Inter). One family across
+// display and body; weight carries the hierarchy. Load weights in App.tsx.
 
 export const fonts = {
-  display:     "SpaceGrotesk_700Bold",
-  body:        "Outfit_400Regular",
-  bodyMedium:  "Outfit_500Medium",
-  bodySemi:    "Outfit_600SemiBold",
-  bodyBold:    "Outfit_700Bold",
+  display:     "IBMPlexSans_700Bold",
+  body:        "IBMPlexSans_400Regular",
+  bodyMedium:  "IBMPlexSans_500Medium",
+  bodySemi:    "IBMPlexSans_600SemiBold",
+  bodyBold:    "IBMPlexSans_700Bold",
   mono:        Platform.OS === "ios" ? "Menlo" : "monospace",
 };
 

@@ -63,7 +63,7 @@ export function PaywallScreen({ packages, onPurchase, onRestore, onClose, onUnlo
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#1a1033", colors.bg, colors.bg]}
+        colors={["#10211e", colors.bg, colors.bg]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.6 }}

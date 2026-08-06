@@ -6,14 +6,11 @@ import * as Updates from "expo-updates";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useFonts,
-  SpaceGrotesk_700Bold,
-} from "@expo-google-fonts/space-grotesk";
-import {
-  Outfit_400Regular,
-  Outfit_500Medium,
-  Outfit_600SemiBold,
-  Outfit_700Bold,
-} from "@expo-google-fonts/outfit";
+  IBMPlexSans_400Regular,
+  IBMPlexSans_500Medium,
+  IBMPlexSans_600SemiBold,
+  IBMPlexSans_700Bold,
+} from "@expo-google-fonts/ibm-plex-sans";
 import * as Notifications from "expo-notifications";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useDiktat, type DiktatSession, type RelayDescriptor } from "./src/hooks/useDiktat";
@@ -143,8 +140,7 @@ function App() {
   // Fonts + auth are resolved here so the sign-in gate and the app both render
   // with the loaded fonts. Login is required for the whole app (local + relay).
   const [fontsLoaded] = useFonts({
-    Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold,
-    SpaceGrotesk_700Bold,
+    IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold, IBMPlexSans_700Bold,
   });
   const auth = useAuth();
   const [demoMode, setDemoMode] = useState(false);

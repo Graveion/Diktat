@@ -29,7 +29,7 @@ export function SignInScreen({ appleAvailable, error, onApple, onGoogle }: Props
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#120d1f", colors.bg, colors.bg]}
+        colors={["#141417", colors.bg, colors.bg]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.6 }}

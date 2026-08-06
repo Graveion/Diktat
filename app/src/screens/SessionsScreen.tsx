@@ -41,7 +41,7 @@ const CLI_LABELS: Record<string, string> = {
 
 const CLI_COLOR: Record<string, string> = {
   claude: "#f59e0b",
-  cursor: "#a78bfa",
+  cursor: "#3b82f6",
   copilot: "#3fb950",
   kiro: "#06b6d4",
   codex: "#ec4899",
