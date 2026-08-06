@@ -12,7 +12,11 @@ const EXTRA = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
 const FORCE_IAP = EXTRA.forceIap === true || process.env.EXPO_PUBLIC_FORCE_IAP === "1";
 const MOCK_MODE = __DEV__ && !FORCE_IAP;
 
-const PRO_ENTITLEMENT = "pro";
+// Must match the RevenueCat entitlement identifier (lookup_key) exactly —
+// the SDK keys entitlements.active[...] by this string. It's "Diktat Pro"
+// in the RC dashboard, not "pro"; a mismatch means isPro is never true even
+// after a successful purchase.
+const PRO_ENTITLEMENT = "Diktat Pro";
 // Must match the relay's TRIAL_MS (supabase-auth.ts) — both gate the same window.
 export const FREE_TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of free usage
 // Production uses the live App Store key (must ship in the binary — it's a
