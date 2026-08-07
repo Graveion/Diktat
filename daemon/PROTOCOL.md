@@ -557,13 +557,66 @@ The completion push summarizes what the agent actually did during the run (deriv
   - `No file changes · 45s`
 - **data**: `{ sessionId, exitCode, filesChanged: string[], editCount, linesAdded, linesRemoved, commandsRun, lastCommand?, testStatus: "pass"|"fail"|"none", testDetail?, durationMs }`. The deep-link `sessionId` is always present; `lastCommand`/`testDetail` are omitted when absent.
 
+#### `auth_prompt` — remote re-authentication (device-code flow) started
+
+```json
+{
+  "type": "auth_prompt",
+  "sessionId": "daemon-uuid",
+  "cli": "copilot",
+  "mode": "device_code",
+  "verificationUrl": "https://github.com/login/device",
+  "userCode": "WDJB-MJHT",
+  "expiresInSec": 900,
+  "instructions": "Open https://github.com/login/device on any device and enter code WDJB-MJHT to re-authenticate GitHub Copilot."
+}
+```
+
+Sent when a turn fails because the agent CLI's **own provider auth has expired**
+and that CLI supports a device-code login (RFC 8628). Instead of only erroring,
+the daemon spawns the CLI's device-flow login command (`remoteAuth.command` in
+`agents.ts`), parses the verification URL + user code from its output, and emits
+this so the app can show a "Re-authenticate {CLI}" card. The user opens
+`verificationUrl` on any device and enters `userCode`; **no secret is ever sent
+from the phone to the daemon** — sign-in completes on the provider's web page.
+
+- `mode`: always `"device_code"` in v1. (Other modes may be added later.)
+- `userCode`: omitted if the CLI's output carries only a URL (some flows embed
+  the code in the URL).
+- `expiresInSec`: best-effort code lifetime, when the CLI prints one.
+- `instructions`: a ready-to-display sentence combining the URL + code.
+- Only CLIs with a non-null `remoteAuth` do this (copilot, codex, kiro).
+  Claude (localhost-callback browser flow) and Cursor (IDE-managed) keep the
+  old `error` telling the user to re-authenticate **on the machine**.
+
+**SECURITY:** the verification URL + user code are single-use credentials for
+this login attempt. They are routed only to the paired owner via the existing
+session/relay scoping (stamped `sessionId`), and the daemon never logs them.
+
+#### `auth_status` — device-code login progress
+
+```json
+{ "type": "auth_status", "sessionId": "daemon-uuid", "cli": "copilot", "state": "pending" }
+```
+
+Follows `auth_prompt` as the login progresses.
+
+- `state`: `"pending"` (waiting for the user to finish in the browser),
+  `"success"` (authenticated), or `"failed"` (login did not complete / timed
+  out).
+- `message`: optional human-readable detail, present on `"failed"`.
+- On `"success"` the daemon **auto-retries the pending turn** — the app dismisses
+  the card and the resumed `output`/`exit` frames arrive as usual. There is no
+  phone→daemon message for the device-code flow; the user completes it entirely
+  on the provider's web page.
+
 #### `error` — error from the daemon
 
 ```json
 { "type": "error", "message": "Human-readable error description" }
 ```
 
-Sent for: unknown CLI, project not in allowlist, session not found, invalid message format, internal errors.
+Sent for: unknown CLI, project not in allowlist, session not found, invalid message format, internal errors. Also sent as the auth fallback when a CLI's provider auth has expired and either it is not device-code-capable (Claude/Cursor) or a device-code login did not complete — naming the CLI's `login.command` to run **on the machine**.
 
 #### `pong` — response to ping
 
