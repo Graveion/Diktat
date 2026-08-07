@@ -90,6 +90,91 @@ export type RelayDescriptor = {
 const RECONNECT_DELAY_MS = 5000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
+// ─── Image attachments ───────────────────────────────────────────────────────
+
+/** A locally-picked image, as handed to the composer's `onSend`. Uploaded to
+ *  Supabase Storage by `sendMessage` before the `input` message is sent. */
+export type PickedAttachment = { uri: string; mime: string; name?: string; base64?: string };
+
+/** The signed-URL descriptor placed on the `input` message (see PROTOCOL.md). */
+export type SendAttachment = { url: string; mime: string; name?: string };
+
+/** Private bucket for chat image uploads (see supabase migration 0006). */
+const AGENT_UPLOADS_BUCKET = "agent-uploads";
+/** Signed URLs are short-lived — long enough for the daemon to fetch, no more. */
+const SIGNED_URL_TTL_SECONDS = 300;
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+function extForAttachment(a: PickedAttachment): string {
+  const fromMime = EXT_BY_MIME[(a.mime ?? "").toLowerCase()];
+  if (fromMime) return fromMime;
+  const dot = a.name?.match(/\.([A-Za-z0-9]{1,5})$/);
+  return dot ? dot[1]!.toLowerCase() : "img";
+}
+
+// Decode a base64 image body (from expo-image-picker's `base64` option) into the
+// byte array Supabase Storage uploads. `atob` is available via the DOM lib and
+// Hermes at runtime; a hand-rolled decoder avoids a base64-arraybuffer dep.
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Upload picked images to the private `agent-uploads` bucket under the signed-in
+ * user's own prefix (`<uid>/<sessionId>/…`, enforced by RLS) and return a signed
+ * URL for each. Best-effort: an image that fails to upload/sign is skipped, not
+ * fatal — the turn still sends with whatever uploaded.
+ */
+async function uploadAttachments(items: PickedAttachment[], sessionId: string): Promise<SendAttachment[]> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) {
+    warn("SESSION", "attachment upload skipped: no authenticated user");
+    return [];
+  }
+  const out: SendAttachment[] = [];
+  for (const item of items) {
+    try {
+      if (!item.base64) {
+        warn("SESSION", "attachment skipped: no image data");
+        continue;
+      }
+      const bytes = base64ToBytes(item.base64);
+      const path = `${userId}/${sessionId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extForAttachment(item)}`;
+      const uploaded = await supabase.storage
+        .from(AGENT_UPLOADS_BUCKET)
+        .upload(path, bytes, { contentType: item.mime, upsert: false });
+      if (uploaded.error) {
+        logError("SESSION", `attachment upload failed: ${uploaded.error.message}`);
+        continue;
+      }
+      const signed = await supabase.storage
+        .from(AGENT_UPLOADS_BUCKET)
+        .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+      if (signed.error || !signed.data?.signedUrl) {
+        logError("SESSION", `attachment sign failed: ${signed.error?.message ?? "no url"}`);
+        continue;
+      }
+      out.push({ url: signed.data.signedUrl, mime: item.mime, ...(item.name ? { name: item.name } : {}) });
+    } catch (e) {
+      logError("SESSION", `attachment error: ${String(e)}`);
+    }
+  }
+  return out;
+}
+
 export function useDiktat(relay?: RelayDescriptor) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -689,7 +774,10 @@ export function useDiktat(relay?: RelayDescriptor) {
     }));
   }, []);
 
-  const sendMessage = useCallback((text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => {
+  const sendMessage = useCallback(async (
+    text: string,
+    opts?: { model?: string; permissionMode?: PermissionModeId; attachments?: PickedAttachment[] },
+  ): Promise<boolean> => {
     if (!activeSessionId) { warn("SESSION", "sendMessage called with no activeSessionId"); return false; }
     // Never show an optimistic bubble for a message the socket can't deliver —
     // during backoff or machine-offline the send would silently vanish.
@@ -698,10 +786,21 @@ export function useDiktat(relay?: RelayDescriptor) {
       setErrorMessage("Not connected — message not sent. Retry when reconnected.");
       return false;
     }
-    info("SESSION", `input: sessionId=${activeSessionId} text="${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
+    info("SESSION", `input: sessionId=${activeSessionId} text="${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"${opts?.attachments?.length ? ` attachments=${opts.attachments.length}` : ""}`);
     track("message_sent", { ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}) });
     setMessages((prev) => [...prev, { role: "user", text }]);
     setLastRunSummary(null); // new turn — clear the previous run's summary card
+    // Upload any picked images first, then send their signed URLs on the input.
+    // The upload can take a beat, so re-check the socket before sending.
+    const attachments = opts?.attachments?.length
+      ? await uploadAttachments(opts.attachments, activeSessionId)
+      : [];
+    if (ws.current?.readyState !== WebSocket.OPEN) {
+      warn("SESSION", "sendMessage: socket closed during attachment upload — not sent");
+      setErrorMessage("Not connected — message not sent. Retry when reconnected.");
+      setStreaming(false);
+      return false;
+    }
     ws.current.send(JSON.stringify({
       type: "input",
       sessionId: activeSessionId,
@@ -709,6 +808,7 @@ export function useDiktat(relay?: RelayDescriptor) {
       // Per-turn overrides applied before the run (daemon persists them).
       ...(opts?.model !== undefined ? { model: opts.model } : {}),
       ...(opts?.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+      ...(attachments.length ? { attachments } : {}),
     }));
     setStreaming(true);
     return true;

@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
   TextInput, KeyboardAvoidingView, Platform, Animated,
-  ScrollView, DeviceEventEmitter, ActivityIndicator, Keyboard,
+  ScrollView, DeviceEventEmitter, ActivityIndicator, Keyboard, Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Markdown from "react-native-markdown-display";
 import * as Clipboard from "expo-clipboard";
@@ -14,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Localization from "expo-localization";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import type { DiktatMessage, AgentSelectionMap, PermissionModeId, RunSummary, StatsTotals } from "../hooks/useDiktat";
+import type { DiktatMessage, AgentSelectionMap, PermissionModeId, RunSummary, StatsTotals, PickedAttachment } from "../hooks/useDiktat";
 import { useSettings } from "../hooks/useSettings";
 import {
   buildContextualStrings, detectSlashCommand,
@@ -400,8 +401,12 @@ type Props = {
   sessionCli?: string;
   agents?: AgentSelectionMap;
   // Returns false when the message couldn't be delivered (socket not open) so
-  // the composer keeps the draft; void/true means sent.
-  onSend: (text: string, opts?: { model?: string; permissionMode?: PermissionModeId }) => boolean | void;
+  // the composer keeps the draft; void/true means sent. Async because it may
+  // upload image attachments before sending.
+  onSend: (
+    text: string,
+    opts?: { model?: string; permissionMode?: PermissionModeId; attachments?: PickedAttachment[] },
+  ) => boolean | void | Promise<boolean | void>;
   onCancel: (sessionId: string) => void;
   onBack: () => void;
   onRetryConnect?: () => void;
@@ -428,6 +433,10 @@ export function ChatScreen({
   const [selectedPermission, setSelectedPermission] = useState<PermissionModeId>("auto");
   const [selectorOpen, setSelectorOpen] = useState<"model" | "perm" | null>(null);
   const [railOpen, setRailOpen] = useState(false);
+  // Picked-but-not-yet-sent image attachments (Claude Code only). Uploaded by
+  // the hook's onSend; cleared once a turn is delivered.
+  const [attachments, setAttachments] = useState<PickedAttachment[]>([]);
+  const imagesSupported = sessionCli === "claude";
   // Reset selectors to defaults when the session/CLI changes.
   useEffect(() => {
     setSelectedModel("");
@@ -435,8 +444,12 @@ export function ChatScreen({
     setSelectorOpen(null);
   }, [activeSessionId, sessionCli]);
   const sendWithOpts = useCallback(
-    (text: string) => onSend(text, { model: selectedModel || undefined, permissionMode: selectedPermission }),
-    [onSend, selectedModel, selectedPermission],
+    (text: string) => onSend(text, {
+      model: selectedModel || undefined,
+      permissionMode: selectedPermission,
+      ...(attachments.length ? { attachments } : {}),
+    }),
+    [onSend, selectedModel, selectedPermission, attachments],
   );
   const [mode, setMode] = useState<Mode>("idle");
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -549,14 +562,44 @@ export function ChatScreen({
     try { ExpoSpeechRecognitionModule.abort(); } catch { /* not running */ }
   }, []);
 
-  const sendDraft = useCallback(() => {
+  const sendDraft = useCallback(async () => {
     stopAllVoice();
     const text = inputRef2.current.trim();
     setMode("idle");
-    if (text && sendWithOpts(text) === false) return; // keep draft — not delivered
+    // keep draft + attachments when not delivered (socket closed)
+    if ((text || attachments.length > 0) && (await sendWithOpts(text)) === false) return;
     setInput("");
+    setAttachments([]);
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [stopAllVoice, sendWithOpts]);
+  }, [stopAllVoice, sendWithOpts, attachments.length]);
+
+  // Attach images from the photo library (Claude Code sessions only). Requests
+  // permission on demand; appends to the pending set (capped, matches upload cap).
+  const pickImages = useCallback(async () => {
+    Haptics.selectionAsync();
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: 8,
+      quality: 0.8,
+      base64: true,
+    });
+    if (result.canceled) return;
+    const picked: PickedAttachment[] = result.assets.map((a) => ({
+      uri: a.uri,
+      mime: a.mimeType ?? "image/jpeg",
+      name: a.fileName ?? undefined,
+      base64: a.base64 ?? undefined,
+    }));
+    setAttachments((cur) => [...cur, ...picked].slice(0, 8));
+  }, []);
+
+  const removeAttachment = useCallback((idx: number) => {
+    Haptics.selectionAsync();
+    setAttachments((cur) => cur.filter((_, i) => i !== idx));
+  }, []);
 
   const discardDraft = useCallback(() => {
     stopAllVoice();
@@ -650,6 +693,7 @@ export function ChatScreen({
   useEffect(() => {
     stopAllVoice();
     setInput("");
+    setAttachments([]);
     setMode("idle");
     setExpandedToolIdx(null);
     setPeekPath(null);
@@ -709,18 +753,20 @@ export function ChatScreen({
     if (mode === "listening") stopInitialListening();
   };
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || streaming) return;
-    // Save to history
-    if (inputHistory.current[0] !== text) {
+    // Allow an image-only send (no text) as long as something is attached.
+    if ((!text && attachments.length === 0) || streaming) return;
+    // Save to history (text only)
+    if (text && inputHistory.current[0] !== text) {
       inputHistory.current = [text, ...inputHistory.current].slice(0, 50);
     }
     historyIdx.current = -1;
-    if (sendWithOpts(text) === false) return; // keep draft — not delivered
+    if ((await sendWithOpts(text)) === false) return; // keep draft + attachments
     setInput("");
+    setAttachments([]);
     AsyncStorage.removeItem(DRAFT_KEY);
-  }, [input, streaming, sendWithOpts]);
+  }, [input, streaming, sendWithOpts, attachments.length]);
 
   const handleInputChange = (text: string) => {
     historyIdx.current = -1;
@@ -1242,10 +1288,52 @@ export function ChatScreen({
             </Reanimated.View>
           ) : null}
 
+          {/* Selected image attachments (Claude Code only) — thumbnails with a
+              remove control; uploaded on send. */}
+          {imagesSupported && attachments.length > 0 && !reviewing ? (
+            <View style={styles.attachStrip}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.attachStripContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {attachments.map((a, i) => (
+                  <View key={`${a.uri}-${i}`} style={styles.thumbWrap}>
+                    <Image source={{ uri: a.uri }} style={styles.thumb} />
+                    <TouchableOpacity
+                      testID={`attach-remove-${i}`}
+                      style={styles.thumbRemove}
+                      onPress={() => removeAttachment(i)}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove image"
+                    >
+                      <Ionicons name="close" size={12} color={colors.onAccent} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
           {/* Input area. One primary control: the accent button is the mic when
               the draft is empty (voice is the product) and morphs into the
               send arrow once text exists; while listening it becomes stop. */}
           <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
+            {imagesSupported && !listening ? (
+              <TouchableOpacity
+                testID="attach-button"
+                style={styles.attachBtn}
+                onPress={pickImages}
+                disabled={streaming}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Attach image"
+              >
+                <Ionicons name="image-outline" size={22} color={streaming ? colors.textMuted : colors.textSub} />
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.inputWrap}>
               {listening ? (
                 <View style={styles.listeningBox}>
@@ -1275,25 +1363,27 @@ export function ChatScreen({
             </View>
 
             {(() => {
-              const hasText = !!input.trim();
-              const icon = listening ? "stop" : hasText ? "arrow-up" : "mic";
+              // Content = typed text OR at least one pending attachment. With an
+              // image attached but no text, the button is still "send".
+              const hasContent = !!input.trim() || attachments.length > 0;
+              const icon = listening ? "stop" : hasContent ? "arrow-up" : "mic";
               return (
                 <TouchableOpacity
-                  testID={hasText && !listening ? "send-button" : "mic-button"}
+                  testID={hasContent && !listening ? "send-button" : "mic-button"}
                   style={[styles.primaryBtn, listening && styles.primaryBtnListening, streaming && styles.primaryBtnDisabled]}
                   onPress={
                     listening
                       ? (settings.micMode === "toggle" ? toggleListening : undefined)
-                      : hasText
+                      : hasContent
                         ? handleSend
                         : (settings.micMode === "toggle" ? toggleListening : undefined)
                   }
-                  onPressIn={!listening && !hasText && settings.micMode === "hold" ? onMicPressIn : undefined}
+                  onPressIn={!listening && !hasContent && settings.micMode === "hold" ? onMicPressIn : undefined}
                   onPressOut={settings.micMode === "hold" ? onMicPressOut : undefined}
                   disabled={streaming}
                   activeOpacity={0.8}
                   accessibilityRole="button"
-                  accessibilityLabel={listening ? "Stop listening" : hasText ? "Send message" : "Dictate a message"}
+                  accessibilityLabel={listening ? "Stop listening" : hasContent ? "Send message" : "Dictate a message"}
                 >
                   <Reanimated.View key={icon} entering={reducedMotion ? undefined : ZoomIn.duration(140)}>
                     <Ionicons name={icon} size={21} color={listening ? colors.error : colors.onAccent} />
@@ -1629,6 +1719,24 @@ const styles = StyleSheet.create({
   },
   primaryBtnListening: { backgroundColor: colors.accentFaint, borderWidth: 1, borderColor: colors.accentDim },
   primaryBtnDisabled: { opacity: 0.3 },
+
+  // ─── Image attachments ───────────────────────────────────────────────────
+  attachBtn: {
+    width: 40, height: 46, justifyContent: "center", alignItems: "center",
+  },
+  attachStrip: { paddingHorizontal: 12, paddingTop: 8, backgroundColor: colors.bg },
+  attachStripContent: { flexDirection: "row", gap: 8, paddingRight: 12 },
+  thumbWrap: { position: "relative" },
+  thumb: {
+    width: 56, height: 56, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+  },
+  thumbRemove: {
+    position: "absolute", top: -6, right: -6,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.accent, justifyContent: "center", alignItems: "center",
+    borderWidth: 2, borderColor: colors.bg,
+  },
 
   // ─── Review card ─────────────────────────────────────────────────────────
   reviewCard: {
