@@ -339,11 +339,16 @@ Response: `resumed`, then async `history`.
   "sessionId": "uuid",
   "text": "user message here",
   "model": "opus",
-  "permissionMode": "auto"
+  "permissionMode": "auto",
+  "attachments": [
+    { "url": "https://…/signed", "mime": "image/png", "name": "screenshot.png" }
+  ]
 }
 ```
 
 `model` and `permissionMode` are optional per-turn overrides from the composer dropdowns. The session runs the appropriate CLI and streams responses back as `output`, `tool_use`, `tool_result`, and `exit` messages.
+
+`attachments` is optional: `Array<{ url: string; mime: string; name?: string }>`. Each `url` is a short-expiry signed URL (the app uploads picked images to the private `agent-uploads` Supabase Storage bucket and signs them). The daemon downloads each URL to a per-session temp file and injects the local image path(s) into the CLI invocation, then deletes the temps after the turn. Attachments are only honoured for CLIs whose contract advertises the `images` capability (Claude Code only today — see `agents.ts`); for any other CLI the field is ignored. Only `http`/`https` URLs are fetched.
 
 #### `cancel` — kill the running process
 
