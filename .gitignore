@@ -18,5 +18,9 @@
 # macOS
 .DS_Store
 
-# local app-store capture tooling (not for daemon cloners)
+# App-store / marketing / release tooling — kept local, not for daemon (laptop-side) cloners
+RELEASE_PLAN.md
+app/maestro/appstore_frames.yaml
 app/maestro/paywall_capture.yaml
+app/maestro/_demo_prep.yaml
+app/maestro/demo_walkthrough.yaml
