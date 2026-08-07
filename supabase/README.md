@@ -62,19 +62,27 @@ it via pg_cron + pg_net. Wire it up once per project:
 # 1. Deploy the function
 supabase functions deploy cleanup-agent-uploads
 
-# 2. Set the shared secret the cron uses to authorize the call
+# 2. Set the shared secret the cron uses to authorize the call (function env)
 CLEANUP_SECRET=$(openssl rand -hex 32)
 supabase secrets set CLEANUP_SECRET="$CLEANUP_SECRET"
+echo "keep this: $CLEANUP_SECRET"   # function secrets are write-only; you can't read it back
+```
 
-# 3. Tell the cron job where to POST and with what secret (run in the SQL editor
-#    or psql; values are NOT committed):
-#   alter database postgres set app.settings.functions_url  = 'https://<ref>.supabase.co/functions/v1';
-#   alter database postgres set app.settings.cleanup_secret = '<the CLEANUP_SECRET value>';
+```sql
+-- 3. Store the endpoint + the SAME secret in Vault (SQL editor). We use Vault,
+--    not `alter database … set`, because that GUC form is permission-denied on
+--    hosted Supabase. create_secret is one-time per name (use vault.update_secret
+--    to change a value later).
+select vault.create_secret(
+  'https://<ref>.supabase.co/functions/v1/cleanup-agent-uploads',
+  'agent_uploads_cleanup_url');
+select vault.create_secret('<the CLEANUP_SECRET value>', 'agent_uploads_cleanup_secret');
 ```
 
 Until steps 2–3 are done the scheduled job runs but skips the POST (guarded), so
-a fresh project won't error. Verify manually with
-`select net.http_post(...)` or by invoking the function with the header.
+a fresh project won't error. Verify: `select jobname, schedule from cron.job where
+jobname = 'agent-uploads-cleanup';` and invoke the function with the header
+(`curl -H 'x-cleanup-secret: …' …/cleanup-agent-uploads` → `{"deleted":N}`).
 
 ## Keys (where each is used)
 
