@@ -50,6 +50,32 @@ supabase link --project-ref <ref>      # one-time, needs access token
 supabase db push                       # apply migrations to the linked project
 ```
 
+## agent-uploads cleanup (one-time setup)
+
+`0006` creates the private `agent-uploads` bucket (images only, 10 MiB cap,
+owner-prefix RLS). Attached images are single-use, so a daily sweep deletes
+objects older than 24h. The delete is done by the `cleanup-agent-uploads` Edge
+Function (Storage API, so bytes are reclaimed); `0007` schedules a daily call to
+it via pg_cron + pg_net. Wire it up once per project:
+
+```bash
+# 1. Deploy the function
+supabase functions deploy cleanup-agent-uploads
+
+# 2. Set the shared secret the cron uses to authorize the call
+CLEANUP_SECRET=$(openssl rand -hex 32)
+supabase secrets set CLEANUP_SECRET="$CLEANUP_SECRET"
+
+# 3. Tell the cron job where to POST and with what secret (run in the SQL editor
+#    or psql; values are NOT committed):
+#   alter database postgres set app.settings.functions_url  = 'https://<ref>.supabase.co/functions/v1';
+#   alter database postgres set app.settings.cleanup_secret = '<the CLEANUP_SECRET value>';
+```
+
+Until steps 2–3 are done the scheduled job runs but skips the POST (guarded), so
+a fresh project won't error. Verify manually with
+`select net.http_post(...)` or by invoking the function with the header.
+
 ## Keys (where each is used)
 
 | Key | Used by | Secret? |

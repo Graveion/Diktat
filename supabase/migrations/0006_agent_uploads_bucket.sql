@@ -11,9 +11,19 @@
 -- ---------------------------------------------------------------------------
 -- Bucket (private — no public read; access is via signed URLs only).
 -- ---------------------------------------------------------------------------
-insert into storage.buckets (id, name, public)
-values ('agent-uploads', 'agent-uploads', false)
-on conflict (id) do nothing;
+-- Images only, capped at 10 MiB per object. The bucket enforces these
+-- server-side regardless of the client, so a tampered app can't push a
+-- non-image or an oversized blob. (RLS below still scopes every object to the
+-- uploader's own uid prefix — a user can only ever write to their own space.)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'agent-uploads', 'agent-uploads', false,
+  10485760,  -- 10 MiB
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif']
+)
+on conflict (id) do update
+  set file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security on storage.objects (RLS is already enabled on the table by

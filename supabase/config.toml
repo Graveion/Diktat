@@ -391,6 +391,11 @@ deno_version = 2
 [functions.rc-webhook]
 verify_jwt = false
 
+# Scheduled Storage sweep (invoked by pg_cron, not a user). Cron sends a fixed
+# x-cleanup-secret header, not a Supabase JWT, so JWT verification is off.
+[functions.cleanup-agent-uploads]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
