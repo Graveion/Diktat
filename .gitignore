@@ -17,3 +17,6 @@
 
 # macOS
 .DS_Store
+
+# local app-store capture tooling (not for daemon cloners)
+app/maestro/paywall_capture.yaml
