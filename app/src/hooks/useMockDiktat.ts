@@ -6,7 +6,7 @@
  * Swap in by setting MOCK_MODE = true in App.tsx.
  */
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { DiktatSession, DiktatMessage } from "./useDiktat";
+import type { DiktatSession, DiktatMessage, AuthPrompt } from "./useDiktat";
 import { MOCK_MESSAGES } from "../utils/mockMessages";
 
 // Canned "agent reply" played after the user sends a message in MOCK_MODE, so
@@ -260,5 +260,7 @@ export function useMockDiktat(_host?: string, _port?: number) {
     cancelMessage: () => { clearReplyTimers(); setStreaming(false); },
     registerPushToken: () => {},
     clearError: () => {},
+    authPrompt: null as AuthPrompt | null,
+    dismissAuthPrompt: () => {},
   };
 }

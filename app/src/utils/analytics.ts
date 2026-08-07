@@ -16,7 +16,9 @@ export type AnalyticsEvent =
   | "paywall_shown"
   | "paywall_converted"
   | "feedback_submitted"
-  | "rating_prompted";
+  | "rating_prompted"
+  | "reauth_prompt_shown"
+  | "reauth_result";
 
 type Prop = string | number | boolean;
 
