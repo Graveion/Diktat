@@ -30,6 +30,19 @@ export type ResumeStyle =
 export type OutputFormat = "stream-json" | "text";
 
 /**
+ * How a CLI can be re-authenticated remotely (from the phone) when its provider
+ * auth has expired. `device_code` = an RFC-8628 device-authorization flow: the
+ * CLI prints a verification URL + short user code, the user completes sign-in on
+ * the provider's web page, the CLI polls until authorized. No secret is ever
+ * entered into the daemon or the phone. `command` is the exact device-flow login
+ * argv as a single string (its first token is the CLI binary, replaced at spawn
+ * time with the resolved path). `null` → not remotely re-authenticatable; the
+ * user must run `login.command` on the machine (Claude's localhost callback,
+ * Cursor's IDE-managed sign-in).
+ */
+export type RemoteAuth = { mode: "device_code"; command: string } | null;
+
+/**
  * Where/how an agent persists past conversations on disk, so we can list
  * sessions and replay history. Across the ecosystem the *content* almost
  * always lives in per-session JSONL; a SQLite DB, when present, is usually an
@@ -96,6 +109,11 @@ export interface AgentContract {
   modes?: string[];
   /** Auth: how `diktat setup` checks it, and how the user logs in. */
   login: { check: string; command: string };
+  /**
+   * Remote (phone-driven) re-auth capability. Device-code flows can be completed
+   * from the phone; `null` means "the user must re-authenticate on the machine".
+   */
+  remoteAuth: RemoteAuth;
   notes?: string;
 }
 
@@ -119,6 +137,9 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
       recordSchema: "anthropic-messages (type:user|assistant, message.content blocks)",
     },
     login: { check: "claude -p hi (stderr)", command: "claude login" },
+    // Browser flow with a LOCALHOST callback bound to the Mac → not remotely
+    // completable. Re-auth stays a "do it on the machine" instruction.
+    remoteAuth: null,
   },
   cursor: {
     id: "cursor",
@@ -141,6 +162,9 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     },
     modes: ["ask", "plan"],
     login: { check: "IDE-managed", command: "(sign in via the Cursor app)" },
+    // Auth is managed by the Cursor IDE, not a headless device flow → not
+    // remotely completable.
+    remoteAuth: null,
   },
   copilot: {
     id: "copilot",
@@ -162,6 +186,9 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
         "Content lives IN the DB (not JSONL). Verified schema: sessions(id,cwd,repository,branch,summary,created_at,updated_at); turns(session_id,turn_index,user_message,assistant_response,timestamp); forge_trajectory_events(session_id,tool_call_id,turn_index,event_type,command,output,exit_code,event_key,event_value) for tool calls; session_files(session_id,file_path,tool_name,turn_index); checkpoints(...) summaries; search_index* FTS. Reader = list from `sessions`, history from `turns` ORDER BY turn_index, tool cards from forge_trajectory_events. (Aux per-session dir at ~/.copilot/session-state/<id>/ holds workspace.yaml/checkpoints/files, not the transcript.)",
     },
     login: { check: "copilot -p hi (stderr)", command: "copilot login (or GITHUB_TOKEN)" },
+    // `copilot login` is a GitHub OAuth device flow (code entered at
+    // github.com/login/device) → completable from the phone.
+    remoteAuth: { mode: "device_code", command: "copilot login" },
     notes: "We own the session UUID via --session-id (sets new / resumes).",
   },
   kiro: {
@@ -184,6 +211,10 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
         "Kiro CLI == Amazon Q Developer CLI rebranded (open source: github.com/aws/amazon-q-developer-cli). Conversations live in a `conversations(key,value)` table (migration 007) keyed by the absolute cwd; value = serde_json of ConversationState. Full source-verified value schema in kiro-conversation.ts (externally-tagged enums: user content {Prompt|ToolUseResults}, assistant {Response|ToolUse}). NB the `conversations` table may be absent until a chat persists one (the build here had only state/history/auth_kv) — a reader must tolerate 'no such table' (kiro-sessions.ts does).",
     },
     login: { check: "kiro-cli whoami", command: "kiro-cli login" },
+    // `kiro-cli login --license free` signs in with an AWS Builder ID via a
+    // device-code flow → completable from the phone. (Spike: `--license free`
+    // is the no-cost tier; `pro` requires a paid AWS account.)
+    remoteAuth: { mode: "device_code", command: "kiro-cli login --license free" },
   },
   codex: {
     id: "codex",
@@ -215,6 +246,9 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
       notes: "The SQLite DB is an index, not the content store — `rollout_path` points at the JSONL; we read the JSONL directly (no DB dependency). Codex *desktop* (orbit.db) is a separate sqlite-blob store, not covered here. Conversation text + tool calls/results are exact; tool-argument previews are best-effort (the `arguments` JSON shape isn't in the schema) until an authed sample lands.",
     },
     login: { check: "~/.codex/auth.json or OPENAI_API_KEY", command: "codex login" },
+    // `codex login --device-auth` runs a device-code flow instead of the default
+    // localhost-callback browser flow → completable from the phone.
+    remoteAuth: { mode: "device_code", command: "codex login --device-auth" },
     notes: "Non-interactive via `codex exec`. Multi-turn resume not wired yet.",
   },
 };

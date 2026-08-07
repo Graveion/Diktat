@@ -14,9 +14,20 @@ import {
 } from "./run-summary";
 import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, AGENT_CONTRACTS, type PermissionModeId } from "./agents";
 import { recordRun } from "./run-stats-store";
+import { DeviceCodeScanner } from "./device-auth";
 
 /** Kill a CLI that has produced no output for this long. */
 export const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Hard ceiling on a remote device-code re-auth attempt. Device codes usually
+ * live ~15 min; we cap the wait at that (extended slightly past a parsed
+ * expiry, never beyond this) so a login the user never completes can't pin a
+ * process open forever.
+ */
+export const DEVICE_AUTH_TIMEOUT_MS = 15 * 60 * 1000;
+/** Fallback wait when the CLI doesn't print an explicit code expiry. */
+export const DEVICE_AUTH_DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Signatures that mean the agent CLI itself couldn't authenticate with its own
@@ -325,7 +336,7 @@ export class Session {
     }
   }
 
-  private async runCLI(cliPath: string, cwd: string, text: string, pushToken?: string, retry = false): Promise<void> {
+  private async runCLI(cliPath: string, cwd: string, text: string, pushToken?: string, retry = false, authAttempted = false): Promise<void> {
     // Reset the per-run accumulator at the start of a fresh run. On the retry
     // path we keep the original start time but clear any partial state.
     this.run = newRunAccumulator(retry ? this.run.startedAt : Date.now());
@@ -427,11 +438,25 @@ export class Session {
     const exitCode = timedOut ? -1 : rawExit; // timeout reports like a cancel
 
     // A non-zero exit whose stderr looks like a provider auth failure means the
-    // agent CLI on this machine isn't logged in — surface a clear, actionable
-    // message instead of leaving the user staring at a raw "401" in the output.
+    // agent CLI on this machine isn't logged in.
     if (exitCode !== 0 && !timedOut && AUTH_FAILURE_RE.test(stderrTail)) {
       const contract = AGENT_CONTRACTS[this.data.cli];
       const name = contract?.displayName ?? this.data.cli;
+      const remote = contract?.remoteAuth;
+      // Device-code-capable CLIs can be re-authenticated from the phone: run the
+      // device flow, prompt the user with the verification URL/code, and — on
+      // success — silently retry this turn (no exit frame for the failed run).
+      // `authAttempted` stops an auth loop if the retried turn also 401s.
+      if (remote && remote.mode === "device_code" && !authAttempted) {
+        const ok = await this.runDeviceAuth(cliPath, cwd, remote.command);
+        if (ok) {
+          await this.runCLI(cliPath, cwd, text, pushToken, retry, true);
+          return;
+        }
+      }
+      // Not remotely re-authenticatable (Claude/Cursor), or the device flow
+      // didn't complete — surface a clear, actionable "do it on the machine"
+      // message instead of leaving the user staring at a raw "401".
       const login = contract?.login.command ?? "re-authenticate the CLI";
       this.emit({
         type: "error",
@@ -460,6 +485,106 @@ export class Session {
       const data = summaryToPushData(this.data.id, summary);
       await sendPushNotification(pushToken, title, body, data);
     }
+  }
+
+  /**
+   * Drive a device-code re-auth flow for this CLI. Spawns the device-flow login
+   * command, scans its output for the verification URL + user code, emits an
+   * `auth_prompt` to the (paired) phone, then keeps reading and emits
+   * `auth_status` updates until the login resolves. Returns true iff the CLI
+   * re-authenticated (so the caller can retry the pending turn).
+   *
+   * SECURITY: the verification URL/code are single-use credentials for THIS
+   * attempt; they go only to the paired owner via `emit` (session/relay scoped)
+   * and are never logged here.
+   */
+  private async runDeviceAuth(cliPath: string, cwd: string, command: string): Promise<boolean> {
+    const contract = AGENT_CONTRACTS[this.data.cli];
+    const name = contract?.displayName ?? this.data.cli;
+    // The command's first token is the CLI binary; replace it with the resolved
+    // path (which `which` found) and keep the device-flow flags after it.
+    const [, ...rest] = command.trim().split(/\s+/);
+    const args = [cliPath, ...rest];
+
+    let proc: ReturnType<typeof Bun.spawn>;
+    try {
+      // No stdin: device flows print the URL/code and poll — the user completes
+      // sign-in on the provider's web page, so the daemon never handles a secret.
+      proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    } catch {
+      this.emit({ type: "auth_status", cli: this.data.cli, state: "failed", message: `Couldn't start ${name} sign-in.` });
+      return false;
+    }
+    const prevProc = this.activeProc;
+    this.activeProc = proc; // so `cancel` also kills an in-flight login
+
+    const scanner = new DeviceCodeScanner();
+    let prompted = false;
+    let killed = false;
+
+    // Timeout: start with the fallback, tighten to the parsed code expiry (plus
+    // a small grace) once known, never exceeding the hard ceiling.
+    let deadline: ReturnType<typeof setTimeout> | null = null;
+    const arm = (ms: number) => {
+      if (deadline) clearTimeout(deadline);
+      deadline = setTimeout(() => { killed = true; proc.kill(); }, Math.min(ms, DEVICE_AUTH_TIMEOUT_MS));
+    };
+    arm(DEVICE_AUTH_DEFAULT_TIMEOUT_MS);
+
+    const onData = (info: ReturnType<DeviceCodeScanner["push"]>) => {
+      if (!prompted && info.ready && info.info.verificationUrl) {
+        prompted = true;
+        if (info.info.expiresInSec) arm(info.info.expiresInSec * 1000 + 10_000);
+        const url = info.info.verificationUrl;
+        const code = info.info.userCode;
+        this.emit({
+          type: "auth_prompt",
+          cli: this.data.cli,
+          mode: "device_code",
+          verificationUrl: url,
+          ...(code ? { userCode: code } : {}),
+          ...(info.info.expiresInSec ? { expiresInSec: info.info.expiresInSec } : {}),
+          instructions: code
+            ? `Open ${url} on any device and enter code ${code} to re-authenticate ${name}.`
+            : `Open ${url} to re-authenticate ${name}.`,
+        });
+        this.emit({ type: "auth_status", cli: this.data.cli, state: "pending" });
+      }
+    };
+
+    const read = async (stream: ReadableStream<Uint8Array>) => {
+      const decoder = new TextDecoder();
+      const reader = stream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = stripAnsi(decoder.decode(value, { stream: true }));
+        if (chunk) onData(scanner.push(chunk));
+      }
+    };
+    await Promise.all([
+      read(proc.stdout as ReadableStream<Uint8Array>),
+      read(proc.stderr as ReadableStream<Uint8Array>),
+    ]);
+    if (deadline) clearTimeout(deadline);
+
+    const exitCode = await proc.exited;
+    this.activeProc = prevProc;
+
+    // Definitive result: an explicit success/failure line wins, else exit code.
+    // A killed process (timeout/cancel) is always a failure.
+    const outcome = scanner.terminalOutcome;
+    const success = !killed && (outcome === "success" || (outcome !== "failed" && exitCode === 0));
+
+    this.emit({
+      type: "auth_status",
+      cli: this.data.cli,
+      state: success ? "success" : "failed",
+      ...(success
+        ? {}
+        : { message: killed ? `${name} sign-in timed out. Try again.` : `${name} sign-in didn't complete.` }),
+    });
+    return success;
   }
 
   private parseClaudeChunk(chunk: string): boolean {
