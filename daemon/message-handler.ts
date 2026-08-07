@@ -1,4 +1,4 @@
-import { Session } from "./session";
+import { Session, parseAttachments } from "./session";
 import { readHistory, listClaudeSessions, claudeSessionExists } from "./claude-sessions";
 import { readCursorHistory, listCursorSessions } from "./cursor-sessions";
 import { readCodexHistory, listCodexSessions } from "./codex-sessions";
@@ -277,8 +277,11 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       session.applyOptions({ model: msg.model, permissionMode: msg.permissionMode, effort: msg.effort });
     }
     const pushToken = ctx.clientPushTokens.get(ws as object);
+    // Optional image attachments (signed URLs). Validated/capped here; the
+    // session ignores them for CLIs that can't read images.
+    const attachments = parseAttachments(msg.attachments);
     try {
-      await session.send(msg.text, pushToken);
+      await session.send(msg.text, pushToken, attachments);
     } catch (e) {
       console.error("Error in session.send:", e);
       try { ws.send(JSON.stringify({ type: "error", message: `Session error: ${(e as Error).message}` })); } catch {}

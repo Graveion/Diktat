@@ -261,6 +261,37 @@ test("input: active session → session.send called with push token", async () =
   expect(received).toEqual({ text: "do it", token: "push-tok" });
 });
 
+test("input: valid attachments parsed and forwarded to session.send", async () => {
+  const { ws } = mockWs();
+  let received: any;
+  const session = fakeSession("s-att");
+  session.send = async (_text: string, _token?: string, attachments?: any) => { received = attachments; };
+  const ctx = makeCtx();
+  ctx.activeSessions.set("s-att", session);
+  await handleClientMessage(ctx, ws, {
+    type: "input",
+    sessionId: "s-att",
+    text: "look",
+    attachments: [
+      { url: "https://example.com/a.png", mime: "image/png", name: "a.png" },
+      { url: "ftp://bad/x.png", mime: "image/png" },   // dropped: bad scheme
+      { url: "https://example.com/b.png" },            // dropped: no mime
+    ],
+  });
+  expect(received).toEqual([{ url: "https://example.com/a.png", mime: "image/png", name: "a.png" }]);
+});
+
+test("input: no attachments → session.send gets empty array", async () => {
+  const { ws } = mockWs();
+  let received: any = "unset";
+  const session = fakeSession("s-noatt");
+  session.send = async (_text: string, _token?: string, attachments?: any) => { received = attachments; };
+  const ctx = makeCtx();
+  ctx.activeSessions.set("s-noatt", session);
+  await handleClientMessage(ctx, ws, { type: "input", sessionId: "s-noatt", text: "hi" });
+  expect(received).toEqual([]);
+});
+
 test("input: per-turn model/permission → applyOptions called before send", async () => {
   const { ws } = mockWs();
   let applied: any;

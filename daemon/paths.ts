@@ -26,3 +26,17 @@ export function dataPath(...segments: string[]): string {
 export function ensureDataDir(): void {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 }
+
+/**
+ * Root for short-lived scratch files (e.g. downloaded image attachments). Lives
+ * under the data dir so it's colocated with everything else the daemon owns and
+ * is cleaned up per-turn by the caller.
+ */
+export const TEMP_DIR = join(DATA_DIR, "tmp");
+
+/** Resolve a path inside a per-session temp dir, ensuring the dir exists. */
+export function sessionTempDir(sessionId: string): string {
+  const dir = join(TEMP_DIR, sessionId);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return dir;
+}

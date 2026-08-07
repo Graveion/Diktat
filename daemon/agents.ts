@@ -87,6 +87,13 @@ export interface AgentContract {
   output: OutputFormat;
   /** True → rich tool_use/tool_result previews; false → plain text passthrough. */
   structuredEvents: boolean;
+  /**
+   * True → the CLI accepts image inputs by local file path, so the daemon may
+   * download `input.attachments` to temp files and inject their paths into the
+   * invocation. Claude Code is the only CLI wired for this today; leave false
+   * for any CLI that can't read image paths (attachments are then ignored).
+   */
+  images: boolean;
   /** Forward stdout through the ANSI stripper before sending to the app. */
   stripAnsi: boolean;
   resume: ResumeStyle;
@@ -111,6 +118,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     output: "stream-json",
     structuredEvents: true,
     stripAnsi: false,
+    images: true, // Claude Code reads image files by path in the prompt.
     resume: { kind: "server-id", flag: "--resume" },
     history: {
       kind: "jsonl-dir",
@@ -131,6 +139,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     output: "stream-json",
     structuredEvents: true,
     stripAnsi: false,
+    images: false,
     resume: { kind: "server-id", flag: "--resume=" }, // note: `=` form
     history: {
       kind: "jsonl-dir",
@@ -153,6 +162,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     output: "text",
     structuredEvents: false, // JSONL via --output-format json — parser TODO
     stripAnsi: false,
+    images: false,
     resume: { kind: "owned-uuid", flag: "--session-id" },
     history: {
       kind: "sqlite-blob",
@@ -175,6 +185,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     output: "text",
     structuredEvents: false, // chat has no JSON event stream (-f json is list-only)
     stripAnsi: true,
+    images: false,
     resume: { kind: "resume-dir", flag: "--resume" },
     history: {
       kind: "sqlite-blob",
@@ -198,6 +209,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     output: "text",
     structuredEvents: false, // `codex exec --json` JSONL — parser TODO
     stripAnsi: true,
+    images: false,
     resume: { kind: "none" }, // v1 stateless; codex exec resume / --json TODO
     history: {
       kind: "jsonl-indexed-by-sqlite",
@@ -223,6 +235,11 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
 export const KNOWN_CLIS: Record<string, string> = Object.fromEntries(
   Object.values(AGENT_CONTRACTS).map((a) => [a.id, a.binary]),
 );
+
+/** True when the CLI can consume image attachments (by local file path). */
+export function agentSupportsImages(cli: string): boolean {
+  return AGENT_CONTRACTS[cli]?.images === true;
+}
 
 // ─── Model + permission selection (drives the app's dropdowns) ───────────────
 //

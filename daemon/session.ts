@@ -1,5 +1,7 @@
 import type { ServerWebSocket } from "bun";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
+import { join } from "path";
+import { TEMP_DIR, sessionTempDir } from "./paths";
 import { saveSession, loadSession, type SessionData } from "./session-store";
 import { sendPushNotification } from "./push";
 import { buildToolUsePreview, buildToolResultPreview } from "./tool-preview";
@@ -12,11 +14,77 @@ import {
   summaryToPushData,
   type RunAccumulator,
 } from "./run-summary";
-import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, AGENT_CONTRACTS, type PermissionModeId } from "./agents";
+import { permissionFlags, modelFlags, effortFlags, DEFAULT_PERMISSION_MODE, AGENT_CONTRACTS, agentSupportsImages, type PermissionModeId } from "./agents";
 import { recordRun } from "./run-stats-store";
 
 /** Kill a CLI that has produced no output for this long. */
 export const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+
+// ─── Image attachments ───────────────────────────────────────────────────────
+//
+// The `input` message may carry `attachments` — signed URLs of images the phone
+// uploaded to Supabase Storage. For a CLI that can read images by path (Claude
+// Code today), the daemon downloads each to a per-session temp file and injects
+// the local paths into the prompt, then deletes them after the turn.
+
+/** A single attachment as it arrives on the `input` message. */
+export interface InputAttachment {
+  url: string;
+  mime: string;
+  name?: string;
+}
+
+/** Defensive cap — a runaway/hostile client can't make us fetch unbounded files. */
+export const MAX_ATTACHMENTS = 8;
+
+const MIME_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+/**
+ * Validate + normalize the raw `attachments` field off an `input` message.
+ * Keeps only entries with a string `mime` and an http(s) `url` (we never fetch
+ * `file:`/`data:`/other schemes from a client), and caps the count.
+ */
+export function parseAttachments(raw: unknown): InputAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: InputAttachment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const { url, mime, name } = item as Record<string, unknown>;
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) continue;
+    if (typeof mime !== "string" || !mime) continue;
+    out.push({ url, mime, ...(typeof name === "string" && name ? { name } : {}) });
+    if (out.length >= MAX_ATTACHMENTS) break;
+  }
+  return out;
+}
+
+/** Pick a file extension for a downloaded attachment (mime first, then name). */
+export function attachmentExtension(att: InputAttachment): string {
+  const fromMime = MIME_EXT[att.mime.toLowerCase()];
+  if (fromMime) return fromMime;
+  const m = att.name?.match(/\.([A-Za-z0-9]{1,5})$/);
+  return m ? m[1]!.toLowerCase() : "img";
+}
+
+/**
+ * Compose the prompt sent to the CLI, appending the local image paths so an
+ * image-capable agent reads them. No paths → the original text is returned
+ * unchanged.
+ */
+export function buildImagePrompt(text: string, imagePaths: string[]): string {
+  if (imagePaths.length === 0) return text;
+  const plural = imagePaths.length === 1 ? "" : "s";
+  const header = text.trim() ? `${text}\n\n` : "";
+  return `${header}Attached image${plural} (local file path${plural}):\n${imagePaths.join("\n")}`;
+}
 
 /**
  * Signatures that mean the agent CLI itself couldn't authenticate with its own
@@ -313,15 +381,58 @@ export class Session {
     this.activeProc = null;
   }
 
-  async send(text: string, pushToken?: string): Promise<void> {
+  async send(text: string, pushToken?: string, attachments?: InputAttachment[]): Promise<void> {
     const CLI_FALLBACK: Record<string, string> = { claude: "claude", cursor: "agent", copilot: "copilot", kiro: "kiro-cli", codex: "codex" };
     const cliPath = this.data.cliPath ?? CLI_FALLBACK[this.data.cli] ?? this.data.cli;
     const cwd = existsSync(this.data.project) ? this.data.project : process.env.HOME ?? process.cwd();
+    // Only download attachments for a CLI that can actually read images; other
+    // CLIs silently ignore the field (documented in PROTOCOL.md).
+    const wantImages = !!attachments?.length && agentSupportsImages(this.data.cli);
+    const imagePaths = wantImages ? await this.downloadAttachments(attachments!) : [];
+    const prompt = buildImagePrompt(text, imagePaths);
     this.setRunning(true);
     try {
-      await this.runCLI(cliPath, cwd, text, pushToken);
+      await this.runCLI(cliPath, cwd, prompt, pushToken);
     } finally {
       this.setRunning(false);
+      if (imagePaths.length > 0) this.cleanupTemps();
+    }
+  }
+
+  /**
+   * Download each attachment URL to this session's temp dir. Best-effort: a
+   * failed fetch is logged and skipped rather than aborting the whole turn.
+   * Returns the local paths of successfully downloaded images.
+   */
+  private async downloadAttachments(attachments: InputAttachment[]): Promise<string[]> {
+    const dir = sessionTempDir(this.data.id);
+    const paths: string[] = [];
+    for (let i = 0; i < attachments.length; i++) {
+      const att = attachments[i]!;
+      try {
+        const res = await fetch(att.url);
+        if (!res.ok) {
+          console.error(`Attachment fetch failed (${res.status}): ${att.url}`);
+          continue;
+        }
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const file = join(dir, `${Date.now()}-${i}.${attachmentExtension(att)}`);
+        await Bun.write(file, bytes);
+        paths.push(file);
+      } catch (e) {
+        console.error("Attachment download error:", e);
+      }
+    }
+    return paths;
+  }
+
+  /** Remove this session's temp dir (downloaded attachments) after a turn. */
+  private cleanupTemps(): void {
+    try {
+      const dir = join(TEMP_DIR, this.data.id);
+      if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      console.error("Temp cleanup error:", e);
     }
   }
 
