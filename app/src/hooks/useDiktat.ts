@@ -46,6 +46,24 @@ export type DiktatMessage = {
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 export type ConnIssue = "relay-unreachable" | "daemon-offline";
 
+// Remote re-authentication (device-code flow). When an agent CLI's provider
+// auth has expired, the daemon can drive a device-code login and ask the user
+// to finish it in a browser — see daemon/PROTOCOL.md `auth_prompt`/`auth_status`.
+export type AuthPromptState = "pending" | "success" | "failed";
+export type AuthPrompt = {
+  sessionId: string;
+  cli: string;
+  mode: "device_code";
+  verificationUrl: string;
+  userCode?: string;
+  expiresInSec?: number;
+  instructions: string;
+  /** Live status of the login, updated from `auth_status` frames. */
+  state: AuthPromptState;
+  /** Failure detail, when state === "failed". */
+  message?: string;
+};
+
 // Authoritative run summary from the daemon (sent on the `exit` frame). Mirrors
 // the daemon's RunSummary; richer than the client-side derivation (true
 // pass/fail + exact diff counts).
@@ -209,6 +227,9 @@ export function useDiktat(relay?: RelayDescriptor) {
   // auth-expired is surfaced separately via errorMessage (needs re-sign-in).
   const [connIssue, setConnIssue] = useState<ConnIssue | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Active remote re-auth prompt (device-code flow), or null when none is in
+  // flight. Only ever set for the on-screen session.
+  const [authPrompt, setAuthPrompt] = useState<AuthPrompt | null>(null);
   const [clis, setClis] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentSelectionMap>({});
   const [projects, setProjects] = useState<string[]>([]);
@@ -507,6 +528,7 @@ export function useDiktat(relay?: RelayDescriptor) {
           hasReceivedOutput.current = false;
           setMessages([]);
           setStreaming(false);
+          setAuthPrompt(null); // stale re-auth card from a prior session
           setHistoryLoading(true);
           historyHasMoreRef.current = false;
           historyPagingRef.current = false;
@@ -623,6 +645,44 @@ export function useDiktat(relay?: RelayDescriptor) {
         return;
       }
 
+      // Remote re-auth: the daemon is driving a device-code login for a CLI
+      // whose provider auth expired. Only surface it for the on-screen session
+      // (a backgrounded session's re-auth is ignored here). See PROTOCOL.md.
+      if (msg.type === "auth_prompt") {
+        if (fid && fid !== activeSessionIdRef.current) return;
+        if (typeof msg.verificationUrl !== "string") return;
+        info("AUTH", `auth_prompt: cli=${msg.cli} mode=${msg.mode}`);
+        track("reauth_prompt_shown", { cli: msg.cli ?? "" });
+        setAuthPrompt({
+          sessionId: msg.sessionId,
+          cli: msg.cli,
+          mode: "device_code",
+          verificationUrl: msg.verificationUrl,
+          userCode: typeof msg.userCode === "string" ? msg.userCode : undefined,
+          expiresInSec: typeof msg.expiresInSec === "number" ? msg.expiresInSec : undefined,
+          instructions: typeof msg.instructions === "string" ? msg.instructions : "",
+          state: "pending",
+        });
+        return;
+      }
+
+      if (msg.type === "auth_status") {
+        if (fid && fid !== activeSessionIdRef.current) return;
+        const state = msg.state as AuthPromptState;
+        info("AUTH", `auth_status: cli=${msg.cli} state=${state}`);
+        if (state === "success") {
+          // Login done — the daemon auto-retries the pending turn, so dismiss the
+          // card and let the resumed output stream in.
+          track("reauth_result", { cli: msg.cli ?? "", state });
+          setAuthPrompt(null);
+        } else {
+          // pending / failed: reflect on the card if one is showing.
+          setAuthPrompt((p) => (p ? { ...p, state, message: msg.message } : p));
+          if (state === "failed") track("reauth_result", { cli: msg.cli ?? "", state });
+        }
+        return;
+      }
+
       if (msg.type === "error") {
         logError("MSG", `daemon error: ${msg.message}`);
         setErrorMessage(msg.message ?? "An error occurred");
@@ -684,6 +744,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     setReconnecting(false);
     setConnIssue(null);
     setErrorMessage(null);
+    setAuthPrompt(null);
   }, []);
 
   const leaveSession = useCallback(() => {
@@ -709,6 +770,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     setMessages([]);
     setStreaming(false);
     setCurrentTool(null);
+    setAuthPrompt(null);
     setHistoryLoading(false);
     historyHasMoreRef.current = false;
     historyPagingRef.current = false;
@@ -840,6 +902,7 @@ export function useDiktat(relay?: RelayDescriptor) {
   }, []);
 
   const clearError = useCallback(() => setErrorMessage(null), []);
+  const dismissAuthPrompt = useCallback(() => setAuthPrompt(null), []);
 
   useEffect(() => {
     return () => {
@@ -857,6 +920,7 @@ export function useDiktat(relay?: RelayDescriptor) {
     messages, streaming, currentTool, historyLoading, stats, lastRunSummary, daemonVersion, connect, disconnect,
     spawnSession, resumeSession, sendMessage, leaveSession, cancelMessage,
     registerPushToken, clearError,
+    authPrompt, dismissAuthPrompt,
     historyHasMore, historyPaging, loadMoreHistory,
   };
 }

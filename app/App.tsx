@@ -20,6 +20,7 @@ import { useAuth, type AuthApi } from "./src/hooks/useAuth";
 import { useMachines, type Machine } from "./src/hooks/useMachines";
 import { useEntitlements } from "./src/hooks/useEntitlements";
 import { Banner } from "./src/components/Banner";
+import { ReauthSheet } from "./src/components/ReauthSheet";
 import { SignInScreen } from "./src/screens/SignInScreen";
 import { MachinesScreen } from "./src/screens/MachinesScreen";
 import { PaywallScreen } from "./src/screens/PaywallScreen";
@@ -374,6 +375,14 @@ function AppInner({ diktat, auth, connectToMachine, leaveMachine, demoMode = fal
           sessionStats={diktat.activeSessionId ? diktat.stats?.perSession[diktat.activeSessionId] : undefined}
         />
       )}
+
+      {/* Remote re-auth (device-code) — shown over whatever screen is active
+          when a CLI's provider auth expires mid-session. */}
+      <ReauthSheet
+        prompt={diktat.authPrompt}
+        cliLabel={diktat.authPrompt ? (diktat.agents as Record<string, { displayName?: string }>)[diktat.authPrompt.cli]?.displayName : undefined}
+        onDismiss={diktat.dismissAuthPrompt}
+      />
 
       {paywallVisible ? (
         <View style={styles.paywallOverlay}>

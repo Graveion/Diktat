@@ -764,3 +764,95 @@ test("LineBuffer: cursor event split across chunks still captured", () => {
   for (const line of lines) (session as any).parseCursorChunk(line);
   expect(session.summary.cliSessionId).toBe("split-session-id");
 });
+
+// ---------------------------------------------------------------------------
+// Device-code re-auth (runDeviceAuth) — state transitions.
+//
+// runDeviceAuth spawns a login command and drives the auth_prompt/auth_status
+// frames. We drive it with a tiny stand-in executable (passed as the resolved
+// "cliPath") that prints device-flow output and exits with a chosen code — so
+// the scanner→emit wiring and the success/failure decision are exercised end to
+// end without a real CLI. (The real PTY device flow can't be tested here.)
+// ---------------------------------------------------------------------------
+
+import { mkdtempSync, writeFileSync, chmodSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+
+function makeFakeLoginScript(body: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "diktat-devauth-"));
+  const path = join(dir, "fake-login.sh");
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("runDeviceAuth: emits auth_prompt then auth_status success when login exits 0", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws); // cursor session object; cli field irrelevant to the flow
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` +
+      `printf 'code expires in 900 seconds\\n'\n` +
+      `printf 'Logged in as octocat\\n'\n` +
+      `exit 0`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(true);
+
+  const prompt = sent.find((m) => m.type === "auth_prompt");
+  expect(prompt).toMatchObject({
+    type: "auth_prompt",
+    mode: "device_code",
+    verificationUrl: "https://github.com/login/device",
+    userCode: "WDJB-MJHT",
+    expiresInSec: 900,
+  });
+  expect(typeof prompt.instructions).toBe("string");
+  expect(prompt.instructions).toContain("WDJB-MJHT");
+
+  const statuses = sent.filter((m) => m.type === "auth_status").map((m) => m.state);
+  expect(statuses[0]).toBe("pending");
+  expect(statuses[statuses.length - 1]).toBe("success");
+});
+
+test("runDeviceAuth: reports failure when the login exits non-zero", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` + `exit 1`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(false);
+
+  // The prompt still went out (URL was printed) before the failure.
+  expect(sent.some((m) => m.type === "auth_prompt")).toBe(true);
+  const last = sent.filter((m) => m.type === "auth_status").pop();
+  expect(last.state).toBe("failed");
+  expect(typeof last.message).toBe("string");
+});
+
+test("runDeviceAuth: an explicit failure line beats a zero exit code", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` +
+      `printf 'Login failed: access denied\\n'\n` +
+      `exit 0`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(false);
+  expect(sent.filter((m) => m.type === "auth_status").pop().state).toBe("failed");
+});
+
+test("runDeviceAuth: frames carry this session's id (owner-scoped routing)", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://example.com/device code WDJB-MJHT\\n'\nexit 0`,
+  );
+  await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  for (const m of sent) expect(m.sessionId).toBe(session.id);
+});
