@@ -1,0 +1,630 @@
+# Diktat Daemon – Protocol Reference
+
+This document is the authoritative API contract for the Diktat daemon. It covers every data format the daemon touches, from upstream CLI output through to the WebSocket messages exchanged with the iOS app.
+
+---
+
+## 1. Cursor Composer blob format (store.db)
+
+**Upstream source of truth. The daemon does NOT read store.db directly.**
+
+Cursor stores conversation history in `~/.cursor/projects/<encoded-path>/store.db`. The daemon reads the agent-transcript JSONL files instead (see §4). This section documents the raw blob format for reference and for understanding what the JSONL files are derived from.
+
+### Assistant message blob
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "redacted-reasoning",
+      "data": "<base64-encoded reasoning>",
+      "providerOptions": { "cursor": { "modelName": "composer-2.5-fast" } }
+    },
+    { "type": "text", "text": "Actual assistant response text\n" },
+    {
+      "type": "tool-call",
+      "toolCallId": "tool_abc123",
+      "toolName": "Shell",
+      "args": { "command": "git status", "description": "Check git status" }
+    },
+    {
+      "type": "tool-call",
+      "toolCallId": "tool_def456",
+      "toolName": "Glob",
+      "args": { "glob_pattern": "**/*.swift" }
+    }
+  ],
+  "id": "1"
+}
+```
+
+Key points:
+- `type: "redacted-reasoning"` blocks contain base64-encoded internal reasoning; they must be ignored/stripped.
+- Tool invocations use `type: "tool-call"` (hyphen) and `toolCallId`/`toolName` (camelCase).
+- This differs from the Anthropic format used in Claude's JSONL (`type: "tool_use"`, `id`, `name` — underscores).
+
+### User message blob
+
+```json
+{
+  "role": "user",
+  "content": [
+    {
+      "type": "tool-result",
+      "toolCallId": "tool_abc123",
+      "toolName": "Shell",
+      "result": "output text",
+      "experimental_content": [{ "type": "text", "text": "output text" }]
+    },
+    {
+      "type": "text",
+      "text": "<user_query>\nActual user message\n</user_query>"
+    }
+  ],
+  "providerOptions": { "cursor": { "requestId": "uuid" } }
+}
+```
+
+Key points:
+- Tool results use `type: "tool-result"` (hyphen) with `toolCallId`/`toolName`.
+- The actual user query is wrapped in `<user_query>` tags and sometimes preceded by a `<timestamp>` tag. These wrappers must be stripped when displaying the message.
+
+---
+
+## 2. Cursor CLI stream-json format
+
+**What `parseCursorChunk` actually parses** — streamed from `agent --output-format stream-json --stream-partial-output`.
+
+Each line is a self-contained JSON object (NDJSON). The daemon reads stdout and splits on newlines.
+
+### Text delta
+
+Emitted while the assistant is generating text. Multiple deltas arrive per response.
+
+```json
+{
+  "type": "assistant",
+  "timestamp_ms": 1710000000000,
+  "message": {
+    "content": [
+      { "type": "text", "text": "partial text fragment" }
+    ]
+  }
+}
+```
+
+Distinguishing feature: `timestamp_ms` is present AND `model_call_id` is absent. The daemon strips `[redacted]` markers from `text` before forwarding.
+
+### Tool call started
+
+```json
+{
+  "type": "tool_call",
+  "subtype": "started",
+  "call_id": "uuid",
+  "tool_call": {
+    "readToolCall": {
+      "args": { "path": "/some/file.ts" },
+      "result": null
+    }
+  }
+}
+```
+
+Known tool wrappers: `readToolCall`, `writeToolCall`, `editToolCall`, `bashToolCall`, `searchToolCall`, `webToolCall`.
+
+### Tool call completed
+
+```json
+{
+  "type": "tool_call",
+  "subtype": "completed",
+  "call_id": "uuid",
+  "tool_call": {
+    "readToolCall": {
+      "args": { "path": "/some/file.ts" },
+      "result": {
+        "success": { "content": "file contents here" }
+      }
+    }
+  }
+}
+```
+
+The `result.success` shape varies by tool type (see `extractCursorResultText` in `session.ts`).
+
+### Session ID capture
+
+```json
+{ "session_id": "uuid" }
+```
+
+May appear on any line; the daemon captures it on first occurrence and saves it to `SessionData.cliSessionId`.
+
+---
+
+## 3. Claude CLI stream-json format
+
+**What `parseClaudeChunk` parses** — streamed from `claude -p <text> --output-format stream-json --verbose`.
+
+Each line is NDJSON.
+
+### Session ID line
+
+```json
+{ "session_id": "uuid" }
+```
+
+Captured on first occurrence; persisted to `SessionData.cliSessionId` for `--resume` on subsequent turns.
+
+### Assistant text / tool use
+
+```json
+{
+  "type": "assistant",
+  "message": {
+    "content": [
+      { "type": "text", "text": "Response text" },
+      {
+        "type": "tool_use",
+        "id": "toolu_abc123",
+        "name": "Read",
+        "input": { "file_path": "/path/to/file" }
+      }
+    ]
+  }
+}
+```
+
+- Text blocks → forwarded as `output` messages.
+- `tool_use` blocks (underscore) → forwarded as `tool_use` messages with optional preview fields.
+
+### Tool result (user turn)
+
+```json
+{
+  "type": "user",
+  "message": {
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_abc123",
+        "content": "tool output text or array of content blocks"
+      }
+    ]
+  }
+}
+```
+
+Forwarded as `tool_result` messages with a truncated preview.
+
+### Error / plain text
+
+Non-JSON lines are forwarded as `output` messages, except lines matching `/no conversation found/i` which trigger a retry without `--resume` (stale session ID recovery).
+
+---
+
+## 4. Agent-transcript JSONL format
+
+**The persistent conversation history files** read by `readCursorHistory` and `readHistory` (Claude).
+
+Files live at:
+- **Cursor**: `~/.cursor/projects/<encoded-path>/agent-transcripts/<session-id>/<session-id>.jsonl`
+- **Claude**: `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
+
+### Cursor JSONL — assistant entry
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    { "type": "redacted-reasoning", "data": "<base64>", "providerOptions": { "cursor": { "modelName": "..." } } },
+    { "type": "text", "text": "Response text\n" },
+    { "type": "tool_use", "id": "tool_abc123", "name": "Read", "input": { "file_path": "/path" } }
+  ],
+  "id": "1"
+}
+```
+
+Or with a `message` wrapper:
+
+```json
+{ "role": "assistant", "message": { "content": [...] } }
+```
+
+The daemon uses `entry.message?.content ?? entry.content` to handle both shapes.
+
+`redacted-reasoning` blocks are silently skipped (only `type === "text"` and `type === "tool_use"` are processed).
+
+### Cursor JSONL — user entry
+
+```json
+{
+  "role": "user",
+  "content": [
+    {
+      "type": "tool_result",
+      "tool_use_id": "tool_abc123",
+      "content": "tool output text"
+    },
+    {
+      "type": "text",
+      "text": "<user_query>\nUser message\n</user_query>"
+    }
+  ],
+  "providerOptions": { "cursor": { "requestId": "uuid" } }
+}
+```
+
+### Claude JSONL — user entry
+
+```json
+{
+  "type": "user",
+  "cwd": "/path/to/project",
+  "message": { "content": "User message text" }
+}
+```
+
+`content` may also be an array of blocks (tool results + text).
+
+### Claude JSONL — assistant entry
+
+```json
+{
+  "type": "assistant",
+  "message": {
+    "content": [
+      { "type": "text", "text": "Response" },
+      { "type": "tool_use", "id": "toolu_x", "name": "Bash", "input": { "command": "ls" } }
+    ]
+  }
+}
+```
+
+---
+
+## 5. Daemon ↔ App WebSocket protocol
+
+The daemon is relay-only: it dials out to the relay (`config.relayUrl`) over a WebSocket and the app connects to the same relay; the daemon never listens on a local port. All messages are JSON strings.
+
+### App → Daemon (inbound)
+
+#### `spawn` — create a new session
+
+```json
+{
+  "type": "spawn",
+  "cli": "claude",
+  "project": "/abs/path/to/project",
+  "model": "opus",
+  "permissionMode": "auto"
+}
+```
+
+- `cli`: `"claude"`, `"cursor"`, `"codex"`, `"copilot"`, or `"kiro"`.
+- `project`: Must be in the daemon's `config.projects` allowlist.
+- `model`: Optional model override (per-CLI values — see `agents.ts`).
+- `permissionMode`: Optional. `"plan"`, `"auto"`, or `"full"`.
+
+Response: `spawned`
+
+#### `resume` — attach to an existing session
+
+```json
+{
+  "type": "resume",
+  "sessionId": "uuid",
+  "project": "/abs/path/to/project",
+  "isClaudeSession": true,
+  "isCursorSession": false,
+  "isCodexSession": false,
+  "isCopilotSession": false,
+  "isKiroSession": false
+}
+```
+
+- `isClaudeSession` / `isCursorSession` / `isCodexSession` / `isCopilotSession` / `isKiroSession`: Resume a raw CLI session (from the corresponding `*Sessions` list in `connected`).
+- No flag set: Resume a daemon-tracked session by its daemon ID.
+- `sessionId` must match `^[A-Za-z0-9._-]+$` (no `..`, `/`, or `\`); anything else is rejected with an `error`.
+
+Response: `resumed`, then async `history`.
+
+#### `input` — send text to the active session
+
+```json
+{
+  "type": "input",
+  "sessionId": "uuid",
+  "text": "user message here",
+  "model": "opus",
+  "permissionMode": "auto",
+  "attachments": [
+    { "url": "https://…/signed", "mime": "image/png", "name": "screenshot.png" }
+  ]
+}
+```
+
+`model` and `permissionMode` are optional per-turn overrides from the composer dropdowns. The session runs the appropriate CLI and streams responses back as `output`, `tool_use`, `tool_result`, and `exit` messages.
+
+`attachments` is optional: `Array<{ url: string; mime: string; name?: string }>`. Each `url` is a short-expiry signed URL (the app uploads picked images to the private `agent-uploads` Supabase Storage bucket and signs them). The daemon downloads each URL to a per-session temp file and injects the local image path(s) into the CLI invocation, then deletes the temps after the turn. Attachments are only honoured for CLIs whose contract advertises the `images` capability (Claude Code only today — see `agents.ts`); for any other CLI the field is ignored. Only `http`/`https` URLs are fetched.
+
+#### `cancel` — kill the running process
+
+```json
+{
+  "type": "cancel",
+  "sessionId": "uuid"
+}
+```
+
+Response: `exit` with `code: -1`.
+
+#### `register_push` — register APNs push token
+
+```json
+{
+  "type": "register_push",
+  "token": "<apns-device-token>"
+}
+```
+
+No response. When a session completes while the WebSocket is closed, a push notification is sent to this token.
+
+#### `ping`
+
+```json
+{ "type": "ping" }
+```
+
+Response: `pong`.
+
+---
+
+### Daemon → App (outbound)
+
+#### `connected` — sent immediately on WebSocket open
+
+```json
+{
+  "type": "connected",
+  "clis": ["claude", "cursor", "codex", "copilot", "kiro"],
+  "projects": ["/abs/path/to/project"],
+  "agents": { "claude": { "models": ["..."], "permissionModes": ["..."] } },
+  "sessions": [
+    {
+      "id": "daemon-uuid",
+      "cli": "claude",
+      "project": "/path",
+      "cliSessionId": "claude-session-uuid",
+      "lastActiveAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "claudeSessions": [
+    {
+      "id": "claude-session-uuid",
+      "project": "/path",
+      "projectLabel": "myproject",
+      "firstMessage": "First 120 chars of first message",
+      "lastActiveAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "cursorSessions": [
+    {
+      "id": "cursor-session-uuid",
+      "project": "/path",
+      "projectLabel": "myproject",
+      "firstMessage": "First 120 chars of first message",
+      "lastActiveAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "codexSessions": [],
+  "copilotSessions": [],
+  "kiroSessions": []
+}
+```
+
+- `agents`: per-CLI model + permission-mode options for the app's dropdowns (shape from `agentSelectionData()` in `agents.ts`).
+- `codexSessions` / `copilotSessions` / `kiroSessions`: same shape as `cursorSessions`, listing each CLI's native past conversations.
+
+#### `spawned` — session created
+
+```json
+{
+  "type": "spawned",
+  "session": {
+    "id": "daemon-uuid",
+    "cli": "claude",
+    "project": "/path",
+    "cliSessionId": null,
+    "lastActiveAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+#### `resumed` — session resumed
+
+```json
+{
+  "type": "resumed",
+  "session": {
+    "id": "daemon-uuid",
+    "cli": "cursor",
+    "project": "/path",
+    "cliSessionId": "cursor-session-uuid",
+    "lastActiveAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+#### `history` — full conversation history (async, after `resumed`)
+
+```json
+{
+  "type": "history",
+  "messages": [
+    { "role": "user", "text": "user message" },
+    { "role": "assistant", "text": "assistant response" },
+    {
+      "role": "tool",
+      "text": "",
+      "toolName": "Read:file.ts",
+      "toolPath": "/path/to/file.ts",
+      "toolId": "tool_abc123",
+      "toolDiff": "- old line\n+ new line",
+      "toolPreview": "file content preview",
+      "toolCommand": "bash command",
+      "toolResult": "tool output preview",
+      "toolTruncated": false,
+      "toolResultTruncated": false,
+      "toolFullSize": 1234
+    }
+  ]
+}
+```
+
+All fields on tool messages except `role`, `text`, and `toolName` are optional and only present when applicable.
+
+#### `output` — streaming text from the assistant
+
+```json
+{ "type": "output", "text": "partial or complete text fragment" }
+```
+
+For Cursor, `[redacted]` markers are stripped before forwarding. Empty strings are never sent.
+
+#### `tool_use` — tool invocation in progress
+
+```json
+{
+  "type": "tool_use",
+  "id": "tool-id-or-call-id",
+  "name": "Read",
+  "path": "/path/to/file.ts",
+  "diff": "- old\n+ new",
+  "preview": "content preview",
+  "command": "bash command",
+  "truncated": true,
+  "fullSize": 4096
+}
+```
+
+- `id`: Present for Claude tool uses (`tool_use_id`). For Cursor, the `call_id` UUID.
+- `path`: Present for file tools (Read, Write, Edit).
+- `diff`: Present for Edit/MultiEdit.
+- `preview`: Present for Write.
+- `command`: Present for Bash/Grep/WebFetch.
+- `truncated`, `fullSize`: Present when content was truncated.
+
+#### `tool_result` — result of a completed tool call
+
+```json
+{
+  "type": "tool_result",
+  "toolUseId": "tool-id-or-call-id",
+  "preview": "truncated result text",
+  "truncated": false,
+  "fullSize": 256
+}
+```
+
+Not sent if the result text is empty or matches the "file has been updated/created" boilerplate.
+
+#### `exit` — session process exited
+
+```json
+{ "type": "exit", "code": 0 }
+```
+
+`code: -1` means the session was cancelled. If the WebSocket is already closed at exit time and a push token is registered, a push notification is also sent.
+
+#### `resync` — client should reload history
+
+```json
+{ "type": "resync" }
+```
+
+While the phone is detached (relay-mode only), the daemon buffers session
+output and replays it verbatim when the phone reattaches, so a brief
+disconnection leaves no gap in the live transcript. If that buffer overflows
+(`MAX_DETACHED_BUFFER_BYTES`, a long disconnection), a partial replay would be
+misleading, so the daemon instead sends `resync` after the `connected` payload.
+The app responds by reloading full history on its next (auto-)resume rather than
+preserving the now-incomplete in-memory transcript.
+
+The completion push summarizes what the agent actually did during the run (derived from the parsed tool stream — see `run-summary.ts`), not the user's prompt.
+
+- **title**: `✓ {project}` on success, `✗ {project} — exited {code}` on non-zero exit (`{project}` is the path basename).
+- **body**: compact, worst-news-first. Examples:
+  - `3 files · +84/−12 · tests ✓ 41 passed · 1m20s`
+  - `tests ✗ 2 failed · 3 files · +84/−12 · 1m20s`
+  - `No file changes · 45s`
+- **data**: `{ sessionId, exitCode, filesChanged: string[], editCount, linesAdded, linesRemoved, commandsRun, lastCommand?, testStatus: "pass"|"fail"|"none", testDetail?, durationMs }`. The deep-link `sessionId` is always present; `lastCommand`/`testDetail` are omitted when absent.
+
+#### `auth_prompt` — remote re-authentication (device-code flow) started
+
+```json
+{
+  "type": "auth_prompt",
+  "sessionId": "daemon-uuid",
+  "cli": "copilot",
+  "mode": "device_code",
+  "verificationUrl": "https://github.com/login/device",
+  "userCode": "WDJB-MJHT",
+  "expiresInSec": 900,
+  "instructions": "Open https://github.com/login/device on any device and enter code WDJB-MJHT to re-authenticate GitHub Copilot."
+}
+```
+
+Sent when a turn fails because the agent CLI's **own provider auth has expired**
+and that CLI supports a device-code login (RFC 8628). Instead of only erroring,
+the daemon spawns the CLI's device-flow login command (`remoteAuth.command` in
+`agents.ts`), parses the verification URL + user code from its output, and emits
+this so the app can show a "Re-authenticate {CLI}" card. The user opens
+`verificationUrl` on any device and enters `userCode`; **no secret is ever sent
+from the phone to the daemon** — sign-in completes on the provider's web page.
+
+- `mode`: always `"device_code"` in v1. (Other modes may be added later.)
+- `userCode`: omitted if the CLI's output carries only a URL (some flows embed
+  the code in the URL).
+- `expiresInSec`: best-effort code lifetime, when the CLI prints one.
+- `instructions`: a ready-to-display sentence combining the URL + code.
+- Only CLIs with a non-null `remoteAuth` do this (copilot, codex, kiro).
+  Claude (localhost-callback browser flow) and Cursor (IDE-managed) keep the
+  old `error` telling the user to re-authenticate **on the machine**.
+
+**SECURITY:** the verification URL + user code are single-use credentials for
+this login attempt. They are routed only to the paired owner via the existing
+session/relay scoping (stamped `sessionId`), and the daemon never logs them.
+
+#### `auth_status` — device-code login progress
+
+```json
+{ "type": "auth_status", "sessionId": "daemon-uuid", "cli": "copilot", "state": "pending" }
+```
+
+Follows `auth_prompt` as the login progresses.
+
+- `state`: `"pending"` (waiting for the user to finish in the browser),
+  `"success"` (authenticated), or `"failed"` (login did not complete / timed
+  out).
+- `message`: optional human-readable detail, present on `"failed"`.
+- On `"success"` the daemon **auto-retries the pending turn** — the app dismisses
+  the card and the resumed `output`/`exit` frames arrive as usual. There is no
+  phone→daemon message for the device-code flow; the user completes it entirely
+  on the provider's web page.
+
+#### `error` — error from the daemon
+
+```json
+{ "type": "error", "message": "Human-readable error description" }
+```
+
+Sent for: unknown CLI, project not in allowlist, session not found, invalid message format, internal errors. Also sent as the auth fallback when a CLI's provider auth has expired and either it is not device-code-capable (Claude/Cursor) or a device-code login did not complete — naming the CLI's `login.command` to run **on the machine**.
+
+#### `pong` — response to ping
+
+```json
+{ "type": "pong" }
+```

@@ -1,0 +1,858 @@
+import { test, expect, beforeEach } from "bun:test";
+import { Session, LineBuffer, AUTH_FAILURE_RE } from "./session";
+
+// ---------------------------------------------------------------------------
+// Provider auth-failure detection (drives the friendly "run `claude login`"
+// error). Must catch real CLI stderr and ignore benign assistant text.
+// ---------------------------------------------------------------------------
+
+test("AUTH_FAILURE_RE matches real provider auth errors", () => {
+  for (const s of [
+    "Failed to authenticate. API Error: 401 Invalid authentication credentials", // claude
+    "stream error: unexpected status 401 Unauthorized",                          // codex
+    "Error: invalid x-api-key",                                                   // anthropic key
+    "Please run `codex login` to authenticate",                                   // codex
+    "OAuth token has expired",
+  ]) {
+    expect(AUTH_FAILURE_RE.test(s)).toBe(true);
+  }
+});
+
+test("AUTH_FAILURE_RE ignores benign output", () => {
+  for (const s of [
+    "I added an authenticate() helper to your login page.",
+    "Compiled 200 modules successfully.",
+    "Done — tests pass.",
+  ]) {
+    expect(AUTH_FAILURE_RE.test(s)).toBe(false);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const mockWs = () => {
+  const sent: any[] = [];
+  return {
+    ws: {
+      send: (msg: string) => sent.push(JSON.parse(msg)),
+      readyState: 1,
+    } as any,
+    sent,
+  };
+};
+
+/** Build a Session wired to the mock ws, backed by a stable fake cliSessionId. */
+function makeSession(ws: any, cliSessionId?: string) {
+  return Session.fromCursorSession(
+    ws,
+    cliSessionId ?? "cursor-session-id",
+    "/tmp/fake-project",
+    "agent",
+  );
+}
+
+function makeClaudeSession(ws: any, cliSessionId?: string) {
+  return Session.fromClaudeSession(
+    ws,
+    cliSessionId ?? "claude-session-id",
+    "/tmp/fake-project",
+    "claude",
+  );
+}
+
+// Feed a JSON line (or multiple lines) into the session as if it came from
+// the Cursor CLI stdout. We call the public `send()` method only when we want
+// to spawn a real process; for unit tests we need a lighter path.
+//
+// Because parseCursorChunk is private, we drive it indirectly via a
+// subprocess that just echoes JSON. But that's too heavy. Instead we patch the
+// session at runtime using the fact that TypeScript private is compile-time only.
+function feedCursorLines(session: Session, ...lines: any[]) {
+  const chunk = lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+  (session as any).parseCursorChunk(chunk);
+}
+
+function feedClaudeLines(session: Session, ...lines: any[]) {
+  const chunk = lines.map((l) => (typeof l === "string" ? l : JSON.stringify(l))).join("\n") + "\n";
+  return (session as any).parseClaudeChunk(chunk);
+}
+
+// ---------------------------------------------------------------------------
+// applyOptions (per-turn model / permission overrides)
+// ---------------------------------------------------------------------------
+
+test("applyOptions: persists model + permissionMode into session data", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+  session.applyOptions({ model: "opus", permissionMode: "full" });
+  const data = (session as any).data;
+  expect(data.model).toBe("opus");
+  expect(data.permissionMode).toBe("full");
+});
+
+test("applyOptions: empty model string clears the override (back to default)", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+  session.applyOptions({ model: "opus" });
+  session.applyOptions({ model: "" });
+  expect((session as any).data.model).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// parseCursorChunk tests
+// ---------------------------------------------------------------------------
+
+test("parseCursorChunk: text delta forwarded correctly", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "assistant",
+    timestamp_ms: 1000,
+    message: { content: [{ type: "text", text: "Hello world" }] },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Hello world" });
+});
+
+test("parseCursorChunk: incremental deltas concatenate without losing boundary spaces", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // Cursor streams one message as fragments (--stream-partial-output). The app
+  // concatenates the output frames, so the space at a fragment boundary must be
+  // preserved verbatim — trimming each delta used to fuse words ("theauth").
+  feedCursorLines(
+    session,
+    { type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "I'll update the " }] } },
+    { type: "assistant", timestamp_ms: 2, message: { content: [{ type: "text", text: "auth module and " }] } },
+    { type: "assistant", timestamp_ms: 3, message: { content: [{ type: "text", text: "run the tests." }] } },
+  );
+
+  const streamed = sent.filter((m) => m.type === "output").map((m) => m.text).join("");
+  expect(streamed).toBe("I'll update the auth module and run the tests.");
+});
+
+test("parseCursorChunk: a lone-space delta is preserved (not dropped)", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  feedCursorLines(
+    session,
+    { type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "word" }] } },
+    { type: "assistant", timestamp_ms: 2, message: { content: [{ type: "text", text: " " }] } },
+    { type: "assistant", timestamp_ms: 3, message: { content: [{ type: "text", text: "next" }] } },
+  );
+  const streamed = sent.filter((m) => m.type === "output").map((m) => m.text).join("");
+  expect(streamed).toBe("word next");
+});
+
+test("parseCursorChunk: [redacted] stripped from text before send", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "assistant",
+    timestamp_ms: 1000,
+    message: {
+      content: [{ type: "text", text: "Before[redacted] after" }],
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0].text).toBe("Before after");
+});
+
+test("parseCursorChunk: pure [redacted] text → nothing sent", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "assistant",
+    timestamp_ms: 1000,
+    message: { content: [{ type: "text", text: "[redacted]" }] },
+  });
+
+  // After stripping "[redacted]" the text is empty → must not send
+  const outputMessages = sent.filter((m) => m.type === "output");
+  expect(outputMessages).toHaveLength(0);
+});
+
+test("parseCursorChunk: redacted-reasoning blocks in content → nothing sent", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // An assistant message that contains only a redacted-reasoning block
+  feedCursorLines(session, {
+    type: "assistant",
+    timestamp_ms: 1000,
+    message: {
+      content: [
+        {
+          type: "redacted-reasoning",
+          data: "base64data==",
+          providerOptions: { cursor: { modelName: "composer-2.5-fast" } },
+        },
+      ],
+    },
+  });
+
+  // Only type === "text" blocks should be forwarded
+  const outputMessages = sent.filter((m) => m.type === "output");
+  expect(outputMessages).toHaveLength(0);
+});
+
+test("parseCursorChunk: tool_call started → tool_use message sent", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "tool_call",
+    subtype: "started",
+    call_id: "call-001",
+    tool_call: {
+      readToolCall: {
+        args: { path: "/src/index.ts" },
+        result: null,
+      },
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "tool_use",
+    id: "call-001",
+    name: "Read",
+    path: "/src/index.ts",
+  });
+});
+
+test("parseCursorChunk: tool_call completed → tool_result message sent", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "tool_call",
+    subtype: "completed",
+    call_id: "call-001",
+    tool_call: {
+      readToolCall: {
+        args: { path: "/src/index.ts" },
+        result: {
+          success: { content: "export default function main() {}" },
+        },
+      },
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "tool_result",
+    toolUseId: "call-001",
+  });
+  expect(typeof sent[0].preview).toBe("string");
+  expect(sent[0].preview.length).toBeGreaterThan(0);
+});
+
+test("parseCursorChunk: session_id captured on first occurrence", () => {
+  const { ws } = mockWs();
+  // Start with no cliSessionId
+  const session = Session.fromCursorSession(ws, "", "/tmp/fake-project", "agent");
+
+  feedCursorLines(session, { session_id: "new-cursor-session" });
+
+  // The summary should expose the captured session ID
+  expect(session.summary.cliSessionId).toBe("new-cursor-session");
+});
+
+// ---------------------------------------------------------------------------
+// parseClaudeChunk tests
+// ---------------------------------------------------------------------------
+
+test("parseClaudeChunk: text block forwarded", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  feedClaudeLines(session, {
+    type: "assistant",
+    message: {
+      content: [{ type: "text", text: "Claude response" }],
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Claude response" });
+});
+
+test("parseClaudeChunk: tool_use forwarded with correct shape", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  feedClaudeLines(session, {
+    type: "assistant",
+    message: {
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_abc",
+          name: "Read",
+          input: { file_path: "/some/file.ts" },
+        },
+      ],
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "tool_use",
+    id: "toolu_abc",
+    name: "Read",
+    path: "/some/file.ts",
+  });
+});
+
+test("parseClaudeChunk: 'no conversation found' returns true (retry signal)", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  const needsRetry = feedClaudeLines(session, "Error: no conversation found");
+
+  expect(needsRetry).toBe(true);
+});
+
+test("parseClaudeChunk: 'no conversation found' is case-insensitive", () => {
+  const { ws } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  const needsRetry = feedClaudeLines(session, "No Conversation Found in history");
+
+  expect(needsRetry).toBe(true);
+});
+
+test("parseClaudeChunk: normal non-JSON line does not return retry", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  const needsRetry = feedClaudeLines(session, "Some plain output line");
+
+  expect(needsRetry).toBe(false);
+  // Plain text lines are forwarded as output
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Some plain output line" });
+});
+
+test("parseClaudeChunk: tool_result patch forwarded", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  feedClaudeLines(session, {
+    type: "user",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_abc",
+          content: "ls output line 1\nls output line 2",
+        },
+      ],
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "tool_result",
+    toolUseId: "toolu_abc",
+  });
+  expect(typeof sent[0].preview).toBe("string");
+});
+
+test("parseClaudeChunk: tool_result with boilerplate suppressed", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  feedClaudeLines(session, {
+    type: "user",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_xyz",
+          content: "The file /foo/bar.ts has been updated successfully.",
+        },
+      ],
+    },
+  });
+
+  // buildToolResultPreview returns null for this boilerplate → nothing sent
+  const toolResults = sent.filter((m) => m.type === "tool_result");
+  expect(toolResults).toHaveLength(0);
+});
+
+test("parseClaudeChunk: session_id captured from stream", () => {
+  const { ws } = mockWs();
+  const session = Session.fromClaudeSession(ws, "", "/tmp/fake-project", "claude");
+
+  feedClaudeLines(session, { session_id: "captured-claude-session" });
+
+  expect(session.summary.cliSessionId).toBe("captured-claude-session");
+});
+
+test("parseClaudeChunk: mixed text and tool_use in one message", () => {
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+
+  feedClaudeLines(session, {
+    type: "assistant",
+    message: {
+      content: [
+        { type: "text", text: "Let me check:" },
+        {
+          type: "tool_use",
+          id: "toolu_123",
+          name: "Bash",
+          input: { command: "ls -la" },
+        },
+      ],
+    },
+  });
+
+  expect(sent).toHaveLength(2);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Let me check:" });
+  expect(sent[1]).toMatchObject({ type: "tool_use", name: "Bash", command: "ls -la" });
+});
+
+// ---------------------------------------------------------------------------
+// parseCursorChunk — Bash/Write tool edge cases
+// ---------------------------------------------------------------------------
+
+test("parseCursorChunk: bashToolCall started includes command preview", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "tool_call",
+    subtype: "started",
+    call_id: "call-bash",
+    tool_call: {
+      bashToolCall: {
+        args: { command: "npm test" },
+        result: null,
+      },
+    },
+  });
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "tool_use",
+    id: "call-bash",
+    name: "Bash",
+    command: "npm test",
+  });
+});
+
+test("parseCursorChunk: unknown tool_call wrapper → nothing sent", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  feedCursorLines(session, {
+    type: "tool_call",
+    subtype: "started",
+    call_id: "call-unknown",
+    tool_call: {
+      unknownFutureTool: { args: {}, result: null },
+    },
+  });
+
+  expect(sent).toHaveLength(0);
+});
+
+test("parseCursorChunk: malformed JSON line silently ignored", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // Feed a valid line followed by corrupt JSON
+  (session as any).parseCursorChunk(
+    '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"text","text":"ok"}]}}\n{broken json\n',
+  );
+
+  // Only the valid line should have produced output
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "ok" });
+});
+
+test("parseCursorChunk: model_call_id present → not a delta, not forwarded as output", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // When model_call_id is set, parseCursorChunk must NOT treat it as a streaming delta
+  feedCursorLines(session, {
+    type: "assistant",
+    timestamp_ms: 1000,
+    model_call_id: "mc_123",
+    message: { content: [{ type: "text", text: "should not be forwarded" }] },
+  });
+
+  const outputMessages = sent.filter((m) => m.type === "output");
+  expect(outputMessages).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Fixture-derived tests — real tool inputs extracted from cursor-session.jsonl
+// These use the SAME tool names + input shapes as the real Cursor CLI output.
+// Note: the live Cursor stream format uses tool_call events (not tool_use),
+// so we synthesise stream events that match parseCursorChunk's expectations.
+// ---------------------------------------------------------------------------
+
+test("fixture: real Read tool path surfaces in tool_use message", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // Synthesise a cursor stream tool_call/started with a real path from the logs
+  const chunk = JSON.stringify({
+    type: "tool_call",
+    subtype: "started",
+    call_id: "real-read-1",
+    tool_call: {
+      readToolCall: {
+        args: { path: "/Users/timothygreen/Documents/Pacer/WhatsMyPace/Dependencies/Sync/ProfileClient/InboundProfileApply.swift" },
+        result: null,
+      },
+    },
+  });
+
+  (session as any).parseCursorChunk(chunk);
+
+  const msg = sent.find((m) => m.type === "tool_use");
+  expect(msg).toBeDefined();
+  expect(msg.name).toBe("Read");
+  expect(msg.path).toContain("InboundProfileApply.swift");
+});
+
+test("fixture: real StrReplace (→ Edit) tool_call with path", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  const chunk = JSON.stringify({
+    type: "tool_call",
+    subtype: "started",
+    call_id: "real-edit-1",
+    tool_call: {
+      editToolCall: {
+        args: {
+          path: "/Users/timothygreen/Documents/Pacer/PacerPackage/Sources/SyncFeature/AvatarSyncMetadata.swift",
+          oldString: "let old = 1",
+          newString: "let new = 2",
+        },
+        result: null,
+      },
+    },
+  });
+
+  (session as any).parseCursorChunk(chunk);
+
+  const msg = sent.find((m) => m.type === "tool_use");
+  expect(msg).toBeDefined();
+  expect(msg.name).toBe("Edit");
+  expect(msg.path).toContain("AvatarSyncMetadata.swift");
+});
+
+test("fixture: real Shell command (swift build) forwarded correctly", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  const chunk = JSON.stringify({
+    type: "tool_call",
+    subtype: "started",
+    call_id: "real-shell-1",
+    tool_call: {
+      bashToolCall: {
+        args: { command: "swift build --package-path PacerPackage" },
+        result: null,
+      },
+    },
+  });
+
+  (session as any).parseCursorChunk(chunk);
+
+  const msg = sent.find((m) => m.type === "tool_use");
+  expect(msg).toBeDefined();
+  expect(msg.name).toBe("Bash");
+  expect(msg.command).toContain("swift build");
+});
+
+test("fixture: real Grep tool_call forwarded correctly", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  const chunk = JSON.stringify({
+    type: "tool_call",
+    subtype: "started",
+    call_id: "real-grep-1",
+    tool_call: {
+      searchToolCall: {
+        args: { pattern: "reportIssue", glob: "*.swift" },
+        result: null,
+      },
+    },
+  });
+
+  (session as any).parseCursorChunk(chunk);
+
+  const msg = sent.find((m) => m.type === "tool_use");
+  expect(msg).toBeDefined();
+  expect(msg.name).toBe("Grep");
+});
+
+test("fixture: tool_call completed with real Write result surfaces in tool_result", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // started first so call_id is registered
+  (session as any).parseCursorChunk(JSON.stringify({
+    type: "tool_call", subtype: "started", call_id: "real-write-1",
+    tool_call: { writeToolCall: { args: { path: "/src/AvatarSyncMetadata.swift", fileText: "..." }, result: null } },
+  }));
+
+  // completed with realistic success payload
+  (session as any).parseCursorChunk(JSON.stringify({
+    type: "tool_call", subtype: "completed", call_id: "real-write-1",
+    tool_call: {
+      writeToolCall: {
+        args: { path: "/src/AvatarSyncMetadata.swift", fileText: "..." },
+        result: { success: { path: "/src/AvatarSyncMetadata.swift", linesCreated: 42, fileSize: 1280 } },
+      },
+    },
+  }));
+
+  const result = sent.find((m) => m.type === "tool_result");
+  expect(result).toBeDefined();
+  expect(result.toolUseId).toBe("real-write-1");
+  expect(result.preview).toContain("AvatarSyncMetadata.swift");
+});
+
+// ---------------------------------------------------------------------------
+// extractCursorResultText — private method, exercised via (session as any)
+// ---------------------------------------------------------------------------
+
+test("extractCursorResultText: Read with string content → content", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Read", { content: "abc" })).toBe("abc");
+});
+
+test("extractCursorResultText: Read with non-string content → null", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Read", { content: 123 })).toBeNull();
+});
+
+test("extractCursorResultText: Write builds 'Wrote X · N lines · M bytes'", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect(
+    (session as any).extractCursorResultText("Write", { path: "/x", linesCreated: 42, fileSize: 1280 }),
+  ).toBe("Wrote /x · 42 lines · 1280 bytes");
+});
+
+test("extractCursorResultText: Write with empty success → null", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Write", {})).toBeNull();
+});
+
+test("extractCursorResultText: default with stdout+stderr → 'out\\n[stderr]\\nerr'", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect(
+    (session as any).extractCursorResultText("Bash", { stdout: "out", stderr: "err" }),
+  ).toBe("out\n[stderr]\nerr");
+});
+
+test("extractCursorResultText: default with only stdout → stdout", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Bash", { stdout: "out" })).toBe("out");
+});
+
+test("extractCursorResultText: default with output field → output", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Bash", { output: "o" })).toBe("o");
+});
+
+test("extractCursorResultText: null / non-object → null", () => {
+  const { ws } = mockWs();
+  const session = makeSession(ws);
+  expect((session as any).extractCursorResultText("Read", null)).toBeNull();
+  expect((session as any).extractCursorResultText("Read", "not an object")).toBeNull();
+  expect((session as any).extractCursorResultText("Bash", undefined)).toBeNull();
+});
+
+test("fixture: [REDACTED] in cursor stream text is stripped before forwarding", () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+
+  // Pattern from real logs: real reasoning text with [REDACTED] appended
+  const chunk = JSON.stringify({
+    type: "assistant",
+    timestamp_ms: Date.now(),
+    message: {
+      content: [{
+        type: "text",
+        text: "I've confirmed measurements inbound apply is still stubbed in InboundSyncRouter.\n\n[REDACTED]",
+      }],
+    },
+  });
+
+  (session as any).parseCursorChunk(chunk);
+
+  const output = sent.find((m) => m.type === "output");
+  expect(output).toBeDefined();
+  expect(output.text).not.toContain("[REDACTED]");
+  expect(output.text).toContain("InboundSyncRouter");
+});
+
+// ---------------------------------------------------------------------------
+// LineBuffer — cross-chunk line re-assembly
+// ---------------------------------------------------------------------------
+
+test("LineBuffer: JSON event split mid-line across two chunks parses as one event", () => {
+  const event =
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Hello from a split event" }] },
+    }) + "\n";
+  const buf = new LineBuffer();
+
+  // First chunk ends mid-JSON — no complete line yet.
+  expect(buf.push(event.slice(0, 30))).toHaveLength(0);
+  const lines = buf.push(event.slice(30));
+  expect(lines).toHaveLength(1);
+
+  // The re-assembled line parses through parseClaudeChunk as one event.
+  const { ws, sent } = mockWs();
+  const session = makeClaudeSession(ws);
+  for (const line of lines) (session as any).parseClaudeChunk(line);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "output", text: "Hello from a split event" });
+});
+
+test("LineBuffer: multiple complete lines plus a partial in one chunk", () => {
+  const buf = new LineBuffer();
+  expect(buf.push("a\nb\npart")).toEqual(["a", "b"]);
+  expect(buf.push("ial\n")).toEqual(["partial"]);
+});
+
+test("LineBuffer: flush returns the trailing partial line and resets", () => {
+  const buf = new LineBuffer();
+  buf.push("no newline yet");
+  expect(buf.flush()).toBe("no newline yet");
+  expect(buf.flush()).toBe("");
+});
+
+test("LineBuffer: cursor event split across chunks still captured", () => {
+  const event = JSON.stringify({ session_id: "split-session-id" }) + "\n";
+  const buf = new LineBuffer();
+  buf.push(event.slice(0, 10));
+  const lines = buf.push(event.slice(10));
+  expect(lines).toHaveLength(1);
+
+  const { ws } = mockWs();
+  const session = Session.fromCursorSession(ws, "", "/tmp/fake-project", "agent");
+  for (const line of lines) (session as any).parseCursorChunk(line);
+  expect(session.summary.cliSessionId).toBe("split-session-id");
+});
+
+// ---------------------------------------------------------------------------
+// Device-code re-auth (runDeviceAuth) — state transitions.
+//
+// runDeviceAuth spawns a login command and drives the auth_prompt/auth_status
+// frames. We drive it with a tiny stand-in executable (passed as the resolved
+// "cliPath") that prints device-flow output and exits with a chosen code — so
+// the scanner→emit wiring and the success/failure decision are exercised end to
+// end without a real CLI. (The real PTY device flow can't be tested here.)
+// ---------------------------------------------------------------------------
+
+import { mkdtempSync, writeFileSync, chmodSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+
+function makeFakeLoginScript(body: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "diktat-devauth-"));
+  const path = join(dir, "fake-login.sh");
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("runDeviceAuth: emits auth_prompt then auth_status success when login exits 0", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws); // cursor session object; cli field irrelevant to the flow
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` +
+      `printf 'code expires in 900 seconds\\n'\n` +
+      `printf 'Logged in as octocat\\n'\n` +
+      `exit 0`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(true);
+
+  const prompt = sent.find((m) => m.type === "auth_prompt");
+  expect(prompt).toMatchObject({
+    type: "auth_prompt",
+    mode: "device_code",
+    verificationUrl: "https://github.com/login/device",
+    userCode: "WDJB-MJHT",
+    expiresInSec: 900,
+  });
+  expect(typeof prompt.instructions).toBe("string");
+  expect(prompt.instructions).toContain("WDJB-MJHT");
+
+  const statuses = sent.filter((m) => m.type === "auth_status").map((m) => m.state);
+  expect(statuses[0]).toBe("pending");
+  expect(statuses[statuses.length - 1]).toBe("success");
+});
+
+test("runDeviceAuth: reports failure when the login exits non-zero", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` + `exit 1`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(false);
+
+  // The prompt still went out (URL was printed) before the failure.
+  expect(sent.some((m) => m.type === "auth_prompt")).toBe(true);
+  const last = sent.filter((m) => m.type === "auth_status").pop();
+  expect(last.state).toBe("failed");
+  expect(typeof last.message).toBe("string");
+});
+
+test("runDeviceAuth: an explicit failure line beats a zero exit code", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://github.com/login/device and enter code WDJB-MJHT\\n'\n` +
+      `printf 'Login failed: access denied\\n'\n` +
+      `exit 0`,
+  );
+
+  const ok = await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  expect(ok).toBe(false);
+  expect(sent.filter((m) => m.type === "auth_status").pop().state).toBe("failed");
+});
+
+test("runDeviceAuth: frames carry this session's id (owner-scoped routing)", async () => {
+  const { ws, sent } = mockWs();
+  const session = makeSession(ws);
+  const script = makeFakeLoginScript(
+    `printf 'Open https://example.com/device code WDJB-MJHT\\n'\nexit 0`,
+  );
+  await (session as any).runDeviceAuth(script, "/tmp", "fake-login");
+  for (const m of sent) expect(m.sessionId).toBe(session.id);
+});
