@@ -3,47 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Diktat — say it. ship it.</title>
-  <meta name="description" content="Drive your Claude Code / Cursor coding sessions from your phone — from anywhere." />
+  <title>diktat · say it. ship it.</title>
+  <meta name="description" content="Run the AI coding agents on your Mac from your phone. Your machine, your logins, your call." />
   <style>
     :root {
-      --bg:#07060a; --surface:#0f0d13; --card:#171420; --border:#252130;
-      --accent:#a78bfa; --accent-bright:#c4b5fd; --text:#f0eef8; --sub:#8b85a1; --muted:#3d3850;
+      --bg:#08090a; --surface:#0f1113; --card:#14171a; --border:#232a2e;
+      --accent:#2dd4bf; --accent-bright:#5eead4; --accent-dim:#0f766e;
+      --text:#eceef0; --sub:#8a9199; --muted:#3a4147;
+      --add:#34d399; --del:#f87171;
     }
     * { box-sizing:border-box; margin:0; padding:0; }
     body {
       background:var(--bg); color:var(--text);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
       line-height:1.55; -webkit-font-smoothing:antialiased;
-      background-image:radial-gradient(ellipse 80% 50% at 50% -10%, #1a1033 0%, var(--bg) 60%);
+      background-image:radial-gradient(ellipse 80% 50% at 50% -10%, #0a2622 0%, var(--bg) 55%);
     }
-    .wrap { max-width:720px; margin:0 auto; padding:0 24px; }
-    header { text-align:center; padding:96px 0 56px; }
+    .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
+    header { text-align:center; padding:88px 0 8px; }
     .wordmark { font-size:64px; font-weight:800; letter-spacing:-2px; }
-    .tagline { color:var(--sub); text-transform:uppercase; letter-spacing:3px; font-size:13px; margin-top:8px; }
-    .lede { color:var(--sub); font-size:18px; max-width:520px; margin:24px auto 0; }
+    .tagline { color:var(--accent); text-transform:uppercase; letter-spacing:3px; font-size:13px; margin-top:8px; font-weight:600; }
+    .lede { color:var(--sub); font-size:18px; max-width:540px; margin:22px auto 0; }
 
+    /* ── Animated phone preview ───────────────────────────── */
+    .stage { display:flex; justify-content:center; padding:44px 0 8px; }
+    .phone {
+      width:264px; height:544px; border-radius:42px; background:#0b0d0f;
+      border:1px solid #20262a; padding:14px 12px 0; position:relative; overflow:hidden;
+      box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 0 0 5px #050607;
+    }
+    .island {
+      width:118px; height:30px; background:#000; border-radius:16px; margin:0 auto 16px;
+      display:flex; align-items:center; justify-content:center; gap:7px;
+      font-family:"SF Mono",Menlo,monospace; font-size:12px; color:var(--sub);
+    }
+    .island .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.6s ease-in-out infinite; }
+    .island .dot.done { background:transparent; box-shadow:none; color:var(--add); font-weight:800; font-size:13px; line-height:1; width:auto; height:auto; animation:none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    .chat { display:flex; flex-direction:column; gap:9px; padding:0 4px; }
+    .bubble {
+      opacity:0; transform:translateY(10px); transition:opacity .45s ease, transform .45s ease;
+      font-size:12.5px; line-height:1.4;
+    }
+    .bubble.show { opacity:1; transform:none; }
+    .user { align-self:flex-end; max-width:82%; background:rgba(45,212,191,.12); border:1px solid rgba(45,212,191,.25); color:var(--accent-bright); border-radius:14px; padding:8px 12px; }
+    .assistant { color:var(--text); padding:2px 4px; max-width:92%; }
+    .tool {
+      display:flex; align-items:center; gap:8px; background:#0a1614; border:1px solid rgba(45,212,191,.28);
+      border-radius:10px; padding:8px 10px; color:var(--accent-bright); font-family:"SF Mono",Menlo,monospace; font-size:11.5px;
+    }
+    .tool .ico { font-size:13px; }
+    .spinner { width:11px; height:11px; border:2px solid rgba(45,212,191,.3); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg) } }
+    .bubble.done {
+      background:#0a1614; border:1px solid rgba(52,211,153,.3); border-radius:12px; padding:10px 12px;
+    }
+    .bubble.done .hd { color:var(--add); font-weight:600; font-size:12.5px; }
+    .bubble.done .stats { color:var(--sub); font-family:"SF Mono",Menlo,monospace; font-size:10.5px; margin-top:4px; display:flex; gap:10px; }
+    .caret { display:inline-block; width:7px; height:13px; background:var(--accent); margin-left:2px; vertical-align:middle; animation:blink 1s step-end infinite; }
+    @keyframes blink { 50%{opacity:0} }
+    .fade { position:absolute; left:0; right:0; bottom:0; height:60px; background:linear-gradient(transparent,#0b0d0f); pointer-events:none; }
+
+    /* ── Install ─────────────────────────────────────────── */
     .install { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; margin:40px 0; }
     .install h2 { font-size:14px; color:var(--sub); font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
     code, pre { font-family:"SF Mono",Menlo,Consolas,monospace; }
+    .cmd-row { display:flex; align-items:stretch; gap:10px; }
     .cmd {
-      display:flex; align-items:center; justify-content:space-between; gap:12px;
-      background:#0b0a0f; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+      flex:1; display:flex; align-items:center; min-width:0;
+      background:#07080a; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
     }
     .cmd code { color:var(--accent-bright); font-size:14px; overflow-x:auto; white-space:nowrap; }
-    .copy { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; flex:none; }
-    .copy:active { transform:scale(0.96); }
+    .copy {
+      flex:none; width:48px; display:flex; align-items:center; justify-content:center;
+      background:transparent; color:var(--sub); border:1px solid var(--border); border-radius:10px; cursor:pointer;
+      transition:color .15s, border-color .15s, transform .1s;
+    }
+    .copy:hover { color:var(--accent); border-color:var(--accent-dim); }
+    .copy:active { transform:scale(0.94); }
+    .copy svg { width:18px; height:18px; }
+    .copy.copied { color:var(--add); border-color:var(--add); }
 
     .steps { display:grid; gap:18px; margin:40px 0; }
     .step { display:flex; gap:16px; }
-    .num { flex:none; width:28px; height:28px; border-radius:50%; background:#120d1f; border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+    .num { flex:none; width:28px; height:28px; border-radius:50%; background:#0a1614; border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
     .step h3 { font-size:16px; margin-bottom:2px; }
     .step p { color:var(--sub); font-size:14px; }
-    .step code { color:var(--accent-bright); background:#0b0a0f; padding:2px 6px; border-radius:5px; font-size:13px; }
+    .step code { color:var(--accent-bright); background:#07080a; padding:2px 6px; border-radius:5px; font-size:13px; }
 
     .reqs { color:var(--muted); font-size:13px; border-top:1px solid var(--border); padding:28px 0; margin-top:24px; }
     .reqs a { color:var(--sub); }
     footer { text-align:center; color:var(--muted); font-size:12px; padding:40px 0 64px; }
+    @media (prefers-reduced-motion: reduce) {
+      .dot, .spinner, .caret { animation:none !important; }
+    }
   </style>
 </head>
 <body>
@@ -51,26 +105,38 @@
     <header>
       <div class="wordmark">diktat</div>
       <div class="tagline">say it. ship it.</div>
-      <p class="lede">Drive your Claude Code &amp; Cursor coding sessions from your phone — from anywhere.</p>
+      <p class="lede">Your Mac does the coding. Your phone calls the shots.</p>
     </header>
 
+    <div class="stage">
+      <div class="phone">
+        <div class="island"><span class="dot" id="dot"></span><span id="timer">0:00</span></div>
+        <div class="chat" id="chat"></div>
+        <div class="fade"></div>
+      </div>
+    </div>
+
     <section class="install">
-      <h2>Get started — on your Mac</h2>
-      <div class="cmd">
-        <code id="cmd">curl -fsSL https://graveion.github.io/Diktat/install.sh | bash</code>
-        <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent);this.textContent='Copied'">Copy</button>
+      <h2>Get started on your Mac</h2>
+      <div class="cmd-row">
+        <div class="cmd"><code id="cmd">curl -fsSL https://graveion.github.io/Diktat/install.sh | bash</code></div>
+        <button class="copy" id="copyBtn" aria-label="Copy command" title="Copy">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        </button>
       </div>
     </section>
 
     <section class="steps">
       <div class="step"><div class="num">1</div><div><h3>Install</h3><p>Run the command above. Everything Diktat needs is set up for you, including the <code>diktat</code> command.</p></div></div>
       <div class="step"><div class="num">2</div><div><h3>Set up</h3><p>Run <code>diktat setup</code> to detect your CLIs and choose which projects to expose.</p></div></div>
-      <div class="step"><div class="num">3</div><div><h3>Pair</h3><p>Run <code>diktat pair</code> — it shows a QR. In the app, tap <strong>Pair a machine</strong> and scan it.</p></div></div>
-      <div class="step"><div class="num">4</div><div><h3>Go</h3><p>Run <code>diktat start</code>. Open the app, pick your Mac, and start a session from your phone.</p></div></div>
+      <div class="step"><div class="num">3</div><div><h3>Pair</h3><p>Run <code>diktat pair</code> to show a QR. In the app, tap <strong>Pair a machine</strong> and scan it.</p></div></div>
+      <div class="step"><div class="num">4</div><div><h3>Go</h3><p>Run <code>diktat start</code>. Open the app, pick your Mac, start coding from your phone.</p></div></div>
     </section>
 
     <div class="reqs">
-      For macOS. Bring your <a href="https://claude.com/claude-code">Claude Code</a> or Cursor login — Diktat drives the sessions you already have.
+      Made for macOS. Use the coding-agent logins already on your machine. Diktat just hands you the remote.
     </div>
 
     <footer>
@@ -79,5 +145,53 @@
       <a href="./support.html" style="color:var(--sub)">Support</a>
     </footer>
   </div>
+
+  <script>
+    // Copy button: icon flips to a check on success.
+    const copyBtn = document.getElementById("copyBtn");
+    const checkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    const copySvg = copyBtn.innerHTML;
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(document.getElementById("cmd").textContent);
+      copyBtn.innerHTML = checkSvg; copyBtn.classList.add("copied");
+      setTimeout(() => { copyBtn.innerHTML = copySvg; copyBtn.classList.remove("copied"); }, 1600);
+    });
+
+    // Animated in-progress preview: a session streams, then completes, then loops.
+    const chat = document.getElementById("chat");
+    const dot = document.getElementById("dot");
+    const timerEl = document.getElementById("timer");
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const steps = [
+      { html: '<div class="bubble user">Run the tests and tell me what fails</div>' },
+      { html: '<div class="bubble assistant">On it. I’ll read the limiter, add a test, then run the suite.<span class="caret"></span></div>' },
+      { html: '<div class="bubble tool"><span class="ico">📄</span> Reading rateLimiter.ts</div>' },
+      { html: '<div class="bubble tool"><span class="ico">✏️</span> Editing rateLimiter.test.ts</div>' },
+      { html: '<div class="bubble tool" id="runCard"><span class="spinner"></span> Running npm test</div>' },
+      { html: '<div class="bubble done"><div class="hd"><span class="check">✓</span> 25/25 passing</div><div class="stats"><span>📄 1</span><span>+5 −0</span><span>▶ 1</span></div></div>', done: true },
+    ];
+
+    function run() {
+      chat.innerHTML = "";
+      dot.classList.remove("done"); dot.textContent = "";
+      let t = 0; const tick = setInterval(() => { t++; timerEl.textContent = "0:" + String(t).padStart(2, "0"); }, 1000);
+      const els = steps.map((s) => { const d = document.createElement("div"); d.innerHTML = s.html; const el = d.firstElementChild; chat.appendChild(el); return { el, done: s.done }; });
+      els.forEach((it, i) => setTimeout(() => {
+        it.el.classList.add("show");
+        if (it.done) {
+          clearInterval(tick);
+          // Island flips to a tick.
+          dot.classList.add("done"); dot.textContent = "✓";
+          // The test finished: its spinner resolves to a check.
+          const sp = chat.querySelector(".spinner");
+          if (sp) { const c = document.createElement("span"); c.className = "ico"; c.style.color = "var(--add)"; c.textContent = "✓"; sp.replaceWith(c); }
+        }
+      }, reduce ? 0 : 700 + i * 1150));
+      // Reset + loop.
+      setTimeout(run, reduce ? 6000 : 700 + steps.length * 1150 + 3200);
+    }
+    run();
+  </script>
 </body>
 </html>
