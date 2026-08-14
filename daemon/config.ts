@@ -4,6 +4,9 @@ import { dataPath } from "./paths";
 interface Config {
   port: number;
   projects: string[];
+  /** Auto-apply newer published daemon builds when idle. Default true; set false
+   *  to pin the daemon and only update via `diktat update`. */
+  autoUpdate?: boolean;
   /** Relay base URL (e.g. wss://diktat-relay.fly.dev). Written by `diktat pair`. */
   relayUrl?: string;
   /** This machine's id, registered with the relay. Written by `diktat pair`. */

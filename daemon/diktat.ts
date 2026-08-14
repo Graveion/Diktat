@@ -18,6 +18,7 @@ import { homedir } from "os";
 import { join } from "path";
 import * as service from "./service";
 import { COMPILED, DATA_DIR } from "./paths";
+import { fetchExpectedChecksum, runningChecksum, downloadVerifiedBinary, applyBinary } from "./self-update";
 import { runDaemon } from "./index";
 import { runPair } from "./pair";
 import { runSetup } from "./setup";
@@ -153,45 +154,31 @@ async function restart(): Promise<never> {
  * source, reinstall deps, restart. This is the stable user-facing verb; its
  * internals get swapped for a signed-binary self-update once that ships.
  */
-const RELEASE_BASE = "https://github.com/Graveion/Diktat/releases/latest/download";
-const RELEASE_ASSET = "diktat-arm64";
-
-function sha256(data: Uint8Array): string {
-  const h = new Bun.CryptoHasher("sha256");
-  h.update(data);
-  return h.digest("hex");
-}
-
 /** Binary install: download the latest release, verify, atomic-swap, restart. */
 async function updateBinary(): Promise<never> {
   console.log("Checking for updates…");
   let expected: string;
   try {
-    const res = await fetch(`${RELEASE_BASE}/${RELEASE_ASSET}.sha256`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    expected = (await res.text()).trim().split(/\s+/)[0] ?? "";
+    expected = await fetchExpectedChecksum();
   } catch (e) {
     console.log(`Couldn't reach the release server (${(e as Error).message}).`);
     process.exit(1);
   }
   // Compare against the running binary — no version math needed.
-  if (sha256(readFileSync(process.execPath)) === expected) {
+  if (runningChecksum() === expected) {
     console.log("Already up to date.");
     process.exit(0);
   }
 
   console.log("Downloading the latest daemon…");
-  const res = await fetch(`${RELEASE_BASE}/${RELEASE_ASSET}`);
-  if (!res.ok) { console.log(`Download failed (HTTP ${res.status}).`); process.exit(1); }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (sha256(bytes) !== expected) { console.log("Checksum mismatch — aborting."); process.exit(1); }
-
-  // Write next to the binary (same filesystem) then atomic-rename over it. The
-  // running process keeps its open inode; the new file is used on next launch.
-  const tmp = `${process.execPath}.new`;
-  await Bun.write(tmp, bytes);
-  chmodSync(tmp, 0o755);
-  renameSync(tmp, process.execPath);
+  let bytes: Uint8Array;
+  try {
+    bytes = await downloadVerifiedBinary(expected);
+  } catch (e) {
+    console.log(`${(e as Error).message} — aborting.`);
+    process.exit(1);
+  }
+  applyBinary(bytes);
   console.log("✓ Updated. Restarting daemon…");
   await startDaemon({ restart: true });
   process.exit(0);
