@@ -32,6 +32,40 @@ export interface MessageContext {
   readKiroHistory?: typeof readKiroHistory;
 }
 
+/** Pure union of two project-path lists, deduped and sorted. Testable. */
+export function mergeProjects(configProjects: string[], historyProjects: string[]): string[] {
+  return [...new Set([...configProjects, ...historyProjects])].sort();
+}
+
+/**
+ * Distinct project paths the user already has CLI session history in
+ * (Claude/Cursor/Codex/Copilot/Kiro). Reads the same history the session list is
+ * built from, so the new-session picker offers every project shown as a heading —
+ * no hand-maintained config list. Each reader is guarded so one unreadable
+ * history dir doesn't sink the rest.
+ */
+function historyProjects(): string[] {
+  const set = new Set<string>();
+  const add = (arr: { project?: string }[]) => { for (const s of arr) if (s.project) set.add(s.project); };
+  try { add(listClaudeSessions()); } catch { /* ~/.claude/projects unreadable */ }
+  try { add(listCursorSessions()); } catch { /* skip */ }
+  try { add(listCodexSessions()); } catch { /* skip */ }
+  try { add(listCopilotSessions()); } catch { /* skip */ }
+  try { add(listKiroSessions()); } catch { /* skip */ }
+  try { add(listSessions()); } catch { /* skip */ }
+  return [...set];
+}
+
+/**
+ * Projects the app may list and start sessions in: the configured allowlist plus
+ * every project with existing CLI history. Widening the spawn allowlist to
+ * history-derived projects is safe — they are directories the user has already
+ * run the agent CLI in on this machine.
+ */
+export function allowedProjects(configProjects: string[]): string[] {
+  return mergeProjects(configProjects, historyProjects());
+}
+
 /**
  * Build the `connected` handshake payload sent to a freshly attached client.
  * Shared by both transports: local Bun.serve open() and relay client_attached.
@@ -42,7 +76,7 @@ export function buildConnectedPayload(ctx: MessageContext): Record<string, unkno
   const base = {
     type: "connected" as const,
     clis: Object.keys(ctx.availableCLIs),
-    projects: ctx.projects,
+    projects: allowedProjects(ctx.projects),
     // Per-CLI model + permission options for the app's dropdowns.
     agents: agentSelectionData(),
     // So the app can detect an out-of-date daemon and prompt to update.
@@ -154,7 +188,7 @@ export async function handleClientMessage(ctx: MessageContext, ws: any, msg: any
       ws.send(JSON.stringify({ type: "error", message: `CLI not available: ${msg.cli}` }));
       return;
     }
-    if (!ctx.projects.includes(msg.project)) {
+    if (!allowedProjects(ctx.projects).includes(msg.project)) {
       ws.send(JSON.stringify({ type: "error", message: `Project not in allowed list: ${msg.project}` }));
       return;
     }
