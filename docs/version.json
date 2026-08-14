@@ -1,5 +1,5 @@
 {
-  "latest": "0.1.5",
+  "latest": "0.1.6",
   "min": "0.1.0",
-  "notes": "Tag session frames with sessionId for concurrent sessions (switch without losing state); live running-session dot; Cursor live-stream + history text fixes; scroll-up history paging; clearer agent-CLI auth errors."
+  "notes": "New-session picker now offers every project you have CLI history in (no hand-maintained list). Daemon self-maintains: checks for a newer build when idle and updates itself, so a paired Mac never sticks on a stale daemon (opt out with \"autoUpdate\": false)."
 }
